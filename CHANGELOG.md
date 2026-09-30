@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## 0.1.0 — 2026-09-30
 
 - **Clears every cache layer in order**, from wp-admin: Tools → Cache, and a Cache menu on the
   admin bar with "Clear this page" and "Clear the whole site". Editors and up can use it.

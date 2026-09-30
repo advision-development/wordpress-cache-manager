@@ -8,7 +8,7 @@ The design spec lives in the team's internal workspace, not in this public repos
 
 ## Status
 
-**0.1.0, not released yet.** Clears the layers below from wp-admin (Tools → Cache, and the
+**0.1.0.** Clears the layers below from wp-admin (Tools → Cache, and the
 admin bar). Talking to Hawkeye is a later phase.
 
 ## The order
