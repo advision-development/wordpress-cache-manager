@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # The zip has to come from the version the plugin claims to support, not from
+      # whatever happened to be on someone's laptop.
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '7.4'
+          coverage: none
+
+      # Both strings, not only the header. In WordPress Malware Quick Scan the header
+      # and the constant drifted a patch apart and a report recorded a version the
+      # release did not have. Two literals mean two chances to forget one.
+      - name: Tag must match both version strings
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          FILE=wordpress-cache-manager/wordpress-cache-manager.php
+          HEADER=$(sed -n 's/^ \* Version: *\([0-9.]*\).*/\1/p' "$FILE" | head -n1)
+          CONST=$(sed -n "s/^define( 'ADVCM_VERSION', '\([0-9.]*\)' );.*/\1/p" "$FILE" | head -n1)
+
+          if [ "$TAG" != "$HEADER" ] || [ "$TAG" != "$CONST" ]; then
+            echo "Tag ${GITHUB_REF_NAME} disagrees with the plugin." >&2
+            echo "  header:   ${HEADER}" >&2
+            echo "  constant: ${CONST}" >&2
+            echo "A zip labelled one version while containing another has already" >&2
+            echo "happened by hand in a sibling project. Fix whichever is wrong." >&2
+            exit 1
+          fi
+
+          echo "Tag, header and constant agree on ${HEADER}."
+
+      # build.sh gates on lint, the PHP 7.4 syntax check and the whole suite, so a
+      # failure here must stop the release rather than publish anyway.
+      - name: Build
+        run: ./build.sh
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            dist/wordpress-cache-manager-*.zip \
+            --title "${GITHUB_REF_NAME#v}" \
+            --generate-notes

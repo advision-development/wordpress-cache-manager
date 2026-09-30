@@ -1,0 +1,12 @@
+# Build output. Ship builds through GitHub Releases rather than committing zips.
+dist/
+
+# Working notes: specs and implementation plans. They are scaffolding for a change,
+# not a description of the shipped code — CHANGELOG.md and CLAUDE.md carry that.
+docs/
+
+# Scratch for the agent workflow that produced a change.
+.superpowers/
+
+.DS_Store
+*.log
