@@ -78,6 +78,19 @@ abstract class ADVCM_Adapter {
 	}
 
 	/**
+	 * Whether this layer is only reported, never cleared.
+	 *
+	 * The plan reads this so the screen does not promise a clear that will not happen: Bricks
+	 * showed "will be cleared" on the first site it was installed on, and then every run
+	 * skipped it.
+	 *
+	 * @return bool
+	 */
+	public function report_only() {
+		return false;
+	}
+
+	/**
 	 * Facts for the status screen: versions, settings that matter, timestamps.
 	 *
 	 * @return array label => value

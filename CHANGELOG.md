@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 — 2026-09-30
+
+- The plan said Bricks CSS "will be cleared" when every run skips it. A report-only layer is now
+  planned as `skipped — report only`, and the runner never calls it.
+- A failed update check that GitHub answered with 404 now says the repository may not be public,
+  not only that there is no release.
+
 ## 0.1.0 — 2026-09-30
 
 - **Clears every cache layer in order**, from wp-admin: Tools → Cache, and a Cache menu on the

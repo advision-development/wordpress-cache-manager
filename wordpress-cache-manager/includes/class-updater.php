@@ -590,8 +590,11 @@ class ADVCM_Updater {
 			return __( 'github.com refused the request, which on shared hosting is usually its hourly limit being reached by other sites on the same address', 'advcm' );
 		}
 
+		// GitHub answers 404 for a repository it will not show an anonymous caller, not only for
+		// one with no release. This repository was internal when it was created, and every check
+		// read "no published release" while a release existed — so the sentence names both.
 		if ( 404 === $code ) {
-			return __( 'github.com has no published release to report', 'advcm' );
+			return __( 'github.com has no published release to report, or the repository is not public', 'advcm' );
 		}
 
 		if ( 200 !== $code ) {
