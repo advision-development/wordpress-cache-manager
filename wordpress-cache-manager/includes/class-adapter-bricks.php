@@ -48,6 +48,12 @@ class ADVCM_Adapter_Bricks extends ADVCM_Adapter {
 		return $this->present();
 	}
 
+	public function report_only() {
+		return true;
+	}
+
+	// Still answers, in case something calls it: the runner plans a report-only layer as a
+	// skip and never gets here.
 	public function clear( $scope, array $urls, array $options ) {
 		return $this->not_applicable( 'Bricks CSS is reported, not regenerated — Bricks rewrites a post\'s file when it is saved' );
 	}

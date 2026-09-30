@@ -609,6 +609,12 @@ foreach ( $reasons as $label => $reason ) {
 }
 
 check(
+	'a 404 says the repository may not be public, not only that there is no release',
+	false !== strpos( $reasons['no release'], 'not public' ),
+	$reasons['no release']
+);
+
+check(
 	'and no two of them read the same',
 	count( array_unique( array_values( $reasons ) ) ) === count( $reasons ),
 	'one cause printed for every failure is how somebody gets sent to look in the wrong place'

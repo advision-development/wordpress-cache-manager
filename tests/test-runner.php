@@ -240,6 +240,36 @@ $job = ADVCM_Runner::start( array( 'scope' => 'urls', 'urls' => array( 'https://
 check( 'a site-wide-only layer is skipped by a per-URL request rather than widened', 'skipped' === $job['steps'][0]['status'] && 0 === $global_only->calls );
 check( 'and says so', false !== strpos( $job['steps'][0]['message'], 'site-wide only' ), $job['steps'][0]['message'] );
 
+// ------------------------------------------------------------------------ report only
+
+class Report_Only_Adapter extends Fake_Adapter {
+
+	public function report_only() {
+		return true;
+	}
+}
+
+$reported = new Report_Only_Adapter( 'reported', ADVCM_Stages::BUILDER );
+
+ADVCM_Runner::use_adapters( array( $reported ) );
+
+$plan = ADVCM_Runner::plan( array( 'scope' => 'all' ) );
+
+check( 'a report-only layer is planned as a skip, so the screen does not promise a clear', 'skip' === $plan[0]['action'], $plan[0]['action'] );
+check( 'and says why', 0 === strpos( $plan[0]['message'], 'report only' ), $plan[0]['message'] );
+
+$job = ADVCM_Runner::start( array( 'scope' => 'all' ) );
+
+check( 'and is never called', 0 === $reported->calls && 'skipped' === $job['steps'][0]['status'] );
+
+$page = new Fake_Adapter( 'page', ADVCM_Stages::PAGE );
+
+ADVCM_Runner::use_adapters( array( new Report_Only_Adapter( 'reported', ADVCM_Stages::BUILDER ), $page ) );
+
+$job = ADVCM_Runner::start( array( 'scope' => 'all' ) );
+
+check( 'and a report-only builder holds nothing, because it did not fail', 'ok' === statuses( $job )['page'] && 1 === $page->calls );
+
 // ---------------------------------------------------------------------------- the hold
 
 $broken_css = function () {

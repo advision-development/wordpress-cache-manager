@@ -176,6 +176,8 @@ $result = $bricks->clear( 'all', array(), array() );
 $calls  = called();
 
 check( 'Bricks is reported, not regenerated', 'skipped' === $result['status'], $result['status'] );
+check( 'and says so to the plan', true === $bricks->report_only() );
+check( 'while the layers that clear do not', false === $elementor->report_only() && false === $nitro->report_only() );
 check(
 	'and nothing reaches Bricks\' regenerate, whose first file deletes all the others',
 	! in_array( 'Bricks\Assets_Files::regenerate_css_files', $calls, true ) && ! in_array( 'Bricks\Assets_Files::regenerate_css_file', $calls, true )

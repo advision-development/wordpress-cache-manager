@@ -359,6 +359,10 @@ final class ADVCM_Runner {
 			return (string) $reason;
 		}
 
+		if ( true === self::guard( array( $adapter, 'report_only' ), $error ) ) {
+			return 'report only: this layer is shown, never cleared';
+		}
+
 		$scopes = self::guard( array( $adapter, 'scopes' ), $error );
 
 		if ( is_array( $scopes ) && ! in_array( $request['scope'], $scopes, true ) ) {
