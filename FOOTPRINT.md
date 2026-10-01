@@ -22,9 +22,11 @@ and the code disagree.
 | Option | `advcm_lock_<job id>` | while a job runs; deleted when it stops |
 | Option | `advcm_last_error` | not autoloaded; the last fault the guards caught, shown on the screen for a day |
 | Site transient | `advcm_release` | updater's cached GitHub answer |
+| Site transient | `advcm_loopback` | whether the site can reach its own home page; an hour (ten minutes when not) |
 | Transient | `advcm_notice_<user id>` | one minute |
 | Capability | `advcm_purge`, `advcm_purge_hard` | granted by a `user_has_cap` filter from `edit_others_posts` / `manage_options`; never stored |
 | admin-post | `advcm_purge`, `advcm_resume`, `advcm_check_release` | logged in, capability and nonce |
+| admin-ajax | `advcm_tick` | `wp_ajax_` only, never `nopriv`; capability and nonce. The status screen moving a due background clear |
 | Page | `tools.php?page=advcm-cache` | |
 
 Outside the prefix it touches one WordPress name: it deletes the `update_plugins` site transient
@@ -37,7 +39,8 @@ files; the files that change are the plugin's own, when it updates.
 
 - `api.github.com` and `github.com` for its own releases, through WordPress's upgrader.
 - **Its own site only**, for the warm-up, with a user agent containing `AdvisionCacheWarm/<version>`
-  — the string to match in a firewall, a rate limit or a request log.
+  — the string to match in a firewall, a rate limit or a request log. And at most once an hour, a
+  `HEAD` of its own home page from the status screen, to tell whether WordPress can wake its cron.
 
 ## What a scanner should expect
 

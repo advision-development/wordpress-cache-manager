@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.1 — 2026-10-01
+
+- **A background clear waited for ever where the site cannot wake its own cron.** WordPress fires
+  scheduled events by requesting its own `wp-cron.php`; on a staging install behind HTTP
+  authentication that request was refused and a Balanced clear did not move for five minutes.
+  The status screen now moves a due job itself, through a logged-in admin-ajax call while it is
+  open, and checks (once an hour) whether the site can reach itself: when it cannot, it says so
+  and recommends Fast.
+- A scheduled event left from before a pause could have fired early and skipped it, once something
+  other than WP-Cron could move a job. A job now runs only when its next step is due, and a
+  job's event is replaced, not added to, when its time changes.
+- A clear started from WP-CLI is recorded as **WP-CLI**, not as whichever account the command
+  acted as. Testing on staging attributed two clears to an editor who had pressed nothing.
+
 ## 0.2.0 — 2026-10-01
 
 - **NitroPack now clears before WP Engine.** Its drop-in answers from PHP, behind WP Engine's

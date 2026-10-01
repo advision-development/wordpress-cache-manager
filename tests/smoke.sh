@@ -150,6 +150,41 @@ PHP
 # held by test-background.php.
 wpeval "${WORK}/modes.php"
 
+# The screen's own tick, as the browser sends it: logged in, with the nonce the page printed.
+# It needs a job still running when the page loads. Here the site can reach itself, so WP-Cron
+# finishes a plain Balanced clear before the page is fetched; a temporary mu-plugin gives Careful a
+# long pause before the warm-up (a place pauses are allowed), and is removed before the scan.
+docker exec -i -u 33 "${WP}" bash -c "mkdir -p /var/www/html/wp-content/mu-plugins && cat > /var/www/html/wp-content/mu-plugins/advcm-smoke-pause.php" <<'MU'
+<?php
+add_filter( 'advcm_modes', function ( $m ) { $m['careful']['pause_before'] = array( 7 => 600 ); return $m; } );
+MU
+cat > "${WORK}/careful.php" <<'PHP'
+<?php
+$j = ADVCM_Runner::start( array( 'scope' => 'all', 'mode' => 'careful' ) );
+ADVCM_Runner::run( $j['id'] );
+$j = ADVCM_Jobs::get( $j['id'] );
+echo ( 'running' === $j['state'] && $j['next_at'] > time() ? 'PASS  ' : 'FAIL  ' ), 'a Careful clear is paused before its warm-up: ', $j['state'], "\n";
+PHP
+wpeval "${WORK}/careful.php"
+
+jar="${WORK}/jar-tick"
+curl -s -c "${jar}" -b "${jar}" -o /dev/null "${URL}/wp-login.php"
+curl -s -c "${jar}" -b "${jar}" -o /dev/null --data-urlencode "log=ed" --data-urlencode "pwd=ed" -d "wp-submit=Log+In&testcookie=1" --data-urlencode "redirect_to=${URL}/wp-admin/" "${URL}/wp-login.php"
+page="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache")"
+nonce="$(echo "${page}" | sed -n 's/.*"_ajax_nonce",\("[^"]*"\).*/\1/p' | tr -d '"' | head -1)"
+if [[ -n "${nonce}" ]] && curl -s -b "${jar}" -d "action=advcm_tick&_ajax_nonce=${nonce}" "${URL}/wp-admin/admin-ajax.php" | grep -q '"success":true'; then
+	pass "the screen's tick answers a logged-in editor"
+else
+	fail "the screen's tick did not answer (nonce: '${nonce}'; page: $(echo "${page}" | grep -o '<title>[^<]*' | head -1); running jobs shown: $(echo "${page}" | grep -c 'advcm_tick'))"
+fi
+if curl -s -d "action=advcm_tick&_ajax_nonce=${nonce}" "${URL}/wp-admin/admin-ajax.php" | grep -q '"success":true'; then
+	fail "the screen's tick answered somebody logged out"
+else
+	pass "and nobody logged out"
+fi
+if echo "${page}" | grep -q "cannot reach itself"; then fail "the site was reported unable to reach itself"; else pass "the loopback check found the site reachable"; fi
+docker exec "${WP}" rm -f /var/www/html/wp-content/mu-plugins/advcm-smoke-pause.php
+
 # WP-Cron, by hand, until the job finishes.
 cat > "${WORK}/drain.php" <<'PHP'
 <?php
@@ -158,7 +193,9 @@ for ( $i = 0; $i < 20; $i++ ) {
 	$job = ADVCM_Jobs::get( $id );
 	if ( 'running' !== $job['state'] ) { break; }
 	wp_clear_scheduled_hook( 'advcm_continue', array( $id ) );
-	sleep( 2 );
+	// A pause is a wait, and run() refuses to start before it ends; let it run out here instead
+	// of sleeping two minutes. The pauses themselves are held by test-background.php.
+	if ( ! empty( $job['next_at'] ) && $job['next_at'] > time() ) { $job['next_at'] = time() - 1; ADVCM_Jobs::save( $job ); }
 	ADVCM_Runner::run( $id );
 }
 $job = ADVCM_Jobs::get( $id );

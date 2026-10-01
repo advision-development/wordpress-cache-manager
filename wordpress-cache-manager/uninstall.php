@@ -15,6 +15,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 // Uninstalling must never fail halfway and leave an error in front of the person removing it.
 try {
 	delete_site_transient( 'advcm_release' );
+	delete_site_transient( 'advcm_loopback' );
 	delete_option( 'advcm_jobs' );
 	delete_option( 'advcm_layers' );
 	delete_option( 'advcm_last_error' );

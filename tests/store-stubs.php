@@ -49,6 +49,20 @@ if ( ! function_exists( 'delete_option' ) ) {
 	}
 }
 
+if ( ! function_exists( 'get_site_transient' ) ) {
+	function get_site_transient( $key ) {
+		return isset( $GLOBALS['site_transients'][ $key ] ) ? $GLOBALS['site_transients'][ $key ] : false;
+	}
+}
+
+if ( ! function_exists( 'set_site_transient' ) ) {
+	function set_site_transient( $key, $value, $ttl = 0 ) {
+		$GLOBALS['site_transients'][ $key ] = $value;
+
+		return true;
+	}
+}
+
 if ( ! function_exists( 'add_action' ) ) {
 	function add_action( $hook, $callback, $priority = 10, $args = 1 ) {
 		$GLOBALS['hooks'][] = $hook;

@@ -25,6 +25,9 @@ final class ADVCM_Controller {
 	/** The admin-post action that runs a stuck background job now. */
 	const RESUME = 'advcm_resume';
 
+	/** The admin-ajax action the screen calls to move a due background job. Logged in only. */
+	const TICK = 'advcm_tick';
+
 	/**
 	 * How long a site-wide job blocks another one.
 	 *
@@ -41,6 +44,9 @@ final class ADVCM_Controller {
 	public static function register() {
 		ADVCM_Safe::action( 'admin_post_' . self::ACTION, array( __CLASS__, 'guarded_handle' ) );
 		ADVCM_Safe::action( 'admin_post_' . self::RESUME, array( __CLASS__, 'guarded_resume' ) );
+
+		// wp_ajax_ only, never wp_ajax_nopriv_: nobody logged out can make this site do anything.
+		ADVCM_Safe::action( 'wp_ajax_' . self::TICK, array( __CLASS__, 'handle_tick' ) );
 	}
 
 	/**
@@ -267,6 +273,26 @@ final class ADVCM_Controller {
 		ADVCM_Runner::resume_now( $id );
 
 		self::back( $id, '' );
+	}
+
+	/**
+	 * Move due background jobs, for the screen's own refresh.
+	 *
+	 * @return void
+	 */
+	public static function handle_tick() {
+		if ( ! current_user_can( ADVCM_Capabilities::PURGE ) || ! check_ajax_referer( self::TICK, '_ajax_nonce', false ) ) {
+			wp_send_json_error( null, 403 );
+		}
+
+		try {
+			$moved = ADVCM_Runner::tick();
+		} catch ( Throwable $e ) {
+			ADVCM_Safe::report( 'wp_ajax_' . self::TICK, $e );
+			$moved = 0;
+		}
+
+		wp_send_json_success( array( 'moved' => $moved ) );
 	}
 
 	/**

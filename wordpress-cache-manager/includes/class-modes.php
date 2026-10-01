@@ -120,7 +120,10 @@ final class ADVCM_Modes {
 	 * @return string
 	 */
 	public static function recommended( $scope ) {
-		if ( 'urls' === $scope || ! self::background_available() ) {
+		// A site that cannot wake its own cron would leave a background clear waiting, so Fast
+		// is what it is offered first. The background modes stay available: the status screen
+		// moves them while it is open.
+		if ( 'urls' === $scope || ! self::background_available() || false === self::loopback_ok() ) {
 			return self::FAST;
 		}
 
@@ -140,6 +143,63 @@ final class ADVCM_Modes {
 		$available = ! ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON );
 
 		return (bool) apply_filters( 'advcm_background_available', $available );
+	}
+
+	/** Where the loopback answer is cached. */
+	const LOOPBACK = 'advcm_loopback';
+
+	/**
+	 * Whether this site can reach itself, as WordPress needs to for its cron to wake.
+	 *
+	 * WordPress fires scheduled events by requesting its own wp-cron.php. Where that request is
+	 * refused — staging behind HTTP authentication, a firewall blocking the server's own address —
+	 * no event ever fires, page loads or not. Measured on a staging install: a background clear
+	 * did not move for five minutes. So the answer decides what is recommended.
+	 *
+	 * Reads the cached answer only. `check_loopback()` refreshes it, and only the status screen
+	 * calls that: this is also asked while building the admin bar, on every page, where an HTTP
+	 * request would be a cost for nothing.
+	 *
+	 * @return bool|null True or false when known, null when not checked yet.
+	 */
+	public static function loopback_ok() {
+		$known = get_site_transient( self::LOOPBACK );
+
+		return is_array( $known ) && isset( $known['ok'] ) ? (bool) $known['ok'] : null;
+	}
+
+	/**
+	 * Ask the site for its own home page and remember whether it answered. An hour when it did,
+	 * ten minutes when it did not, so fixing the cause shows up soon.
+	 *
+	 * @return array array( ok, code )
+	 */
+	public static function check_loopback() {
+		$known = get_site_transient( self::LOOPBACK );
+
+		if ( is_array( $known ) && isset( $known['ok'] ) ) {
+			return $known;
+		}
+
+		$response = wp_remote_head(
+			home_url( '/' ),
+			array(
+				'timeout'     => 5,
+				'redirection' => 0,
+				// The same choice WordPress makes for its own cron request.
+				'sslverify'   => (bool) apply_filters( 'https_local_ssl_verify', false ),
+			)
+		);
+
+		$code  = is_wp_error( $response ) ? 0 : (int) wp_remote_retrieve_response_code( $response );
+		$known = array(
+			'ok'   => $code >= 200 && $code < 400,
+			'code' => $code,
+		);
+
+		set_site_transient( self::LOOPBACK, $known, $known['ok'] ? HOUR_IN_SECONDS : 10 * MINUTE_IN_SECONDS );
+
+		return $known;
 	}
 
 	/**

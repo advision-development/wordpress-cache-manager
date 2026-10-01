@@ -83,6 +83,21 @@ function statuses_of( $id ) {
 }
 
 /**
+ * Let a job's pause run out, which is what waiting would do.
+ *
+ * @param string $id Job id.
+ * @return void
+ */
+function elapse( $id ) {
+	$job = ADVCM_Jobs::get( $id );
+
+	if ( ! empty( $job['next_at'] ) && $job['next_at'] > time() ) {
+		$job['next_at'] = time() - 1;
+		ADVCM_Jobs::save( $job );
+	}
+}
+
+/**
  * The full set of layers, one per stage.
  *
  * @return Step_Adapter[]
@@ -149,9 +164,15 @@ check( 'and the lock released, so the next run can take it', ! ADVCM_Runner::loc
 
 fire( ADVCM_Runner::CONTINUE_HOOK, $id );
 
+check( 'an event that fires before the pause is over runs nothing', 0 === $l['css']->calls );
+
+elapse( $id );
+fire( ADVCM_Runner::CONTINUE_HOOK, $id );
+
 check( 'the second run clears builder CSS, NitroPack and the host cache together', 1 === $l['css']->calls && 1 === $l['nitro']->calls && 1 === $l['host']->calls );
 check( 'and stops before the CDN, one minute out', 0 === $l['cdn']->calls && abs( scheduled_at( ADVCM_Runner::CONTINUE_HOOK, $id ) - ( time() + 60 ) ) <= 2 );
 
+elapse( $id );
 fire( ADVCM_Runner::CONTINUE_HOOK, $id );
 
 check( 'the third run clears the CDN', 1 === $l['cdn']->calls );
@@ -248,6 +269,43 @@ check( 'in order', 1 === $l['css']->calls && 1 === $l['host']->calls );
 check( 'and leaves nothing scheduled', false === scheduled_at( ADVCM_Runner::CONTINUE_HOOK, $job['id'] ) );
 check( 'while the job still records the mode it was pressed with', ADVCM_Modes::CAREFUL === ADVCM_Jobs::get( $job['id'] )['mode'] && ! empty( ADVCM_Jobs::get( $job['id'] )['resumed'] ) );
 
+// ---------------------------------------------------- moved by the screen, not only by cron
+
+$l = layers();
+ADVCM_Runner::use_adapters( array_values( $l ) );
+
+$job = ADVCM_Runner::start( array( 'scope' => 'all', 'mode' => ADVCM_Modes::BALANCED ) );
+$id  = $job['id'];
+
+check( 'the screen\'s tick moves a job whose next step is due', 1 === ADVCM_Runner::tick() && 1 === $l['object']->calls );
+
+$early = scheduled_at( ADVCM_Runner::CONTINUE_HOOK, $id );
+
+check( 'and leaves it paused, with its event moved to when the pause ends', abs( $early - ( time() + 120 ) ) <= 2, (string) ( $early - time() ) );
+check( 'a tick during the pause runs nothing', 0 === ADVCM_Runner::tick() && 0 === $l['css']->calls );
+
+// An event from before the pause, still on the schedule: the case WP-Cron alone never produced.
+wp_schedule_single_event( time() - 5, ADVCM_Runner::CONTINUE_HOOK, array( 'stale-marker' ) );
+ADVCM_Runner::run( $id );
+
+check( 'a run that arrives before the pause ends does not skip it', 0 === $l['css']->calls );
+check( 'and puts the job back for when the pause ends', abs( scheduled_at( ADVCM_Runner::CONTINUE_HOOK, $id ) - ( time() + 120 ) ) <= 2 );
+
+$stored            = ADVCM_Jobs::get( $id );
+$stored['next_at'] = time() - 1;
+ADVCM_Jobs::save( $stored );
+
+check( 'once it is due, a tick runs the rest', 1 === ADVCM_Runner::tick() && 1 === $l['css']->calls && 1 === $l['host']->calls );
+
+add_option( 'advcm_lock_' . $id, time() );
+$stored            = ADVCM_Jobs::get( $id );
+$stored['next_at'] = time() - 1;
+ADVCM_Jobs::save( $stored );
+
+check( 'and a tick never runs a job another request holds', 0 === ADVCM_Runner::tick() );
+
+delete_option( 'advcm_lock_' . $id );
+
 // ------------------------------------------------------------------- no WP-Cron on the site
 
 define( 'DISABLE_WP_CRON', true );
@@ -265,5 +323,17 @@ check( 'and a request for a background mode runs Fast rather than waiting for an
 $GLOBALS['filter_values']['advcm_background_available'] = true;
 
 check( 'unless the site says a server cron runs wp-cron.php', 3 === count( ADVCM_Modes::available() ) );
+
+// ------------------------------------------------------------------------------- WP-CLI
+
+define( 'WP_CLI', true );
+
+ADVCM_Runner::use_adapters( array( new Step_Adapter( 'x', ADVCM_Stages::PAGE ) ) );
+
+$job = ADVCM_Runner::start( array( 'scope' => 'all', 'mode' => ADVCM_Modes::FAST, 'by' => 42, 'source' => 'wp-admin' ) );
+
+check( 'a clear from WP-CLI names nobody, whatever account the command acted as', 0 === $job['by'] );
+check( 'and says where it came from', 'wp-cli' === $job['source'] );
+check( 'and so does the layer it cleared', 'wp-cli' === ADVCM_Jobs::layers()['x']['source'] && 0 === ADVCM_Jobs::layers()['x']['by'] );
 
 finish();

@@ -181,6 +181,7 @@ final class ADVCM_Jobs {
 		$layers[ $step['id'] ] = array(
 			'at'      => time(),
 			'by'      => isset( $job['by'] ) ? (int) $job['by'] : 0,
+			'source'  => isset( $job['source'] ) ? (string) $job['source'] : '',
 			'status'  => $step['status'],
 			'message' => (string) $step['message'],
 			'scope'   => isset( $job['scope'] ) ? $job['scope'] : 'all',

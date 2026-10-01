@@ -30,6 +30,7 @@
   ],
   "transients": [
     { "name": "advcm_release", "site": true, "why": "the updater's cached answer from GitHub" },
+    { "name": "advcm_loopback", "site": true, "why": "whether the site can reach its own home page, as WordPress needs for its cron; an hour, ten minutes when it cannot" },
     { "name": "advcm_notice_<user id>", "site": false, "why": "a one-minute message after a refused press" }
   ],
   "capabilities": [
@@ -41,14 +42,16 @@
     { "type": "admin-post", "action": "advcm_purge", "auth": "logged in, advcm_purge, nonce" },
     { "type": "admin-post", "action": "advcm_resume", "auth": "logged in, advcm_purge, nonce" },
     { "type": "admin-post", "action": "advcm_check_release", "auth": "logged in, update_plugins, nonce" },
+    { "type": "admin-ajax", "action": "advcm_tick", "auth": "logged in (wp_ajax_ only, no nopriv), advcm_purge, nonce", "why": "the status screen moves a due background clear where the site's cron cannot wake" },
     { "type": "admin-page", "slug": "advcm-cache", "parent": "tools.php" },
     { "type": "admin-bar", "nodes": ["advcm", "advcm-page", "advcm-site"] }
   ],
   "no_endpoints": ["REST routes", "wp_ajax_nopriv_*", "anything reachable without logging in"],
+  "job_attribution": "a clear started from WP-CLI is recorded as WP-CLI, never as the account the command acted as",
   "outbound_requests": [
     { "to": "https://api.github.com/repos/advision-development/wordpress-cache-manager/releases/latest", "why": "update check, at most every 12 hours" },
     { "to": "https://github.com/advision-development/wordpress-cache-manager/releases/download/", "why": "the update package, through WordPress's own upgrader" },
-    { "to": "this site's own URLs only", "why": "warm-up and WordPress's own spawn_cron()", "user_agent_contains": "AdvisionCacheWarm/" }
+    { "to": "this site's own URLs only", "why": "warm-up, WordPress's own spawn_cron(), and one HEAD of the home page at most hourly from the status screen to check the site can reach itself", "user_agent_contains": "AdvisionCacheWarm/ (warm-up only)" }
   ],
   "calls_into_other_plugins": [
     "wp_cache_flush(), clean_post_cache()",

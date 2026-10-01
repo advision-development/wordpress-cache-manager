@@ -164,8 +164,10 @@ final class ADVCM_Runner {
 			'id'       => self::new_id(),
 			'created'  => time(),
 			'finished' => 0,
-			'by'       => $request['by'],
-			'source'   => $request['source'],
+			// Run from WP-CLI, nobody pressed anything: the job says so, rather than naming
+			// whichever account the command happened to act as.
+			'by'       => self::from_cli() ? 0 : $request['by'],
+			'source'   => self::from_cli() ? 'wp-cli' : $request['source'],
 			'scope'    => $request['scope'],
 			'urls'     => $request['urls'],
 			'refused'  => $request['refused'],
@@ -227,6 +229,47 @@ final class ADVCM_Runner {
 	}
 
 	/**
+	 * Whether this request is WP-CLI.
+	 *
+	 * @return bool
+	 */
+	public static function from_cli() {
+		return defined( 'WP_CLI' ) && WP_CLI;
+	}
+
+	/**
+	 * Move every background job that is due, from the request showing the screen.
+	 *
+	 * WordPress runs its cron by having the site request its own wp-cron.php. On a site where
+	 * that request cannot get through — staging behind HTTP authentication, a firewall that
+	 * blocks the server's own address — no scheduled event ever fires, and a background clear
+	 * waits for ever. Measured on a staging install: five minutes without moving. The screen
+	 * refreshes itself while a clear runs, so here each refresh does what cron would have done:
+	 * runs a job whose next step is due. The order and the pauses are the job's own; a step
+	 * that is not due is left for its time.
+	 *
+	 * @return int How many jobs were moved.
+	 */
+	public static function tick() {
+		$moved = 0;
+
+		foreach ( ADVCM_Jobs::all() as $job ) {
+			if ( 'running' !== $job['state'] || self::locked( $job['id'] ) ) {
+				continue;
+			}
+
+			if ( ! empty( $job['next_at'] ) && (int) $job['next_at'] > time() ) {
+				continue;
+			}
+
+			self::run( $job['id'] );
+			$moved++;
+		}
+
+		return $moved;
+	}
+
+	/**
 	 * Whether a background job has stopped moving.
 	 *
 	 * @param array $job Job.
@@ -255,6 +298,16 @@ final class ADVCM_Runner {
 		$job = ADVCM_Jobs::get( (string) $id );
 
 		if ( ! is_array( $job ) || empty( $job['steps'] ) || 'running' !== ( isset( $job['state'] ) ? $job['state'] : 'running' ) ) {
+			return;
+		}
+
+		// Not before its time. A job can now be moved by more than WP-Cron — the screen moves it
+		// too, where a site's cron cannot wake itself — so an event scheduled for an earlier
+		// moment can still be on the schedule when a pause has begun. Running it would skip the
+		// pause; this puts it back for when the pause ends.
+		if ( empty( $job['resumed'] ) && ! empty( $job['next_at'] ) && (int) $job['next_at'] > time() ) {
+			self::schedule( $job['id'], (int) $job['next_at'] );
+
 			return;
 		}
 
@@ -385,9 +438,17 @@ final class ADVCM_Runner {
 	 * @return void
 	 */
 	private static function schedule( $id, $at ) {
-		$args = array( (string) $id );
+		$args    = array( (string) $id );
+		$pending = wp_next_scheduled( self::CONTINUE_HOOK, $args );
 
-		if ( ! wp_next_scheduled( self::CONTINUE_HOOK, $args ) ) {
+		// One event per job, at the time it is wanted. An event already there for another time is
+		// replaced: left in place, it would fire early or late.
+		if ( false !== $pending && (int) $pending !== (int) $at ) {
+			wp_clear_scheduled_hook( self::CONTINUE_HOOK, $args );
+			$pending = false;
+		}
+
+		if ( false === $pending ) {
 			wp_schedule_single_event( (int) $at, self::CONTINUE_HOOK, $args );
 		}
 
