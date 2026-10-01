@@ -15,8 +15,12 @@ require __DIR__ . '/bootstrap.php';
 $source = file_get_contents( ADVCM_DIR . 'includes/class-screen.php' );
 
 check( 'no menu or title says only "Cache"', false === strpos( $source, "__( 'Cache', 'advcm' )" ) );
-check( 'the admin bar and the Tools entry say CacheManager', 2 === substr_count( $source, "__( 'CacheManager', 'advcm' )" ), (string) substr_count( $source, "__( 'CacheManager', 'advcm' )" ) );
-check( 'and the old label is gone', false === strpos( $source, "__( 'Adv Cache', 'advcm' )" ) );
-check( 'and the screen and its page title name the plugin', 2 === substr_count( $source, "'Advision Cache Management', 'advcm' )" ) );
+check( 'the admin bar, the Tools entry, the page title and the heading all say CacheManager', 4 === substr_count( $source, "'CacheManager', 'advcm' )" ), (string) substr_count( $source, "'CacheManager', 'advcm' )" ) );
+check( 'and the old names are gone', false === strpos( $source, 'Adv Cache' ) && false === strpos( $source, 'Advision Cache Management' ) );
+
+$main = file_get_contents( ADVCM_DIR . 'wordpress-cache-manager.php' );
+
+check( 'the Plugins screen lists it as CacheManager', 1 === preg_match( '~^ \* Plugin Name:\s+CacheManager$~m', $main ) );
+check( 'and nothing in the plugin still carries the old name', false === strpos( implode( '', array_map( 'file_get_contents', glob( ADVCM_DIR . 'includes/*.php' ) ) ) . $main, 'Advision Cache Management' ) );
 
 finish();

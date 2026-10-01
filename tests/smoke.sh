@@ -112,6 +112,8 @@ wpcli wp plugin install "${SCANNER_ZIP}" --activate >/dev/null
 
 out="$(wpcli wp plugin activate wordpress-cache-manager)"
 grep -q "Success" <<< "${out}" && pass "activates" || fail "activates: ${out}"
+title="$(wpcli wp plugin get wordpress-cache-manager --field=title)"
+[[ "${title}" == "CacheManager" ]] && pass "the Plugins screen lists it as CacheManager" || fail "the Plugins screen lists it as '${title}'"
 
 # --------------------------------------------------------------------------- every page
 

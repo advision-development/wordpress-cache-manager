@@ -45,7 +45,7 @@ final class ADVCM_Screen {
 	 */
 	public static function menu() {
 		add_management_page(
-			__( 'Advision Cache Management', 'advcm' ),
+			__( 'CacheManager', 'advcm' ),
 			__( 'CacheManager', 'advcm' ),
 			ADVCM_Capabilities::PURGE,
 			self::SLUG,
@@ -147,7 +147,7 @@ final class ADVCM_Screen {
 		$tab = self::current_tab( $open, (bool) $notice );
 
 		echo '<div class="wrap">';
-		echo '<h1>' . esc_html__( 'Advision Cache Management', 'advcm' ) . '</h1>';
+		echo '<h1>' . esc_html__( 'CacheManager', 'advcm' ) . '</h1>';
 
 		if ( $notice ) {
 			echo '<div class="notice notice-warning"><p>' . esc_html( $notice ) . '</p></div>';

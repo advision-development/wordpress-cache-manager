@@ -1,6 +1,6 @@
 {
   "plugin": "wordpress-cache-manager",
-  "name": "Advision Cache Management",
+  "name": "CacheManager",
   "publisher": "Advision Development",
   "repository": "https://github.com/advision-development/wordpress-cache-manager",
   "prefix": "advcm",

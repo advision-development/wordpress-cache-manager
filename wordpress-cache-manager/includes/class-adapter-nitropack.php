@@ -57,7 +57,7 @@ class ADVCM_Adapter_Nitropack extends ADVCM_Adapter {
 	}
 
 	public function clear( $scope, array $urls, array $options ) {
-		$reason = 'Advision Cache Management';
+		$reason = 'CacheManager';
 
 		if ( 'all' === $scope ) {
 			if ( isset( $options['nitropack_mode'] ) && 'purge' === $options['nitropack_mode'] ) {

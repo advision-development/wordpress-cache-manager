@@ -8,7 +8,8 @@
   serving its optimized copies. Offered only where NitroPack is installed, to anyone who can clear;
   the screen says what it costs: pages NitroPack holds keep their old version until it refreshes
   them itself. History shows the step as left out on request.
-- The menu and the admin bar read **CacheManager**.
+- The plugin is called **CacheManager** everywhere: the Plugins screen, the menu, the admin bar,
+  the screen's title, the update details panel, and the reason NitroPack logs for its purges.
 - CI and `tests/docker.sh` also run on PHP 8.4, which production runs.
 
 ## 0.2.3 — 2026-10-01
