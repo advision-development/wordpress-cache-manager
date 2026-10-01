@@ -3,7 +3,7 @@
  * Plugin Name:       Advision Cache Management
  * Plugin URI:        https://github.com/advision-development/wordpress-cache-manager
  * Description:       Clears every cache layer a site has, in the order that keeps each one from re-caching stale content from the layer beneath it: builder CSS, object cache, page cache plugins, the host's page cache, NitroPack, and last the CDN. Detects what is installed at the moment it runs, skips what is not there and says so, and reports every step on its own.
- * Version:           0.1.1
+ * Version:           0.1.2
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Advision Development
@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'ADVCM_VERSION', '0.1.1' );
+define( 'ADVCM_VERSION', '0.1.2' );
 define( 'ADVCM_FILE', __FILE__ );
 define( 'ADVCM_DIR', plugin_dir_path( __FILE__ ) );
 define( 'ADVCM_URL', plugin_dir_url( __FILE__ ) );

@@ -8,8 +8,8 @@ The design spec lives in the team's internal workspace, not in this public repos
 
 ## Status
 
-**0.1.0.** Clears the layers below from wp-admin (Tools → Cache, and the
-admin bar). Talking to Hawkeye is a later phase.
+**0.1.2.** Clears the layers below from wp-admin (Tools → Adv Cache, and the
+Adv Cache menu on the admin bar). Talking to Hawkeye is a later phase.
 
 ## The order
 

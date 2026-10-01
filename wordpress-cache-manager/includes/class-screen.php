@@ -1,6 +1,9 @@
 <?php
 /**
- * Tools → Cache, and the admin bar menu.
+ * Tools → Adv Cache, and the admin bar menu.
+ *
+ * Every label says whose it is. A menu reading only "Cache" sits beside WP Rocket's, NitroPack's
+ * and the host's own cache menus, and nobody can tell which one clears everything in order.
  *
  * The screen shows the plan before anybody presses anything: every layer this plugin knows, in
  * the order it would be cleared, and for each one whether it will run on this site or why not.
@@ -41,8 +44,8 @@ final class ADVCM_Screen {
 	 */
 	public static function menu() {
 		add_management_page(
-			__( 'Cache', 'advcm' ),
-			__( 'Cache', 'advcm' ),
+			__( 'Advision Cache Management', 'advcm' ),
+			__( 'Adv Cache', 'advcm' ),
 			ADVCM_Capabilities::PURGE,
 			self::SLUG,
 			array( __CLASS__, 'render' )
@@ -65,7 +68,7 @@ final class ADVCM_Screen {
 		$bar->add_node(
 			array(
 				'id'    => 'advcm',
-				'title' => __( 'Cache', 'advcm' ),
+				'title' => __( 'Adv Cache', 'advcm' ),
 				'href'  => admin_url( 'tools.php?page=' . self::SLUG ),
 			)
 		);
@@ -124,7 +127,7 @@ final class ADVCM_Screen {
 		}
 
 		echo '<div class="wrap">';
-		echo '<h1>' . esc_html__( 'Cache', 'advcm' ) . '</h1>';
+		echo '<h1>' . esc_html__( 'Advision Cache Management', 'advcm' ) . '</h1>';
 
 		if ( $notice ) {
 			echo '<div class="notice notice-warning"><p>' . esc_html( $notice ) . '</p></div>';

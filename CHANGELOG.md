@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2 — 2026-10-01
+
+- The menus said only "Cache", beside WP Rocket's, NitroPack's and the host's own cache menus.
+  The admin bar and the Tools entry now read **Adv Cache**, and the screen's title is
+  **Advision Cache Management**.
+
 ## 0.1.1 — 2026-09-30
 
 - The plan said Bricks CSS "will be cleared" when every run skips it. A report-only layer is now
