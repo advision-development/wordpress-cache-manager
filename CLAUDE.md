@@ -4,7 +4,7 @@ Guidance for Claude Code working in this repository.
 
 ## What this is
 
-**Advision Cache Management**, a WordPress plugin (directory and repository
+**CacheManager**, a WordPress plugin (directory and repository
 `wordpress-cache-manager`, prefix `ADVCM_` / `advcm`). It clears a site's cache layers in a fixed
 order and reports each step. It is its own system: it shares no code at runtime with the
 scanners (`wordpress-malware-quick-scan`, `wordpress-access-quick-scan`) or with

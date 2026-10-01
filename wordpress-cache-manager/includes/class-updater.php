@@ -438,7 +438,7 @@ class ADVCM_Updater {
 		}
 
 		return (object) array(
-			'name'          => 'Advision Cache Management',
+			'name'          => 'CacheManager',
 			'slug'          => ADVCM_SLUG,
 			'version'       => $release['version'],
 			'author'        => '<a href="https://advisiondevelopment.com/">Advision Development</a>',

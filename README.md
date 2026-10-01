@@ -1,4 +1,4 @@
-# Advision Cache Management
+# CacheManager
 
 A WordPress plugin that clears every cache layer a site has, **in the right order**, and reports
 each step on its own. Editors can use it from wp-admin; the Advision Hawkeye console can ask for

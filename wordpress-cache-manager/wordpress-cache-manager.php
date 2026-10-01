@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name:       Advision Cache Management
+ * Plugin Name:       CacheManager
  * Plugin URI:        https://github.com/advision-development/wordpress-cache-manager
  * Description:       Clears every cache layer a site has, in the order that keeps each one from re-caching stale content from the layer beneath it: object cache, builder CSS, page cache plugins, NitroPack, the host's page cache, a warm-up, and last the CDN. Detects what is installed at the moment it runs, skips what is not there and says so, and reports every step on its own.
  * Version:           0.2.4
@@ -39,7 +39,7 @@ if ( version_compare( PHP_VERSION, '7.4', '<' ) ) {
 		'admin_notices',
 		function () {
 			if ( current_user_can( 'activate_plugins' ) ) {
-				echo '<div class="notice notice-error"><p>Advision Cache Management needs PHP 7.4 or newer and is not running.</p></div>';
+				echo '<div class="notice notice-error"><p>CacheManager needs PHP 7.4 or newer and is not running.</p></div>';
 			}
 		}
 	);
@@ -91,7 +91,7 @@ try {
 		'admin_notices',
 		function () use ( $advcm_boot_error ) {
 			if ( current_user_can( 'activate_plugins' ) ) {
-				echo '<div class="notice notice-error"><p>' . esc_html( 'Advision Cache Management could not start and is not running: ' . $advcm_boot_error->getMessage() ) . '</p></div>';
+				echo '<div class="notice notice-error"><p>' . esc_html( 'CacheManager could not start and is not running: ' . $advcm_boot_error->getMessage() ) . '</p></div>';
 			}
 		}
 	);
