@@ -78,6 +78,29 @@ These are requirements, not preferences. Each was either asked for explicitly or
   not `nitropack_purge()` / `nitropack_invalidate()`, which also invalidate the home page and
   every archive on each call. A full-site default is invalidate; a full purge re-queues every page.
 
+## Security rules
+
+From the adversarial review of 2026-10-01; each has a test or a workflow check.
+
+- **Releases install themselves on every site**, so the release path is the attack surface: the
+  workflow builds only a tag on `main`, pins every action to a commit, keeps `persist-credentials`
+  off, builds read-only, and publishes from a separate job. **Still the owner's to set in GitHub:**
+  a ruleset limiting who may create `v*` tags, and a protected `release` environment with required
+  reviewers on the publish job. Signing the zip is the next step beyond those.
+- **The package URL must match the release's exact shape** (`/releases/download/v<ver>/<repo>-<ver>.zip`,
+  same tag as the release). A literal `..` check was bypassed by `%2e%2e`.
+- **Nothing reachable logged out.** admin-post and `wp_ajax_` only, each with capability and nonce.
+- **Editors cannot choose layers.** Builder CSS alone would leave every page cache pointing at
+  deleted CSS. Administrators can, and a builder layer always brings the page-storing layers.
+- **Rate limits do not live in the job history**, which a burst of small clears can empty:
+  `advcm_site_wide_at` claimed with `add_option`, and 10 page clears a minute per person.
+- **No file in the plugin directory may identify the fleet.** It is served from every site;
+  `footprint.json` lives in the repository and the build excludes it.
+- **Admin-bar JavaScript is a listener, never `meta.onclick`**: the admin bar runs `onclick`
+  through `esc_js()`, which broke the confirmation into a syntax error.
+- **HTTP goes through WordPress's API** (`wp_remote_*`), never `Requests` directly, so a site's
+  HTTP policy applies.
+
 ## Conventions
 
 Same as the scanners: **Conventional Commits** with a lower-case subject that names the symptom,

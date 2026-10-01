@@ -306,6 +306,59 @@ check( 'and a tick never runs a job another request holds', 0 === ADVCM_Runner::
 
 delete_option( 'advcm_lock_' . $id );
 
+// --------------------------------------------------------------- nothing left behind
+
+$l = layers();
+ADVCM_Runner::use_adapters( array_values( $l ) );
+
+unset( $l['object'], $l['cdn'] ); // no pause either side, so one run finishes it
+ADVCM_Runner::use_adapters( array_values( $l ) );
+
+$job = ADVCM_Runner::start( array( 'scope' => 'all', 'mode' => ADVCM_Modes::BALANCED ) );
+
+// The screen's tick finishes it before cron gets there; the event cron would have fired is on
+// the schedule until the job ends.
+ADVCM_Runner::tick();
+
+check( 'a job that finishes takes its scheduled event with it, so none is left where cron never wakes', 'done' === ADVCM_Jobs::get( $job['id'] )['state'] && false === scheduled_at( ADVCM_Runner::CONTINUE_HOOK, $job['id'] ) );
+
+// ------------------------------------------------------------- taking over a dead lock
+
+class Fake_Wpdb {
+	public $options = 'wp_options';
+	public $answer  = 1;
+	public $calls   = 0;
+
+	public function update( $table, $data, $where ) {
+		$this->calls++;
+
+		return $this->answer;
+	}
+}
+
+function wp_cache_delete( $key, $group = '' ) {
+	return true;
+}
+
+$l = layers();
+ADVCM_Runner::use_adapters( array_values( $l ) );
+
+$job                                               = ADVCM_Runner::start( array( 'scope' => 'all', 'mode' => ADVCM_Modes::BALANCED ) );
+$GLOBALS['options'][ 'advcm_lock_' . $job['id'] ] = time() - ADVCM_Runner::LOCK_TTL - 1;
+$GLOBALS['wpdb']                                   = new Fake_Wpdb();
+$GLOBALS['wpdb']->answer                           = 0;
+
+ADVCM_Runner::run( $job['id'] );
+
+check( 'two requests finding the same dead lock: the one whose takeover matched no row does not run', 0 === $l['object']->calls && 1 === $GLOBALS['wpdb']->calls );
+
+$GLOBALS['wpdb']->answer = 1;
+ADVCM_Runner::run( $job['id'] );
+
+check( 'and the one whose takeover matched does', 1 === $l['object']->calls );
+
+unset( $GLOBALS['wpdb'] );
+
 // ------------------------------------------------------------------- no WP-Cron on the site
 
 define( 'DISABLE_WP_CRON', true );

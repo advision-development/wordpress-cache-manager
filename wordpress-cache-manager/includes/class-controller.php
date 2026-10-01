@@ -25,6 +25,9 @@ final class ADVCM_Controller {
 	/** The admin-post action that runs a stuck background job now. */
 	const RESUME = 'advcm_resume';
 
+	/** When a site-wide clear last started. */
+	const SITE_WIDE_AT = 'advcm_site_wide_at';
+
 	/** The admin-ajax action the screen calls to move a due background job. Logged in only. */
 	const TICK = 'advcm_tick';
 
@@ -35,6 +38,12 @@ final class ADVCM_Controller {
 	 * the host cache for nothing; the second is refused and pointed at the first.
 	 */
 	const SITE_WIDE_GAP = 120;
+
+	/** How many per-URL clears one person may start in a minute. */
+	const URL_JOBS_PER_MINUTE = 10;
+
+	/** The most a URL list may weigh, in bytes. Fifty URLs of 2 KB each fit with room. */
+	const MAX_INPUT = 110000;
 
 	/**
 	 * Hook in.
@@ -187,6 +196,12 @@ final class ADVCM_Controller {
 			// carries an encoded character.
 			$raw = isset( $input['urls'] ) ? (string) $input['urls'] : '';
 
+			// Bounded before anything else reads it: the list is stored in the job, and the job is
+			// rewritten after every step.
+			if ( strlen( $raw ) > self::MAX_INPUT ) {
+				return __( 'That list is too long. Up to 50 URLs at a time.', 'advcm' );
+			}
+
 			$parsed = ADVCM_Urls::parse( $raw, home_url() );
 
 			if ( empty( $parsed['accepted'] ) ) {
@@ -199,7 +214,11 @@ final class ADVCM_Controller {
 			$request['refused'] = $parsed['refused'];
 		}
 
-		if ( isset( $input['layers'] ) && is_array( $input['layers'] ) ) {
+		// Choosing layers is for administrators only, and never sent by the screen. An editor who
+		// could ask for builder CSS alone would delete the CSS files and leave every page cache
+		// serving pages that link to them — the failure this plugin exists to prevent. Found by a
+		// security review; the runner also adds back every layer that stores pages (plan()).
+		if ( $hard && isset( $input['layers'] ) && is_array( $input['layers'] ) ) {
 			$known = array();
 
 			foreach ( ADVCM_Runner::adapters() as $adapter ) {
@@ -229,24 +248,60 @@ final class ADVCM_Controller {
 	 * @param array $request The request.
 	 * @return string
 	 */
-	private static function busy( array $request ) {
+	public static function busy( array $request ) {
 		if ( 'all' !== $request['scope'] ) {
-			return '';
+			return self::url_rate( get_current_user_id() );
 		}
 
 		foreach ( ADVCM_Jobs::all() as $job ) {
 			if ( 'all' === $job['scope'] && 'running' === $job['state'] && ! ADVCM_Runner::stuck( $job ) ) {
 				return __( 'A clear of the whole site is still running. Its progress is below.', 'advcm' );
 			}
-
-			if ( 'all' === $job['scope'] && ( time() - (int) $job['created'] ) < self::SITE_WIDE_GAP ) {
-				return sprintf(
-					/* translators: %d: seconds. */
-					__( 'The whole site was cleared less than %d seconds ago. Its result is below.', 'advcm' ),
-					self::SITE_WIDE_GAP
-				);
-			}
 		}
+
+		// The last site-wide start lives in its own row, not in the job history: the history is a
+		// short buffer that a run of small clears can push a site-wide one out of, and the rate
+		// limit with it. add_option() inserts only when the row is absent, so two presses at the
+		// same moment cannot both claim a first start.
+		if ( add_option( self::SITE_WIDE_AT, time(), '', false ) ) {
+			return '';
+		}
+
+		if ( time() - (int) get_option( self::SITE_WIDE_AT, 0 ) < self::SITE_WIDE_GAP ) {
+			return sprintf(
+				/* translators: %d: seconds. */
+				__( 'The whole site was cleared less than %d seconds ago. Its result is below.', 'advcm' ),
+				self::SITE_WIDE_GAP
+			);
+		}
+
+		update_option( self::SITE_WIDE_AT, time(), false );
+
+		return '';
+	}
+
+	/**
+	 * Why one person must wait before another per-URL clear, or empty.
+	 *
+	 * Each per-URL clear can purge fifty URLs at NitroPack and request a hundred cold pages, all
+	 * while the person waits; a script repeating that is load on the site, not cache management.
+	 *
+	 * @param int $user User id.
+	 * @return string
+	 */
+	private static function url_rate( $user ) {
+		$key   = 'advcm_rate_' . (int) $user;
+		$count = (int) get_transient( $key );
+
+		if ( $count >= self::URL_JOBS_PER_MINUTE ) {
+			return sprintf(
+				/* translators: %d: how many. */
+				__( 'That is %d page clears in a minute. Wait a moment, or clear the whole site instead.', 'advcm' ),
+				self::URL_JOBS_PER_MINUTE
+			);
+		}
+
+		set_transient( $key, $count + 1, MINUTE_IN_SECONDS );
 
 		return '';
 	}

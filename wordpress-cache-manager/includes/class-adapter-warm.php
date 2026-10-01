@@ -190,18 +190,18 @@ class ADVCM_Adapter_Warm extends ADVCM_Adapter {
 	}
 
 	/**
-	 * Request a batch, in parallel where WordPress's bundled HTTP library allows it.
+	 * Request a batch through WordPress's HTTP API, one after another.
+	 *
+	 * It used Requests::request_multiple for parallel batches, which bypasses the HTTP API: a
+	 * site's proxy settings, WP_HTTP_BLOCK_EXTERNAL and the pre_http_request filter did not apply.
+	 * A security review found it. The targets were always this site, so nothing left it, but a
+	 * plugin that ignores the site's own HTTP policy is one more thing a site cannot reason about.
+	 * A batch is now the number of requests between pauses.
 	 *
 	 * @param array $chunk array( url, user agent ) pairs.
 	 * @return int[] Status code per request, 0 when there was no answer.
 	 */
 	private static function fetch( array $chunk ) {
-		$parallel = self::parallel( $chunk );
-
-		if ( null !== $parallel ) {
-			return $parallel;
-		}
-
 		$codes = array();
 
 		foreach ( $chunk as $pair ) {
@@ -215,52 +215,6 @@ class ADVCM_Adapter_Warm extends ADVCM_Adapter {
 			);
 
 			$codes[] = is_wp_error( $response ) ? 0 : (int) wp_remote_retrieve_response_code( $response );
-		}
-
-		return $codes;
-	}
-
-	/**
-	 * The same batch through Requests::request_multiple, or null when it is not available.
-	 *
-	 * WordPress 6.2 namespaced the library; older versions carry the global class.
-	 *
-	 * @param array $chunk Pairs.
-	 * @return int[]|null
-	 */
-	private static function parallel( array $chunk ) {
-		$class = class_exists( '\WpOrg\Requests\Requests' ) ? '\WpOrg\Requests\Requests' : ( class_exists( 'Requests' ) ? 'Requests' : '' );
-
-		if ( '' === $class || ! method_exists( $class, 'request_multiple' ) ) {
-			return null;
-		}
-
-		$requests = array();
-
-		foreach ( $chunk as $pair ) {
-			$requests[] = array(
-				'url'     => $pair[0],
-				// No Cache-Control: no-cache. The point is for the caches in front to store
-				// what this request renders, and some of them skip storing a no-cache request.
-				'headers' => array( 'User-Agent' => $pair[1] ),
-				'type'    => 'GET',
-			);
-		}
-
-		$responses = call_user_func(
-			array( $class, 'request_multiple' ),
-			$requests,
-			array(
-				'timeout'          => self::TIMEOUT,
-				'follow_redirects' => false,
-			)
-		);
-
-		$codes = array();
-
-		foreach ( array_keys( $requests ) as $i ) {
-			$r       = isset( $responses[ $i ] ) ? $responses[ $i ] : null;
-			$codes[] = ( is_object( $r ) && isset( $r->status_code ) ) ? (int) $r->status_code : 0;
 		}
 
 		return $codes;

@@ -23,7 +23,8 @@
     { "name": "advcm_jobs", "autoload": false, "why": "the last 10 clears (up to 30 while waiting for Hawkeye)" },
     { "name": "advcm_layers", "autoload": false, "why": "per layer, when it was last cleared and how" },
     { "name": "advcm_lock_<job id>", "autoload": false, "why": "one row while a job is running; deleted when it stops" },
-    { "name": "advcm_last_error", "autoload": false, "why": "the last fault the plugin's guards caught, shown on its screen for a day" }
+    { "name": "advcm_last_error", "autoload": false, "why": "the last fault the plugin's guards caught, shown on its screen for a day" },
+    { "name": "advcm_site_wide_at", "autoload": false, "why": "when a whole-site clear last started, for the two-minute gap between them" }
   ],
   "wordpress_own_names_touched": [
     { "name": "update_plugins", "type": "site transient", "action": "deleted", "why": "so the Plugins screen re-reads the update list after a release check, as WordPress does after an update" }
@@ -31,7 +32,8 @@
   "transients": [
     { "name": "advcm_release", "site": true, "why": "the updater's cached answer from GitHub" },
     { "name": "advcm_loopback", "site": true, "why": "whether the site can reach its own home page, as WordPress needs for its cron; an hour, ten minutes when it cannot" },
-    { "name": "advcm_notice_<user id>", "site": false, "why": "a one-minute message after a refused press" }
+    { "name": "advcm_notice_<user id>", "site": false, "why": "a one-minute message after a refused press" },
+    { "name": "advcm_rate_<user id>", "site": false, "why": "per-URL clears one person started in the last minute (at most 10)" }
   ],
   "capabilities": [
     { "name": "advcm_purge", "granted_to": "users holding edit_others_posts", "stored": false },
@@ -51,7 +53,7 @@
   "outbound_requests": [
     { "to": "https://api.github.com/repos/advision-development/wordpress-cache-manager/releases/latest", "why": "update check, at most every 12 hours" },
     { "to": "https://github.com/advision-development/wordpress-cache-manager/releases/download/", "why": "the update package, through WordPress's own upgrader" },
-    { "to": "this site's own URLs only", "why": "warm-up, WordPress's own spawn_cron(), and one HEAD of the home page at most hourly from the status screen to check the site can reach itself", "user_agent_contains": "AdvisionCacheWarm/ (warm-up only)" }
+    { "to": "this site's own URLs only", "why": "warm-up, WordPress's own spawn_cron(), one HEAD of the home page at most hourly from the status screen to check the site can reach itself, and the cache-age check a person asks for on the screen", "user_agent_contains": "AdvisionCacheWarm/ (warm-up), AdvisionCacheProbe/ (cache-age check)" }
   ],
   "calls_into_other_plugins": [
     "wp_cache_flush(), clean_post_cache()",

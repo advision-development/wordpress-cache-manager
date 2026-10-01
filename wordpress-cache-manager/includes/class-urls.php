@@ -24,6 +24,12 @@ final class ADVCM_Urls {
 	/** How many URLs one request may carry. */
 	const MAX = 50;
 
+	/** The longest URL accepted. */
+	const MAX_LENGTH = 2048;
+
+	/** How many refused entries are kept, by name, in a job. */
+	const MAX_REFUSED = 20;
+
 	/**
 	 * Split raw input into accepted absolute URLs and refused entries.
 	 *
@@ -47,6 +53,12 @@ final class ADVCM_Urls {
 				continue;
 			}
 
+			// No address on a site is this long, and a refused line is stored and shown.
+			if ( strlen( $line ) > self::MAX_LENGTH ) {
+				$refused[] = substr( $line, 0, 80 ) . '… (too long)';
+				continue;
+			}
+
 			$url = self::absolute( $line, $scheme, $host, $port );
 
 			if ( '' === $url ) {
@@ -65,6 +77,13 @@ final class ADVCM_Urls {
 			}
 
 			$accepted = array_slice( $accepted, 0, self::MAX );
+		}
+
+		if ( count( $refused ) > self::MAX_REFUSED ) {
+			$more    = count( $refused ) - self::MAX_REFUSED;
+			$refused = array_slice( $refused, 0, self::MAX_REFUSED );
+
+			$refused[] = sprintf( '… and %d more', $more );
 		}
 
 		return array(

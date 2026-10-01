@@ -79,36 +79,39 @@ class ADVCM_Updater {
 		ADVCM_Safe::filter( 'plugins_api', array( __CLASS__, 'details' ), 10, 3 );
 		ADVCM_Safe::action( 'upgrader_process_complete', array( __CLASS__, 'forget' ), 10, 2 );
 
-		// Applied unattended, and see automatically() for the reasoning and the way out.
-		// risk the pinning cannot reduce.
+		// Applied unattended; see automatically() for why, what that trusts, and the way out.
 		ADVCM_Safe::filter( 'auto_update_plugin', array( __CLASS__, 'automatically' ), 10, 2 );
 		ADVCM_Safe::filter( 'plugin_auto_update_setting_html', array( __CLASS__, 'explain_auto_update' ), 10, 2 );
 		ADVCM_Safe::action( 'admin_post_' . self::CHECK_ACTION, array( __CLASS__, 'handle_check' ) );
 	}
 
 	/**
-	 * Refuse to update this plugin without somebody pressing the button.
+	 * Install releases unattended, unless the site says otherwise.
 	 *
-	 * WordPress offers an "Enable auto-updates" toggle for anything that reports update
-	 * information, and turning it on would mean a release installs itself on the next cron run
-	 * with nobody present.
+	 * **This was documented as the opposite, and it was wrong.** The comment copied from WordPress
+	 * Access Quick Scan said this refused unattended updates while the code below answered `true`;
+	 * a security review on 2026-10-01 read both. The code is what the fleet needs: a cache plugin
+	 * that purges in an old order, or skips a layer it has since learned to clear, is wrong on
+	 * every site at once, and nobody presses Update on 160 sites. So releases install themselves,
+	 * and this says plainly what that trusts.
 	 *
-	 * That is the one attack the pinning cannot help with. Every check in this file assumes the
-	 * danger is a *tampered answer* — a URL pointing somewhere else, a response that is not
-	 * GitHub's. None of them help if the release is genuinely published from the pinned
-	 * repository by somebody who should not have been able to publish it. A compromised
-	 * release is correctly signed, correctly hosted and correctly named, and every check here
-	 * passes it.
+	 * It trusts **whoever can publish a release** of the pinned repository. Every other check in
+	 * this file assumes the danger is a *tampered answer* — a URL pointing somewhere else, a
+	 * response that is not GitHub's — and none of them helps if a release is genuinely published by
+	 * somebody who should not have been able to. What stands in that way lives outside this file:
 	 *
-	 * What is left is the plugin's own rule, applied to the plugin itself: **a person presses
-	 * it.** The update is offered, the row says one is available, and installing it takes a
-	 * click by somebody who can look at what changed first. That turns "the release account
-	 * was compromised" from every site at once into every site whose operator pressed a button
-	 * — which is a much smaller number and a much later one.
+	 * - the release workflow builds only a tag whose commit is already on main, so code must have
+	 *   been merged through a pull request before any site can receive it;
+	 * - its actions are pinned to commits, the build runs read-only, and only a separate job holding
+	 *   no third-party code can publish;
+	 * - each release publishes per-file checksums, so an installed copy can be compared with it.
 	 *
-	 * The toggle is not merely disabled, it is explained. A control that silently does nothing
-	 * reads as broken, and the next person to wonder why it is missing should find the reason
-	 * on the screen rather than in this comment.
+	 * Not yet in place, and the owner's decision because they are repository settings: a ruleset
+	 * that lets only maintainers create `v*` tags, and a protected environment requiring a review
+	 * before the publish job runs. With those, a stolen token alone cannot ship to the fleet.
+	 *
+	 * A site that must not take unattended updates returns false from `advcm_auto_update` in its
+	 * own mu-plugin. It is code rather than a checkbox on purpose — see `explain_auto_update()`.
 	 *
 	 * @param bool|null $update Whether WordPress intends to update it.
 	 * @param mixed     $item   The plugin being considered.
@@ -119,11 +122,7 @@ class ADVCM_Updater {
 
 		if ( is_object( $item ) && isset( $item->plugin ) && $file === $item->plugin ) {
 			/**
-			 * Filter whether this plugin updates itself unattended.
-			 *
-			 * The escape hatch, and it is code rather than a checkbox on purpose — see
-			 * `explain_auto_update()` for why the checkbox is gone. A site that must not
-			 * take unattended updates returns false here from its own mu-plugin.
+			 * Filter whether this plugin updates itself unattended. Return false to opt out.
 			 *
 			 * @param bool $auto Whether to update unattended.
 			 */
@@ -703,7 +702,7 @@ class ADVCM_Updater {
 			return array();
 		}
 
-		$package = self::package_in( isset( $body['assets'] ) ? $body['assets'] : array() );
+		$package = self::package_in( isset( $body['assets'] ) ? $body['assets'] : array(), (string) $body['tag_name'] );
 
 		if ( '' === $package ) {
 			// A release with no zip this plugin recognises. Offering the update anyway would
@@ -750,10 +749,11 @@ class ADVCM_Updater {
 	 * WordPress is about to download and unzip over the plugin directory — so it is checked
 	 * against the host, owner and repository compiled into this file rather than trusted.
 	 *
-	 * @param array $assets The release's assets.
+	 * @param array       $assets The release's assets.
+	 * @param string|null $tag    The release's tag, which the URL must carry.
 	 * @return string Empty when none of them qualifies.
 	 */
-	public static function package_in( $assets ) {
+	public static function package_in( $assets, $tag = null ) {
 		if ( ! is_array( $assets ) ) {
 			return '';
 		}
@@ -782,14 +782,24 @@ class ADVCM_Updater {
 				continue;
 			}
 
-			// A prefix pins the host but not the repository, because HTTP clients resolve `..`
-			// out of a path before sending it — RFC 3986's remove_dot_segments. So
+			// A prefix pins the host but not the repository, because HTTP clients resolve dot
+			// segments out of a path before sending it — RFC 3986's remove_dot_segments. So
 			// …/wordpress-cache-manager/releases/download/../../../../someone/their-repo/…
-			// starts with the prefix, passes, and downloads from another account's release.
-			// Still on github.com, still served 200, and not this plugin.
-			//
-			// Found by a test case written to prove the prefix was sufficient. It was not.
-			if ( false !== strpos( $url, '..' ) ) {
+			// starts with the prefix and downloads from another account's release. A literal `..`
+			// was refused here; a security review on 2026-10-01 showed `%2e%2e` gets through,
+			// because WordPress's HTTP library decodes it before resolving. So the rest of the
+			// URL must have exactly the shape this repository's releases have — a version tag and
+			// the zip's name, digits and dots only — which leaves no room for a dot segment in
+			// any spelling, a percent sign, a backslash, a query or a fragment.
+			$rest = substr( $url, strlen( $prefix ) );
+
+			if ( ! preg_match( '~^v?([0-9]+(?:\.[0-9]+){0,2})/' . preg_quote( self::REPO, '~' ) . '-[0-9]+(?:\.[0-9]+){0,2}\.zip$~', $rest, $m ) ) {
+				continue;
+			}
+
+			// And the tag in the URL is the release's own tag, so an asset uploaded to one
+			// release cannot be served as another's.
+			if ( null !== $tag && self::version_of( $tag ) !== $m[1] ) {
 				continue;
 			}
 

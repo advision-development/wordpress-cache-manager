@@ -128,6 +128,26 @@ final class ADVCM_Runner {
 		$request = self::normalise( $request );
 		$steps   = array();
 
+		// A request naming builder CSS gets every layer after it as well: clearing generated CSS
+		// without the caches that store pages linking to it leaves those pages unstyled.
+		if ( ! empty( $request['layers'] ) ) {
+			$builder = false;
+
+			foreach ( self::adapters() as $adapter ) {
+				if ( in_array( $adapter->id(), $request['layers'], true ) && ADVCM_Stages::BUILDER === (int) $adapter->stage() ) {
+					$builder = true;
+				}
+			}
+
+			if ( $builder ) {
+				foreach ( self::adapters() as $adapter ) {
+					if ( in_array( (int) $adapter->stage(), ADVCM_Stages::held_by_builder(), true ) ) {
+						$request['layers'][] = $adapter->id();
+					}
+				}
+			}
+		}
+
 		foreach ( self::adapters() as $adapter ) {
 			$id = self::guard(
 				function () use ( $adapter ) {
@@ -395,6 +415,10 @@ final class ADVCM_Runner {
 		ADVCM_Jobs::save( $job );
 		self::release( $job['id'] );
 
+		// A finished job's event, if one is still on the schedule — left when the screen moved the
+		// job before cron did. On a site whose cron never wakes, each one would sit there for ever.
+		wp_clear_scheduled_hook( self::CONTINUE_HOOK, array( $job['id'] ) );
+
 		self::$current = null;
 	}
 
@@ -477,13 +501,31 @@ final class ADVCM_Runner {
 			return true;
 		}
 
-		if ( time() - (int) get_option( $name, 0 ) > self::LOCK_TTL ) {
-			update_option( $name, time(), false );
+		$held = get_option( $name, 0 );
+
+		if ( time() - (int) $held <= self::LOCK_TTL ) {
+			return false;
+		}
+
+		// Taking over a dead lock is a compare-and-swap: of two requests that both found it stale,
+		// only the one whose UPDATE still matches the old value gets it.
+		global $wpdb;
+
+		if ( isset( $wpdb ) && is_object( $wpdb ) && method_exists( $wpdb, 'update' ) ) {
+			$taken = $wpdb->update( $wpdb->options, array( 'option_value' => (string) time() ), array( 'option_name' => $name, 'option_value' => (string) $held ) );
+
+			if ( 1 !== $taken ) {
+				return false;
+			}
+
+			wp_cache_delete( $name, 'options' );
 
 			return true;
 		}
 
-		return false;
+		update_option( $name, time(), false );
+
+		return true;
 	}
 
 	/**
@@ -548,7 +590,8 @@ final class ADVCM_Runner {
 		$why   = 'did not finish';
 
 		if ( is_array( $fatal ) && in_array( $fatal['type'], array( E_ERROR, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR ), true ) ) {
-			$why .= ': ' . $fatal['message'];
+			// Without the server's paths: this is shown to editors, who have no need of them.
+			$why .= ': ' . ADVCM_Safe::without_paths( $fatal['message'] );
 		}
 
 		$pending = false;

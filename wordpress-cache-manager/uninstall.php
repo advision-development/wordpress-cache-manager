@@ -19,6 +19,7 @@ try {
 	delete_option( 'advcm_jobs' );
 	delete_option( 'advcm_layers' );
 	delete_option( 'advcm_last_error' );
+	delete_option( 'advcm_site_wide_at' );
 	wp_unschedule_hook( 'advcm_continue' ); // every job id, not only events with no arguments.
 
 	// A job's lock is a row named after the job. Normally released, but a run killed hard enough

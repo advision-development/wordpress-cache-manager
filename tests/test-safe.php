@@ -105,6 +105,17 @@ $last = get_option( ADVCM_Safe::LAST_ERROR );
 
 check( 'and the last one is kept for the screen', is_array( $last ) && 'admin_bar_menu' === $last['where'] && false !== strpos( $last['what'], 'bad bar' ) );
 
+ADVCM_Safe::filter(
+	'with_path',
+	function () {
+		throw new RuntimeException( 'failed opening ' . ABSPATH . 'wp-content/plugins/x/y.php' );
+	}
+);
+call_user_func( registered( 'with_path' ), 'v' );
+
+check( 'what the screen shows carries no server path', false === strpos( get_option( ADVCM_Safe::LAST_ERROR )['what'], ABSPATH ) );
+check( 'while the error log keeps the whole message', false !== strpos( implode( "\n", logged() ), ABSPATH . 'wp-content/plugins/x/y.php' ) );
+
 check( 'run() answers the fallback when what it runs throws', 'fallback' === ADVCM_Safe::run( 'x', function () { throw new Exception( 'x' ); }, 'fallback' ) );
 
 // ----------------------------------------------------------------- every hook is guarded

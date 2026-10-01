@@ -232,6 +232,28 @@ check(
 	'WordPress would otherwise install the source archive beside the plugin'
 );
 
+// The percent-encoded spelling of a dot segment, which WordPress's HTTP library decodes and then
+// resolves before sending — found by a security review, and the reason the URL is now matched
+// against the exact shape of a release rather than refused for a literal "..".
+$base = 'https://github.com/advision-development/wordpress-cache-manager/releases/download/';
+
+foreach ( array(
+	'percent-encoded dots'  => $base . '%2e%2e/%2e%2e/%2e%2e/%2e%2e/someone/repo/releases/download/v9.0.0/wordpress-cache-manager-9.0.0.zip',
+	'mixed-case encoding'   => $base . '%2E%2e/x/wordpress-cache-manager-9.0.0.zip',
+	'a backslash'           => $base . 'v9.0.0\\..\\wordpress-cache-manager-9.0.0.zip',
+	'a query string'        => $base . 'v9.0.0/wordpress-cache-manager-9.0.0.zip?x=1',
+	'a fragment'            => $base . 'v9.0.0/wordpress-cache-manager-9.0.0.zip#x',
+	'an extra segment'      => $base . 'v9.0.0/extra/wordpress-cache-manager-9.0.0.zip',
+	'a single dot segment'  => $base . 'v9.0.0/./wordpress-cache-manager-9.0.0.zip',
+) as $label => $evil ) {
+	check( 'a package URL with ' . $label . ' is refused', '' === ADVCM_Updater::package_in( array( asset( 'wordpress-cache-manager-9.0.0.zip', $evil ) ) ), $evil );
+}
+
+$other_tag = $base . 'v8.0.0/wordpress-cache-manager-8.0.0.zip';
+
+check( 'and so is an asset from another release than the one being offered', '' === ADVCM_Updater::package_in( array( asset( 'wordpress-cache-manager-8.0.0.zip', $other_tag ) ), 'v9.0.0' ) );
+check( 'while the release\'s own asset passes', $good === ADVCM_Updater::package_in( array( asset( 'wordpress-cache-manager-9.0.0.zip', $good ) ), 'v9.0.0' ) );
+
 // ------------------------------------------------------------------- what a tag may be
 
 check( 'a plain version tag is read', '1.2.3' === ADVCM_Updater::version_of( '1.2.3' ) );

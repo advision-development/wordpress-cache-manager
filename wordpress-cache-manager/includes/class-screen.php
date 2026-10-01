@@ -35,6 +35,7 @@ final class ADVCM_Screen {
 	public static function register() {
 		ADVCM_Safe::action( 'admin_menu', array( __CLASS__, 'menu' ) );
 		ADVCM_Safe::action( 'admin_bar_menu', array( __CLASS__, 'admin_bar' ), 100 );
+		ADVCM_Safe::action( 'wp_after_admin_bar_render', array( __CLASS__, 'admin_bar_confirm' ) );
 	}
 
 	/**
@@ -92,11 +93,28 @@ final class ADVCM_Screen {
 				'id'     => 'advcm-site',
 				'title'  => __( 'Clear the whole site', 'advcm' ),
 				'href'   => add_query_arg( 'source', 'admin-bar', ADVCM_Controller::purge_site_link() ),
-				'meta'   => array(
-					'onclick' => 'return confirm(' . wp_json_encode( self::site_warning() ) . ');',
-				),
 			)
 		);
+	}
+
+	/**
+	 * The confirmation for "Clear the whole site" in the admin bar.
+	 *
+	 * It was an `onclick` in the node's meta, and it never ran: the admin bar passes `onclick`
+	 * through `esc_js()`, whose `stripslashes()` removes the escapes `wp_json_encode()` put in, so
+	 * the handler was a JavaScript syntax error, the browser dropped it, and the link cleared the
+	 * whole site on one click. Found by a security review on 2026-10-01. Now a listener attached
+	 * after the bar renders, with the message as a JSON literal in a script, where nothing
+	 * re-escapes it.
+	 *
+	 * @return void
+	 */
+	public static function admin_bar_confirm() {
+		if ( ! current_user_can( ADVCM_Capabilities::PURGE ) ) {
+			return;
+		}
+
+		echo '<script>(function(){var a=document.querySelector("#wp-admin-bar-advcm-site > a");if(!a){return;}var m=' . wp_json_encode( self::site_warning() ) . ';a.addEventListener("click",function(e){if(!window.confirm(m)){e.preventDefault();}});})();</script>';
 	}
 
 	/**
@@ -139,6 +157,7 @@ final class ADVCM_Screen {
 		// Each section on its own: one that throws prints a notice and the others still render,
 		// so the screen that reports faults is not the first thing a fault takes away.
 		foreach ( array(
+			'probe' => function () { self::render_probe(); },
 			'plan'  => function () { self::render_plan(); },
 			'forms' => function () use ( $hard ) { self::render_forms( $hard ); },
 			'jobs'  => function () use ( $open ) { self::render_jobs( $open ); },
@@ -152,6 +171,84 @@ final class ADVCM_Screen {
 		}
 
 		echo '</div>';
+	}
+
+	/** The nonce action for the cache-age check. */
+	const PROBE = 'advcm_probe';
+
+	/**
+	 * How old a page's cached copy is: a form, and the reading when one was asked for.
+	 *
+	 * A GET form with a nonce, so the reading is a link somebody can reload, and nothing that
+	 * changes the site goes through it. The check itself is one request to the site's own page.
+	 *
+	 * @return void
+	 */
+	private static function render_probe() {
+		// phpcs:disable WordPress.Security.NonceVerification -- verified below before anything is requested.
+		$asked = isset( $_GET['advcm_probe'] ) ? trim( wp_unslash( (string) $_GET['advcm_probe'] ) ) : '';
+		$valid = '' !== $asked && isset( $_GET['_wpnonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ), self::PROBE );
+		// phpcs:enable
+
+		echo '<h2>' . esc_html__( 'How old is a page\'s cache', 'advcm' ) . '</h2>';
+		echo '<form method="get" action="' . esc_url( admin_url( 'tools.php' ) ) . '">';
+		echo '<input type="hidden" name="page" value="' . esc_attr( self::SLUG ) . '" />';
+		wp_nonce_field( self::PROBE, '_wpnonce', false );
+		echo '<p><input type="text" name="advcm_probe" class="regular-text code" placeholder="/analysis/" value="' . esc_attr( $asked ) . '" /> ';
+		submit_button( __( 'Check', 'advcm' ), 'secondary', '', false );
+		echo '</p><p class="description">' . esc_html__( 'Requests the page once, as a visitor would, and reads what each cache in front of it says. Nothing is cleared. A cold page is built by this request.', 'advcm' ) . '</p></form>';
+
+		if ( ! $valid ) {
+			return;
+		}
+
+		$reading = ADVCM_Probe::url( substr( $asked, 0, 2048 ) );
+
+		if ( is_string( $reading ) ) {
+			echo '<div class="notice notice-warning inline"><p>' . esc_html( $reading ) . '</p></div>';
+
+			return;
+		}
+
+		$age  = $reading['age'];
+		$rows = array();
+
+		$rows[ __( 'Page', 'advcm' ) ]   = $reading['url'];
+		$rows[ __( 'Answer', 'advcm' ) ] = $reading['code'] ? 'HTTP ' . $reading['code'] . ' in ' . $reading['ms'] . ' ms' : __( 'no answer', 'advcm' ) . ( isset( $reading['error'] ) ? ': ' . $reading['error'] : '' );
+
+		if ( 401 === $reading['code'] || 403 === $reading['code'] ) {
+			$rows[ __( 'Note', 'advcm' ) ] = __( 'The site refused its own request (HTTP authentication or a firewall), so the caches in front of it could not be read from here.', 'advcm' );
+		}
+
+		foreach ( $reading['layers'] as $layer => $said ) {
+			$rows[ $layer ] = $said;
+		}
+
+		if ( null === $age['seconds'] ) {
+			$rows[ __( 'Age', 'advcm' ) ] = __( 'unknown', 'advcm' ) . ' — ' . $age['source'];
+		} else {
+			$rows[ __( 'Age', 'advcm' ) ] = ( 'at most' === $age['how'] ? __( 'at most', 'advcm' ) . ' ' : '' ) . ADVCM_Probe::duration( $age['seconds'] ) . ' — ' . $age['source'];
+		}
+
+		if ( null !== $reading['max_ttl'] ) {
+			$rows[ __( 'Kept for up to', 'advcm' ) ] = ADVCM_Probe::duration( $reading['max_ttl'] );
+		}
+
+		if ( isset( $reading['left'] ) ) {
+			$rows[ __( 'Left before it expires', 'advcm' ) ] = ( 'at most' === $age['how'] ? __( 'at least', 'advcm' ) . ' ' : '' ) . ADVCM_Probe::duration( $reading['left'] );
+		}
+
+		if ( null !== $reading['hits'] ) {
+			$rows[ __( 'Served from this copy', 'advcm' ) ] = sprintf( _n( '%d time', '%d times', $reading['hits'], 'advcm' ), $reading['hits'] );
+		}
+
+		echo '<table class="widefat striped" style="max-width:900px"><tbody>';
+
+		foreach ( $rows as $label => $value ) {
+			echo '<tr><th style="width:220px">' . esc_html( $label ) . '</th><td>' . esc_html( $value ) . '</td></tr>';
+		}
+
+		echo '</tbody></table>';
 	}
 
 	/**
