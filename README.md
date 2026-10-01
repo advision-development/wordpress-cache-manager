@@ -46,6 +46,13 @@ points at files that are gone. Background modes run on WP-Cron, which is WordPre
 `DISABLE_WP_CRON` only Fast is offered. A background job that stops moving is shown as stuck, with
 a button to finish it now.
 
+## How old is a page's cache
+
+Tools → Adv Cache → *How old is a page's cache*: the site requests the page once and reads what
+each layer says — Cloudflare, the host cache, NitroPack. The age is exact where a layer sends
+`Age`, 0 on a `MISS`, "at most N" since this plugin last cleared it when a layer only says `HIT`
+(WP Engine sends no `Age`), and otherwise "unknown" with the most it can be. It never guesses.
+
 ## Nothing it does can break a page
 
 Every hook goes through `ADVCM_Safe`: a filter that throws returns what it was given, an action
@@ -55,10 +62,19 @@ file fails while it loads, the plugin does not register at all and says so to ad
 
 ## What it leaves on a site
 
-`FOOTPRINT.md`, and `wordpress-cache-manager/footprint.json` inside the plugin: every option,
+`FOOTPRINT.md` and `footprint.json`, in this repository and not in the plugin: every option,
 transient, cron event, capability and request, all prefixed `advcm`. Each release also publishes
 `wordpress-cache-manager-<version>.sha256`, one checksum per file, so a scanner can tell an
 unmodified install from anything else.
+
+## Security
+
+Reviewed adversarially on 2026-10-01 from seven positions (anonymous, subscriber, editor, site
+content, network, release publisher, another plugin). Nothing is reachable without logging in:
+no REST routes, no `wp_ajax_nopriv_`. Releases are built only from commits on `main`, by a
+read-only job with actions pinned to commits; publishing is a separate job. Package URLs must have
+the exact shape of this repository's releases. The two controls left to the repository's settings
+— who may create `v*` tags, and a required review before publishing — are in `CLAUDE.md`.
 
 ## Build, test, release
 

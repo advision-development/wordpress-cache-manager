@@ -111,6 +111,25 @@ final class ADVCM_Safe {
 	}
 
 	/**
+	 * A message with the installation's absolute paths taken out, for the screen. The full text
+	 * still goes to the PHP error log, where whoever reads it can see the server.
+	 *
+	 * @param string $message Message.
+	 * @return string
+	 */
+	public static function without_paths( $message ) {
+		$message = (string) $message;
+
+		foreach ( array( defined( 'ABSPATH' ) ? ABSPATH : '', defined( 'WP_CONTENT_DIR' ) ? WP_CONTENT_DIR . '/' : '' ) as $root ) {
+			if ( '' !== $root ) {
+				$message = str_replace( array( $root, rtrim( $root, '/' ) ), '', $message );
+			}
+		}
+
+		return $message;
+	}
+
+	/**
 	 * Write a failure down. Never throws itself: a logger that can fail is one more thing that can
 	 * take a page down.
 	 *
@@ -120,7 +139,9 @@ final class ADVCM_Safe {
 	 */
 	public static function report( $where, $e ) {
 		try {
-			$what = get_class( $e ) . ': ' . $e->getMessage();
+			// The log gets the whole message; the screen, read by editors, gets it without paths.
+			$raw  = get_class( $e ) . ': ' . $e->getMessage();
+			$what = get_class( $e ) . ': ' . self::without_paths( $e->getMessage() );
 			$key  = $where . '|' . $what;
 
 			// Once per request per fault. A filter that fails runs on every capability check, and
@@ -131,7 +152,7 @@ final class ADVCM_Safe {
 
 			self::$seen[ $key ] = true;
 
-			error_log( sprintf( '[advcm] %s: %s in %s:%d', $where, $what, basename( $e->getFile() ), $e->getLine() ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- the only record of a fault this class kept from reaching the page.
+			error_log( sprintf( '[advcm] %s: %s in %s:%d', $where, $raw, basename( $e->getFile() ), $e->getLine() ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- the only record of a fault this class kept from reaching the page.
 
 			if ( ! function_exists( 'update_option' ) || ! function_exists( 'get_option' ) ) {
 				return;

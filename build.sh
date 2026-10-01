@@ -50,6 +50,7 @@ rsync -a \
 	--exclude '.*' \
 	--exclude '*.zip' \
 	--exclude 'node_modules' \
+	--exclude 'footprint.json' \
 	"${SRC}/" "${STAGE}/${SLUG}/"
 
 echo "==> zipping"

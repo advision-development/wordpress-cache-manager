@@ -139,7 +139,9 @@ final class ADVCM_Jobs {
 			// The second half is the cap. There was also a `break` at the cap after this, and
 			// deleting it failed no assertion: KEEP is below UNSENT_CAP, so nothing past the cap
 			// could be kept anyway. It is gone rather than left looking like a second guard.
-			if ( $count <= self::KEEP || ( empty( $job['sent'] ) && count( $kept ) < self::UNSENT_CAP ) ) {
+			// A running job is never evicted: its next run would find nothing and stop silently
+			// half-way, which a burst of small clears could otherwise cause on purpose.
+			if ( $count <= self::KEEP || ( isset( $job['state'] ) && 'running' === $job['state'] ) || ( empty( $job['sent'] ) && count( $kept ) < self::UNSENT_CAP ) ) {
 				$kept[ $id ] = $job;
 			}
 		}

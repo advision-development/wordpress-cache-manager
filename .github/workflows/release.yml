@@ -4,20 +4,44 @@ on:
   push:
     tags: [ 'v*' ]
 
+# Nothing in this workflow gets more than it needs. Every site running this plugin installs what it
+# publishes, unattended, so the release path is the plugin's largest attack surface: the build runs
+# with read access only, and the one step that can write — creating the release — runs in its own
+# job, with no third-party action anywhere near the token.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
-    name: Build and publish
+  build:
+    name: Build
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      # Third-party actions are pinned to a commit, not a tag. A tag can be moved to other code
+      # by whoever controls that repository, and this build's output runs on every site.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # The whole history, for the check below; and no token left in .git/config for the
+          # build and the tests to find.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Only a commit that is already on main can be released. A tag pushed on a branch — by a
+      # collaborator, a stolen token, a mistake — would otherwise be built and installed across
+      # the fleet without ever having been through a pull request.
+      - name: The tagged commit must be on main
+        run: |
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "Tag ${GITHUB_REF_NAME} points at ${GITHUB_SHA}, which is not on main." >&2
+            echo "Releases are cut from merged code only." >&2
+            exit 1
+          fi
+
+          echo "${GITHUB_SHA} is on main."
 
       # The zip has to come from the version the plugin claims to support, not from
       # whatever happened to be on someone's laptop.
-      - uses: shivammathur/setup-php@v2
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: '7.4'
           coverage: none
@@ -48,6 +72,30 @@ jobs:
       - name: Build
         run: ./build.sh
 
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release
+          path: |
+            dist/wordpress-cache-manager-*.zip
+            dist/wordpress-cache-manager-*.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+
+    # The only job that can write, and all it runs is GitHub's own artifact download and the gh
+    # CLI that ships on the runner.
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release
+          path: dist
+
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -55,5 +103,6 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             dist/wordpress-cache-manager-*.zip \
             dist/wordpress-cache-manager-*.sha256 \
+            --repo "${GITHUB_REPOSITORY}" \
             --title "${GITHUB_REF_NAME#v}" \
             --generate-notes

@@ -52,7 +52,7 @@ wpeval() {
 	docker cp "$1" "${WP}:/var/www/html/advcm-smoke-eval.php" >/dev/null
 	out="$(wpcli wp eval-file /var/www/html/advcm-smoke-eval.php)"
 	echo "${out}" | grep -E "^(PASS|FAIL)" || { echo "FAIL  $(basename "$1") printed no result:"; echo "${out}" | tail -5; FAILED=1; }
-	if echo "${out}" | grep -q "^FAIL"; then FAILED=1; fi
+	if grep -q "^FAIL" <<< "${out}"; then FAILED=1; fi
 }
 
 cleanup
@@ -62,6 +62,7 @@ docker run -d --name "${DB}" --network "${NET}" -e MARIADB_ROOT_PASSWORD=r -e MA
 docker run -d --name "${WP}" --network "${NET}" -p "${PORT}:80" \
 	-e WORDPRESS_DB_HOST="${DB}" -e WORDPRESS_DB_USER=wp -e WORDPRESS_DB_PASSWORD=wp -e WORDPRESS_DB_NAME=wp \
 	-e WORDPRESS_DEBUG=1 \
+	-e WORDPRESS_CONFIG_EXTRA="define( 'WP_AUTO_UPDATE_CORE', false );" \
 	-v "${ROOT}/wordpress-cache-manager:/var/www/html/wp-content/plugins/wordpress-cache-manager:ro" \
 	"wordpress:php${PHP}-apache" >/dev/null
 
@@ -85,6 +86,11 @@ for _ in $(seq 1 40); do
 	sleep 3
 done
 [[ "${installed}" -eq 1 ]] || { echo "FAIL  WordPress did not install"; exit 1; }
+# The newest WordPress the image's PHP runs, rather than whatever the image shipped: the PHP 7.4
+# image carries WordPress 6.1, and the scanner and Elementor no longer install on it. WordPress
+# would otherwise update itself in the background, mid-run, and once a WP-CLI command read its
+# files half-copied — so background core updates are off in this container and this is the one.
+wpcli wp core update >/dev/null || true
 wpcli wp user create ed ed@example.test --role=editor --user_pass=ed >/dev/null
 # The newest Elementor where it installs. The PHP 7.4 image ships WordPress 6.1, which the newest
 # Elementor refuses, so there an older one that still supports both — the plugin claims WordPress
@@ -99,7 +105,7 @@ SCANNER_ZIP="$(curl -s https://api.github.com/repos/advision-development/wordpre
 wpcli wp plugin install "${SCANNER_ZIP}" --activate >/dev/null
 
 out="$(wpcli wp plugin activate wordpress-cache-manager)"
-echo "${out}" | grep -q "Success" && pass "activates" || fail "activates: ${out}"
+grep -q "Success" <<< "${out}" && pass "activates" || fail "activates: ${out}"
 
 # --------------------------------------------------------------------------- every page
 
@@ -115,7 +121,7 @@ check_pages() {
 		body="$(curl -s -L -b "${jar}" -w '\n%{http_code}' "${URL}${path}")"
 		code="$(echo "${body}" | tail -1)"
 
-		if [[ "${code}" != "200" && "${code}" != "403" ]] || echo "${body}" | grep -qiE "critical error|fatal error|There has been a critical"; then
+		if [[ "${code}" != "200" && "${code}" != "403" ]] || grep -qiE "critical error|fatal error|There has been a critical" <<< "${body}"; then
 			fail "${label}: ${path} answered ${code}"
 		fi
 	done
@@ -172,18 +178,39 @@ curl -s -c "${jar}" -b "${jar}" -o /dev/null "${URL}/wp-login.php"
 curl -s -c "${jar}" -b "${jar}" -o /dev/null --data-urlencode "log=ed" --data-urlencode "pwd=ed" -d "wp-submit=Log+In&testcookie=1" --data-urlencode "redirect_to=${URL}/wp-admin/" "${URL}/wp-login.php"
 page="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache")"
 nonce="$(echo "${page}" | sed -n 's/.*"_ajax_nonce",\("[^"]*"\).*/\1/p' | tr -d '"' | head -1)"
-if [[ -n "${nonce}" ]] && curl -s -b "${jar}" -d "action=advcm_tick&_ajax_nonce=${nonce}" "${URL}/wp-admin/admin-ajax.php" | grep -q '"success":true'; then
+tick_in="$(curl -s -b "${jar}" -d "action=advcm_tick&_ajax_nonce=${nonce}" "${URL}/wp-admin/admin-ajax.php")"
+tick_out="$(curl -s -d "action=advcm_tick&_ajax_nonce=${nonce}" "${URL}/wp-admin/admin-ajax.php")"
+if [[ -n "${nonce}" ]] && grep -q '"success":true' <<< "${tick_in}"; then
 	pass "the screen's tick answers a logged-in editor"
 else
 	fail "the screen's tick did not answer (nonce: '${nonce}'; page: $(echo "${page}" | grep -o '<title>[^<]*' | head -1); running jobs shown: $(echo "${page}" | grep -c 'advcm_tick'))"
 fi
-if curl -s -d "action=advcm_tick&_ajax_nonce=${nonce}" "${URL}/wp-admin/admin-ajax.php" | grep -q '"success":true'; then
+if grep -q '"success":true' <<< "${tick_out}"; then
 	fail "the screen's tick answered somebody logged out"
 else
 	pass "and nobody logged out"
 fi
-if echo "${page}" | grep -q "cannot reach itself"; then fail "the site was reported unable to reach itself"; else pass "the loopback check found the site reachable"; fi
+if grep -q "cannot reach itself" <<< "${page}"; then fail "the site was reported unable to reach itself"; else pass "the loopback check found the site reachable"; fi
 docker exec "${WP}" rm -f /var/www/html/wp-content/mu-plugins/advcm-smoke-pause.php
+
+# The admin bar's whole-site clear asks first. It was an onclick the admin bar's esc_js() broke, so
+# it never asked; now a listener. The page is checked for the listener and for no onclick left.
+front="$(curl -s -b "${jar}" "${URL}/")"
+if grep -q 'wp-admin-bar-advcm-site' <<< "${front}" && grep -q 'querySelector("#wp-admin-bar-advcm-site > a")' <<< "${front}" && ! grep -q 'onclick="return confirm' <<< "${front}"; then
+	pass "the admin bar's whole-site clear asks before it runs"
+else
+	fail "the admin bar's whole-site clear has no working confirmation"
+fi
+
+# How old a page's cache is, read on the screen.
+# The first nonce on the page is the cache-age form's: it is the first section.
+probe_nonce="$(echo "${page}" | grep -oE 'name="_wpnonce" value="[a-f0-9]+"' | head -1 | sed 's/.*value="//; s/"//')"
+reading="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&advcm_probe=%2F&_wpnonce=${probe_nonce}")"
+if grep -q "HTTP 200 in" <<< "${reading}" && grep -q "Age</th><td>" <<< "${reading}"; then
+	pass "the screen reads a page's cache age: $(echo "${reading}" | sed -n 's/.*Age<\/th><td>\([^<]*\).*/\1/p' | head -1)"
+else
+	fail "the screen did not read a page's cache age (nonce '${probe_nonce}'): $(echo "${reading}" | grep -oE 'notice-error inline"><p>[^<]{0,200}|notice-warning inline"><p>[^<]{0,160}|Answer</th><td>[^<]*|Age</th><td>[^<]*' | head -5 | tr '\n' ' ')"
+fi
 
 # WP-Cron, by hand, until the job finishes.
 cat > "${WORK}/drain.php" <<'PHP'
@@ -254,7 +281,7 @@ else
 fi
 
 out="$(wpcli wp plugin deactivate wordpress-cache-manager)"
-echo "${out}" | grep -q "Success" && pass "deactivates" || fail "deactivates: ${out}"
+grep -q "Success" <<< "${out}" && pass "deactivates" || fail "deactivates: ${out}"
 check_pages "after deactivation"
 
 if [[ "${FAILED}" -ne 0 ]]; then

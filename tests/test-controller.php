@@ -71,9 +71,18 @@ check( 'and so is an empty one', is_string( $r ) );
 
 // ---------------------------------------------------------------------------- layers
 
-$r = ADVCM_Controller::request( array( 'layers' => array( 'wp-engine', 'rm -rf', 'nitropack' ) ), false );
+$r = ADVCM_Controller::request( array( 'layers' => array( 'wp-engine', 'nitropack' ) ), false );
 
-check( 'only layers the registry knows are kept', array( 'wp-engine', 'nitropack' ) === $r['layers'], implode( ',', $r['layers'] ) );
+check( 'an editor cannot choose layers: the screen never sends them, and builder CSS alone would leave pages unstyled', array() === $r['layers'], implode( ',', $r['layers'] ) );
+
+$r = ADVCM_Controller::request( array( 'layers' => array( 'wp-engine', 'rm -rf', 'nitropack' ) ), true );
+
+check( 'an administrator can, and only layers the registry knows are kept', array( 'wp-engine', 'nitropack' ) === $r['layers'], implode( ',', $r['layers'] ) );
+
+// Valid, short lines — so it is the size that refuses it, not the parser.
+$r = ADVCM_Controller::request( array( 'scope' => 'urls', 'urls' => str_repeat( "/a/\n", (int) ( ADVCM_Controller::MAX_INPUT / 4 ) + 1 ) ), false );
+
+check( 'a URL list larger than the cap is refused before it is parsed or stored', is_string( $r ) );
 
 // ------------------------------------------------------------------ the costly options
 

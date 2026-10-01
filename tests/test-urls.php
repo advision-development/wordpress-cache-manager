@@ -93,6 +93,16 @@ $parsed = ADVCM_Urls::parse( $many, $home );
 check( 'a list longer than the limit is cut to it', ADVCM_Urls::MAX === count( $parsed['accepted'] ) );
 check( 'and what was cut is named', 3 === count( $parsed['refused'] ) && false !== strpos( $parsed['refused'][0], 'over the limit' ), $parsed['refused'][0] );
 
+$long   = '/' . str_repeat( 'a', ADVCM_Urls::MAX_LENGTH );
+$parsed = ADVCM_Urls::parse( $long, $home );
+
+check( 'a URL longer than any page has is refused', array() === $parsed['accepted'] && false !== strpos( $parsed['refused'][0], 'too long' ) );
+check( 'and stored short', strlen( $parsed['refused'][0] ) < 120 );
+
+$parsed = ADVCM_Urls::parse( implode( "\n", array_fill( 0, 500, 'https://attacker.test/x' ) ), $home );
+
+check( 'refusals are kept to a bounded few, with a count of the rest', ADVCM_Urls::MAX_REFUSED + 1 === count( $parsed['refused'] ) && false !== strpos( end( $parsed['refused'] ), '480 more' ), end( $parsed['refused'] ) );
+
 // ------------------------------------------------------------------------ post ids
 
 $GLOBALS['options']['page_on_front'] = 99;

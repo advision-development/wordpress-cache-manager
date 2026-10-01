@@ -99,7 +99,7 @@ foreach ( $declared[1] as $name ) {
 }
 
 // footprint.json lists every one of them.
-$footprint = file_get_contents( ADVCM_DIR . 'footprint.json' );
+$footprint = file_get_contents( dirname( __DIR__ ) . '/footprint.json' );
 $decoded   = json_decode( $footprint, true );
 
 check( 'footprint.json is valid JSON', is_array( $decoded ) );
@@ -111,5 +111,11 @@ foreach ( array_diff( array_unique( array_merge( $names, $declared[1] ) ), $word
 }
 
 check( 'and the warm-up user agent, which is what a firewall rule would match', false !== strpos( $footprint, 'AdvisionCacheWarm/' ) );
+
+// Not inside the plugin. Every file in that directory is served from every site at a guessable
+// URL, and one naming the publisher and the repository is how a network of sites gets tied
+// together by somebody counting them. A security review found it shipping; the build excludes it.
+check( 'footprint.json is not in the plugin directory, so no site serves it', ! file_exists( ADVCM_DIR . 'footprint.json' ) );
+check( 'and the build refuses to package one if it comes back', false !== strpos( file_get_contents( dirname( __DIR__ ) . '/build.sh' ), "--exclude 'footprint.json'" ) );
 
 finish();

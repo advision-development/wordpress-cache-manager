@@ -63,6 +63,18 @@ for ( $i = 1; $i <= ADVCM_Jobs::UNSENT_CAP + 20; $i++ ) {
 check( 'a Hawkeye that never confirms cannot grow the row past its cap', ADVCM_Jobs::UNSENT_CAP === count( ADVCM_Jobs::all() ), (string) count( ADVCM_Jobs::all() ) );
 check( 'and what the cap drops is the oldest', ! array_key_exists( 'down-1', ADVCM_Jobs::all() ) && array_key_exists( 'down-' . ( ADVCM_Jobs::UNSENT_CAP + 20 ), ADVCM_Jobs::all() ) );
 
+$GLOBALS['options'] = array();
+
+$running          = job( 'background', true );
+$running['state'] = 'running';
+ADVCM_Jobs::save( $running );
+
+for ( $i = 1; $i <= ADVCM_Jobs::UNSENT_CAP + 5; $i++ ) {
+	ADVCM_Jobs::save( job( 'burst-' . $i, false ) );
+}
+
+check( 'a running job is never pushed out of the buffer, however many clears follow it', array_key_exists( 'background', ADVCM_Jobs::all() ) );
+
 // -------------------------------------------------------------- what goes to Hawkeye
 
 $GLOBALS['options'] = array();

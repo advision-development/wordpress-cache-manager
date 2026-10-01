@@ -131,9 +131,14 @@ $plan = ADVCM_Runner::plan( array( 'scope' => 'all' ) );
 
 check( 'the plan runs in stage order whatever order the layers were registered in', 'object,css,nitro,host,cdn' === order_of( $plan ), order_of( $plan ) );
 
-$plan = ADVCM_Runner::plan( array( 'scope' => 'all', 'layers' => array( 'nitro', 'css' ) ) );
+$plan = ADVCM_Runner::plan( array( 'scope' => 'all', 'layers' => array( 'host', 'object' ) ) );
 
-check( 'and a request naming layers gets them in stage order, not in its own', 'css,nitro' === order_of( $plan ), order_of( $plan ) );
+check( 'and a request naming layers gets them in stage order, not in its own', 'object,host' === order_of( $plan ), order_of( $plan ) );
+
+$plan = ADVCM_Runner::plan( array( 'scope' => 'all', 'layers' => array( 'css' ) ) );
+
+check( 'a request naming builder CSS gets every layer that stores pages as well, so none serves pages linking to deleted CSS', 'css,nitro,host,cdn' === order_of( $plan ), order_of( $plan ) );
+check( 'but not the object cache before it, which stores no pages', false === strpos( order_of( $plan ), 'object' ) );
 
 // Two layers in one stage: the same order every time, by id.
 ADVCM_Runner::use_adapters(

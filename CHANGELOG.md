@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.2.2 — 2026-10-01
+
+- **How old is a page's cache**, on the screen: one request to the page, what each layer says, and
+  the age — exact from `Age`, 0 on a `MISS`, "at most" since this plugin's last clear when the host
+  only says `HIT`, otherwise "unknown". It never invents a number.
+- **Security**, from an adversarial review:
+  - The admin-bar "Clear the whole site" never asked first: its `onclick` came out of the admin
+    bar's `esc_js()` as a syntax error. It is a listener now.
+  - The package URL check is the exact shape of a release; `%2e%2e` got past the old `..` check.
+  - Releases are built only from commits on `main`, with actions pinned to commits, a read-only
+    build and a separate publish job.
+  - Editors can no longer choose layers; a builder layer always brings the page-storing ones.
+  - The whole-site gap and a new limit of 10 page clears a minute per person no longer live in the
+    job history, which a burst of small clears could empty; a running job is never evicted from it.
+  - URL lists are capped in size and line length, and refusals are stored as a bounded few.
+  - `footprint.json` no longer ships inside the plugin, where every site would serve it.
+  - The warm-up goes through WordPress's HTTP API, so a site's proxy and blocking settings apply.
+  - A dead job lock is taken over by compare-and-swap, so two requests cannot both run it.
+  - Error messages shown on the screen no longer carry server paths.
+  - The auto-update docblock said the opposite of what the code does; it now says what it trusts.
+- A finished job no longer leaves its cron event behind, which on a site whose cron never wakes
+  would have accumulated one per job.
+
 ## 0.2.1 — 2026-10-01
 
 - **A background clear waited for ever where the site cannot wake its own cron.** WordPress fires
