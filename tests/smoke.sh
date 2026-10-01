@@ -213,7 +213,7 @@ fi
 # The menu is CacheManager; and "Leave NitroPack as it is" is offered only where NitroPack is,
 # which this site does not have.
 clear_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=clear")"
-if grep -q ">CacheManager<" <<< "${clear_tab}" && ! grep -q "Adv Cache" <<< "${clear_tab}" && ! grep -q 'name="skip_nitropack"' <<< "${clear_tab}"; then
+if grep -q ">CacheManager<" <<< "${clear_tab}" && ! grep -q "Adv Cache" <<< "${clear_tab}" && ! grep -q 'name="nitropack"' <<< "${clear_tab}"; then
 	pass "the menu reads CacheManager, and no NitroPack option where there is no NitroPack"
 else
 	fail "the menu label or the NitroPack option is wrong"

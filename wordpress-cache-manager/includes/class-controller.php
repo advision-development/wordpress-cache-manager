@@ -229,19 +229,29 @@ final class ADVCM_Controller {
 			$request['layers'] = array_values( array_intersect( array_map( 'strval', $input['layers'] ), $known ) );
 		}
 
-		// Leaving NitroPack out of a whole-site clear: open to everyone who can clear, since it does
-		// less, not more. NitroPack is the one layer that may be left out: it serves pages with CSS
-		// it combined and hosts itself, so it is not left pointing at Elementor files a clear just
-		// deleted — which is why the page caches cannot be left out the same way.
-		if ( 'all' === $scope && ! empty( $input['skip_nitropack'] ) ) {
-			$request['options']['except'] = array( 'nitropack' );
+		// What a whole-site clear does to NitroPack is one choice, not two checkboxes: "leave it" and
+		// "purge it" were separate boxes that could both be ticked, and the clear then left NitroPack
+		// alone and dropped the purge without a word. Now exactly one of three arrives.
+		//
+		// - invalidate: the default, and what anything unrecognised becomes.
+		// - leave: open to everyone who can clear, since it does less, not more. NitroPack is the
+		//   one layer that may be left out: it serves pages with CSS it combined and hosts itself,
+		//   so it is not left pointing at Elementor files a clear just deleted — which is why the
+		//   page caches cannot be left out the same way.
+		// - purge: administrators only; anyone else asking gets the default.
+		if ( 'all' === $scope && isset( $input['nitropack'] ) ) {
+			// A string or nothing: an array (two answers at once) is no answer, and casting one
+			// would also raise a warning on PHP 8.
+			$choice = is_string( $input['nitropack'] ) ? $input['nitropack'] : '';
+
+			if ( 'leave' === $choice ) {
+				$request['options']['except'] = array( 'nitropack' );
+			} elseif ( 'purge' === $choice && $hard ) {
+				$request['options']['nitropack_mode'] = 'purge';
+			}
 		}
 
 		if ( $hard ) {
-			if ( isset( $input['nitropack_mode'] ) && 'purge' === $input['nitropack_mode'] ) {
-				$request['options']['nitropack_mode'] = 'purge';
-			}
-
 			if ( ! empty( $input['override_hold'] ) ) {
 				$request['options']['override_hold'] = true;
 			}
