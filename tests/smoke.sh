@@ -208,6 +208,15 @@ else
 	fail "the admin bar's whole-site clear has no working confirmation"
 fi
 
+# The menu is CacheManager; and "Leave NitroPack as it is" is offered only where NitroPack is,
+# which this site does not have.
+clear_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=clear")"
+if grep -q ">CacheManager<" <<< "${clear_tab}" && ! grep -q "Adv Cache" <<< "${clear_tab}" && ! grep -q 'name="skip_nitropack"' <<< "${clear_tab}"; then
+	pass "the menu reads CacheManager, and no NitroPack option where there is no NitroPack"
+else
+	fail "the menu label or the NitroPack option is wrong"
+fi
+
 # Status lists only what a clear runs here: Elementor is installed, WP Rocket and NitroPack are not.
 status="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=status")"
 if grep -q "<strong>Elementor CSS</strong>" <<< "${status}" && ! grep -q "WP Rocket" <<< "${status}" && ! grep -q "NitroPack" <<< "${status}" && ! grep -q "not installed" <<< "${status}"; then
@@ -295,7 +304,9 @@ wpeval "${WORK}/scan.php"
 
 docker exec "${WP}" bash -c "cat /tmp/php-errors.log 2>/dev/null" > "${WORK}/errors.log" || true
 
-if grep -iE "advcm|wordpress-cache-manager" "${WORK}/errors.log" | grep -viE "Deprecated" >/dev/null; then
+# Deprecations count too: production runs a newer PHP than either suite version, and a
+# deprecation there is a fatal in the next one.
+if grep -iE "advcm|wordpress-cache-manager" "${WORK}/errors.log" >/dev/null; then
 	fail "the PHP error log names this plugin:"
 	grep -iE "advcm|wordpress-cache-manager" "${WORK}/errors.log" | head -10
 else

@@ -20,7 +20,8 @@ jobs:
         # 7.4 is the floor the plugin header claims. A grep for PHP 8-only syntax in
         # build.sh is not the same as running the suite on 7.4, which the scanners
         # learned by shipping without it.
-        php: [ '7.4', '8.3' ]
+        # 8.4 because production runs it; a deprecation there is a fatal in the next one.
+        php: [ '7.4', '8.3', '8.4' ]
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5

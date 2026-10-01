@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Run the suite, or build, inside PHP containers rather than a PHP installed on this machine.
-# The same two versions CI runs: 7.4 is the floor the plugin header claims, 8.3 is current.
+# The same versions CI runs: 7.4 is the floor the plugin header claims, 8.4 is what production runs.
 #
 #   ./tests/docker.sh            # the suite on 7.4 and 8.3
 #   ./tests/docker.sh build      # ./build.sh, to see the zip the release would publish
@@ -21,7 +21,7 @@ fi
 
 STATUS=0
 
-for version in 7.4 8.3; do
+for version in 7.4 8.3 8.4; do
 	echo "######## PHP ${version}"
 	docker run --rm -v "${ROOT}":/app -w /app "php:${version}-cli" ./tests/run.sh || STATUS=1
 done

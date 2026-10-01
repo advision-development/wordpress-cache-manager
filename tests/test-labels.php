@@ -15,7 +15,8 @@ require __DIR__ . '/bootstrap.php';
 $source = file_get_contents( ADVCM_DIR . 'includes/class-screen.php' );
 
 check( 'no menu or title says only "Cache"', false === strpos( $source, "__( 'Cache', 'advcm' )" ) );
-check( 'the admin bar and the Tools entry say Adv Cache', 2 === substr_count( $source, "__( 'Adv Cache', 'advcm' )" ), (string) substr_count( $source, "__( 'Adv Cache', 'advcm' )" ) );
+check( 'the admin bar and the Tools entry say CacheManager', 2 === substr_count( $source, "__( 'CacheManager', 'advcm' )" ), (string) substr_count( $source, "__( 'CacheManager', 'advcm' )" ) );
+check( 'and the old label is gone', false === strpos( $source, "__( 'Adv Cache', 'advcm' )" ) );
 check( 'and the screen and its page title name the plugin', 2 === substr_count( $source, "'Advision Cache Management', 'advcm' )" ) );
 
 finish();

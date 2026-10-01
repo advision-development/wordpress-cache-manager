@@ -229,6 +229,14 @@ final class ADVCM_Controller {
 			$request['layers'] = array_values( array_intersect( array_map( 'strval', $input['layers'] ), $known ) );
 		}
 
+		// Leaving NitroPack out of a whole-site clear: open to everyone who can clear, since it does
+		// less, not more. NitroPack is the one layer that may be left out: it serves pages with CSS
+		// it combined and hosts itself, so it is not left pointing at Elementor files a clear just
+		// deleted — which is why the page caches cannot be left out the same way.
+		if ( 'all' === $scope && ! empty( $input['skip_nitropack'] ) ) {
+			$request['options']['except'] = array( 'nitropack' );
+		}
+
 		if ( $hard ) {
 			if ( isset( $input['nitropack_mode'] ) && 'purge' === $input['nitropack_mode'] ) {
 				$request['options']['nitropack_mode'] = 'purge';

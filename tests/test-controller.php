@@ -86,6 +86,18 @@ check( 'a URL list larger than the cap is refused before it is parsed or stored'
 
 // ------------------------------------------------------------------ the costly options
 
+$r = ADVCM_Controller::request( array( 'scope' => 'all', 'skip_nitropack' => '1' ), false );
+
+check( 'anyone who can clear may leave NitroPack out of a whole-site clear', array( 'nitropack' ) === $r['options']['except'] );
+
+$r = ADVCM_Controller::request( array( 'scope' => 'urls', 'urls' => '/a/', 'skip_nitropack' => '1' ), false );
+
+check( 'but not out of a per-page clear, where NitroPack is the point', ! isset( $r['options']['except'] ) );
+
+$r = ADVCM_Controller::request( array( 'scope' => 'all', 'except' => array( 'wp-engine' ) ), true );
+
+check( 'and nothing else can be left out, by anyone', ! isset( $r['options']['except'] ) );
+
 $costly = array( 'nitropack_mode' => 'purge', 'override_hold' => '1' );
 
 $r = ADVCM_Controller::request( $costly, false );

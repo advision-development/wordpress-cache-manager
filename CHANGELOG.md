@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.4 — 2026-10-01
+
+- **Clear the whole site without NitroPack.** A whole-site clear on a NitroPack site sets it
+  rebuilding every page — measured on a large site, purging the host cache page by page as it goes
+  for a long while after. "Leave NitroPack as it is" clears everything else and lets NitroPack keep
+  serving its optimized copies. Offered only where NitroPack is installed, to anyone who can clear;
+  the screen says what it costs: pages NitroPack holds keep their old version until it refreshes
+  them itself. History shows the step as left out on request.
+- The menu and the admin bar read **CacheManager**.
+- CI and `tests/docker.sh` also run on PHP 8.4, which production runs.
+
 ## 0.2.3 — 2026-10-01
 
 - **The screen is four tabs**: Status (the layers a clear runs here, when each was last cleared,

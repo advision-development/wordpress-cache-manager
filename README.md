@@ -8,8 +8,8 @@ The design spec lives in the team's internal workspace, not in this public repos
 
 ## Status
 
-**0.2.3.** Tools → Adv Cache, in four tabs — Status, Clear, Cache age, History — and the Adv
-Cache menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
+**0.2.4.** Tools → CacheManager, in four tabs — Status, Clear, Cache age, History — and the
+CacheManager menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
 time the screen opens: install a cache plugin later and it appears on the next load. Talking to Hawkeye is a later phase.
 
 ## The order
@@ -49,7 +49,7 @@ a button to finish it now.
 
 ## How old is a page's cache
 
-Tools → Adv Cache → *How old is a page's cache*: the site requests the page once and reads what
+Tools → CacheManager → *Cache age*: the site requests the page once and reads what
 each layer says — Cloudflare, the host cache, NitroPack. The age is exact where a layer sends
 `Age`, 0 on a `MISS`, "at most N" since this plugin last cleared it when a layer only says `HIT`
 (WP Engine sends no `Age`), and otherwise "unknown" with the most it can be. It never guesses.
