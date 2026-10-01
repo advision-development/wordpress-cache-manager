@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.3 — 2026-10-01
+
+- **The screen is four tabs**: Status (the layers a clear runs here, when each was last cleared,
+  whether the site can wake its cron), Clear (the two forms and their modes), Cache age (the
+  per-page check) and History (recent clears, with the progress of a running one). A press lands
+  on History with its job open; a refused one on Clear with the reason.
+- **Only what runs is listed.** Status shows only the layers a clear actually runs on this site; a
+  plugin that is not installed is not mentioned. History follows the same rule, but keeps a layer
+  that was there when a clear was planned and gone by its step.
+- The list is computed every time the screen opens, so a cache plugin installed or removed after
+  this one shows there on the next load.
+- While a clear runs, every tab keeps moving it; only History reloads, so a list of URLs being
+  typed on Clear is not lost.
+
 ## 0.2.2 — 2026-10-01
 
 - **How old is a page's cache**, on the screen: one request to the page, what each layer says, and

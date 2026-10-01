@@ -144,6 +144,8 @@ final class ADVCM_Screen {
 			delete_transient( 'advcm_notice_' . get_current_user_id() );
 		}
 
+		$tab = self::current_tab( $open, (bool) $notice );
+
 		echo '<div class="wrap">';
 		echo '<h1>' . esc_html__( 'Advision Cache Management', 'advcm' ) . '</h1>';
 
@@ -151,26 +153,143 @@ final class ADVCM_Screen {
 			echo '<div class="notice notice-warning"><p>' . esc_html( $notice ) . '</p></div>';
 		}
 
-		self::render_last_error();
-		self::render_loopback();
+		self::render_tabs( $tab );
 
-		// Each section on its own: one that throws prints a notice and the others still render,
-		// so the screen that reports faults is not the first thing a fault takes away.
-		foreach ( array(
-			'probe' => function () { self::render_probe(); },
-			'plan'  => function () { self::render_plan(); },
-			'forms' => function () use ( $hard ) { self::render_forms( $hard ); },
-			'jobs'  => function () use ( $open ) { self::render_jobs( $open ); },
-		) as $section => $render ) {
-			try {
-				$render();
-			} catch ( Throwable $e ) {
-				ADVCM_Safe::report( 'screen:' . $section, $e );
-				echo '<div class="notice notice-error inline"><p>' . esc_html( sprintf( __( 'This part of the screen could not be shown (%s). The error is in the PHP error log.', 'advcm' ), $section ) ) . '</p></div>';
+		$sections = array(
+			'status'  => function () {
+				self::render_last_error();
+				self::render_loopback();
+				self::render_plan();
+			},
+			'clear'   => function () use ( $hard ) {
+				self::render_forms( $hard );
+			},
+			'check'   => function () {
+				self::render_probe();
+			},
+			'history' => function () use ( $open ) {
+				self::render_jobs( $open );
+			},
+		);
+
+		// The tab on its own: if it throws it prints a notice, and the tabs above still lead to
+		// the others — the screen that reports faults is not the first thing a fault takes away.
+		try {
+			$sections[ $tab ]();
+		} catch ( Throwable $e ) {
+			ADVCM_Safe::report( 'screen:' . $tab, $e );
+			echo '<div class="notice notice-error inline"><p>' . esc_html( sprintf( __( 'This tab could not be shown (%s). The error is in the PHP error log.', 'advcm' ), $tab ) ) . '</p></div>';
+		}
+
+		ADVCM_Safe::run(
+			'screen:tick',
+			function () use ( $tab ) {
+				self::render_tick( 'history' === $tab );
+			}
+		);
+
+		echo '</div>';
+	}
+
+	/** The tabs, in order, by id. */
+	const TABS = array( 'status', 'clear', 'check', 'history' );
+
+	/**
+	 * The tab to show: the one asked for, or History when a press has just landed with its job,
+	 * or Clear when a press was refused, or Status.
+	 *
+	 * @param string $open   A job just started.
+	 * @param bool   $notice Whether a refusal is waiting to be read.
+	 * @return string
+	 */
+	private static function current_tab( $open, $notice ) {
+		$asked = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification -- choosing a tab changes nothing.
+
+		if ( in_array( $asked, self::TABS, true ) ) {
+			return $asked;
+		}
+
+		if ( '' !== $open ) {
+			return 'history';
+		}
+
+		return $notice ? 'clear' : 'status';
+	}
+
+	/**
+	 * A tab's address.
+	 *
+	 * @param string $tab Tab id.
+	 * @return string
+	 */
+	public static function tab_url( $tab ) {
+		return add_query_arg( array( 'page' => self::SLUG, 'tab' => $tab ), admin_url( 'tools.php' ) );
+	}
+
+	/**
+	 * The tab bar, and a line on every other tab while a clear is running.
+	 *
+	 * @param string $current The tab shown.
+	 * @return void
+	 */
+	private static function render_tabs( $current ) {
+		$labels = array(
+			'status'  => __( 'Status', 'advcm' ),
+			'clear'   => __( 'Clear', 'advcm' ),
+			'check'   => __( 'Cache age', 'advcm' ),
+			'history' => __( 'History', 'advcm' ),
+		);
+
+		echo '<nav class="nav-tab-wrapper" style="margin-bottom:12px">';
+
+		foreach ( self::TABS as $tab ) {
+			echo '<a href="' . esc_url( self::tab_url( $tab ) ) . '" class="nav-tab' . ( $current === $tab ? ' nav-tab-active' : '' ) . '">' . esc_html( $labels[ $tab ] ) . '</a>';
+		}
+
+		echo '</nav>';
+
+		if ( 'history' !== $current && self::running_job() ) {
+			echo '<div class="notice notice-info inline"><p>' . esc_html__( 'A clear is running.', 'advcm' ) . ' <a href="' . esc_url( self::tab_url( 'history' ) ) . '">' . esc_html__( 'See its progress', 'advcm' ) . '</a></p></div>';
+		}
+	}
+
+	/**
+	 * Whether any job is running.
+	 *
+	 * @return bool
+	 */
+	private static function running_job() {
+		foreach ( ADVCM_Jobs::all() as $job ) {
+			if ( 'running' === $job['state'] ) {
+				return true;
 			}
 		}
 
-		echo '</div>';
+		return false;
+	}
+
+	/**
+	 * While a clear runs, the screen moves it — on whichever tab is open.
+	 *
+	 * An admin-ajax call runs whatever step is due: the cron a site behind authentication never
+	 * gets. On History the page then reloads to show it; on the other tabs it only keeps calling,
+	 * so a list of URLs being typed on Clear is not thrown away by a reload.
+	 *
+	 * @param bool $reload Whether to reload after each call.
+	 * @return void
+	 */
+	private static function render_tick( $reload ) {
+		if ( ! self::running_job() ) {
+			return;
+		}
+
+		if ( $reload ) {
+			echo '<p class="description">' . esc_html__( 'While a clear is running this page moves it along and refreshes every 15 seconds. You can also leave; WP-Cron carries on where it can.', 'advcm' ) . '</p>';
+		}
+
+		$then = $reload ? 'setTimeout(function(){window.location.reload();},15000);' : 'setTimeout(tick,15000);';
+
+		echo '<script>(function(){var tick=function(){var d=new FormData();d.append("action",' . wp_json_encode( ADVCM_Controller::TICK ) . ');d.append("_ajax_nonce",' . wp_json_encode( wp_create_nonce( ADVCM_Controller::TICK ) ) . ');var done=function(){' . $then . '};fetch(' . wp_json_encode( admin_url( 'admin-ajax.php' ) ) . ',{method:"POST",body:d,credentials:"same-origin"}).then(done,done);};tick();})();</script>';
 	}
 
 	/** The nonce action for the cache-age check. */
@@ -193,6 +312,7 @@ final class ADVCM_Screen {
 		echo '<h2>' . esc_html__( 'How old is a page\'s cache', 'advcm' ) . '</h2>';
 		echo '<form method="get" action="' . esc_url( admin_url( 'tools.php' ) ) . '">';
 		echo '<input type="hidden" name="page" value="' . esc_attr( self::SLUG ) . '" />';
+		echo '<input type="hidden" name="tab" value="check" />';
 		wp_nonce_field( self::PROBE, '_wpnonce', false );
 		echo '<p><input type="text" name="advcm_probe" class="regular-text code" placeholder="/analysis/" value="' . esc_attr( $asked ) . '" /> ';
 		submit_button( __( 'Check', 'advcm' ), 'secondary', '', false );
@@ -319,8 +439,8 @@ final class ADVCM_Screen {
 	 * @return void
 	 */
 	private static function render_plan() {
-		echo '<h2>' . esc_html__( 'What a full clear does here, in order', 'advcm' ) . '</h2>';
-		echo '<p>' . esc_html__( 'Checked just now. Each layer is cleared only after the one beneath it, so none re-caches stale content from another. A layer that is not on this site is skipped and the rest still run.', 'advcm' ) . '</p>';
+		echo '<h2>' . esc_html__( 'The layers a clear runs on this site, in order', 'advcm' ) . '</h2>';
+		echo '<p>' . esc_html__( 'Checked as this page loaded: install or remove a cache plugin and it shows here the next time the page opens. Each layer is cleared only after the one beneath it, so none re-caches stale content from another, and each is checked again right before its step.', 'advcm' ) . '</p>';
 
 		$adapters = array();
 
@@ -331,26 +451,47 @@ final class ADVCM_Screen {
 		echo '<table class="widefat striped"><thead><tr>';
 		echo '<th>' . esc_html__( 'Order', 'advcm' ) . '</th>';
 		echo '<th>' . esc_html__( 'Layer', 'advcm' ) . '</th>';
-		echo '<th>' . esc_html__( 'On this site', 'advcm' ) . '</th>';
 		echo '<th>' . esc_html__( 'Last cleared', 'advcm' ) . '</th>';
 		echo '<th>' . esc_html__( 'Details', 'advcm' ) . '</th>';
 		echo '</tr></thead><tbody>';
 
-		$last = ADVCM_Jobs::layers();
+		$last     = ADVCM_Jobs::layers();
+		$reported = array();
+		$shown    = 0;
 
 		foreach ( ADVCM_Runner::plan( array( 'scope' => 'all' ) ) as $step ) {
-			$will = 'run' === $step['action'];
+			if ( 'run' !== $step['action'] ) {
+				// Not a row: only what a clear actually runs here is listed. A layer that is on
+				// the site but only reported (Bricks) gets a line below; one that is not on the
+				// site is not mentioned at all — asked for, so the screen describes this site
+				// rather than everything the plugin knows.
+				if ( 0 === strpos( $step['message'], 'report only' ) ) {
+					$reported[] = $step;
+				}
+
+				continue;
+			}
+
+			$shown++;
 
 			echo '<tr>';
 			echo '<td>' . esc_html( $step['stage'] . ' · ' . ADVCM_Stages::label( $step['stage'] ) ) . '</td>';
-			echo '<td>' . esc_html( $step['label'] ) . '</td>';
-			echo '<td>' . ( $will ? '<strong>' . esc_html__( 'will be cleared', 'advcm' ) . '</strong>' : esc_html( __( 'skipped', 'advcm' ) . ' — ' . $step['message'] ) ) . '</td>';
+			echo '<td><strong>' . esc_html( $step['label'] ) . '</strong></td>';
 			echo '<td>' . esc_html( self::last_line( isset( $last[ $step['id'] ] ) ? $last[ $step['id'] ] : null ) ) . '</td>';
-			echo '<td>' . esc_html( self::info_line( isset( $adapters[ $step['id'] ] ) ? $adapters[ $step['id'] ] : null, $will ) ) . '</td>';
+			echo '<td>' . esc_html( self::info_line( isset( $adapters[ $step['id'] ] ) ? $adapters[ $step['id'] ] : null, true ) ) . '</td>';
 			echo '</tr>';
 		}
 
+		if ( 0 === $shown ) {
+			echo '<tr><td colspan="4">' . esc_html__( 'None of the layers this plugin knows is on this site, so a clear has nothing to do here.', 'advcm' ) . '</td></tr>';
+		}
+
 		echo '</tbody></table>';
+
+		foreach ( $reported as $step ) {
+			echo '<p><strong>' . esc_html( $step['label'] ) . '</strong> — ' . esc_html__( 'on this site, shown and never cleared.', 'advcm' ) . ' ' . esc_html( self::info_line( isset( $adapters[ $step['id'] ] ) ? $adapters[ $step['id'] ] : null, true ) ) . '</p>';
+		}
+
 	}
 
 	/**
@@ -534,19 +675,12 @@ final class ADVCM_Screen {
 			return;
 		}
 
-		$moving = false;
-
 		foreach ( $jobs as $job ) {
 			$who     = self::who( (int) $job['by'], isset( $job['source'] ) ? $job['source'] : '' );
 			$what    = 'all' === $job['scope'] ? __( 'whole site', 'advcm' ) : implode( ', ', $job['urls'] );
 			$mode    = ADVCM_Modes::get( isset( $job['mode'] ) ? $job['mode'] : ADVCM_Modes::FAST );
 			$summary = sprintf( '%s — %s — %s — %s — %s', gmdate( 'Y-m-d H:i', (int) $job['created'] ) . ' UTC', $who, $what, $mode['label'], $job['state'] );
 			$running = 'running' === $job['state'];
-
-			// Stuck ones too: the screen's own tick is what moves a job the site's cron never will.
-			if ( $running ) {
-				$moving = true;
-			}
 
 			echo '<details' . ( ( $open === $job['id'] || $running ) ? ' open' : '' ) . ' style="margin:0 0 8px">';
 			echo '<summary>' . esc_html( $summary ) . '</summary>';
@@ -571,6 +705,13 @@ final class ADVCM_Screen {
 			echo '<table class="widefat striped" style="margin-top:6px"><tbody>';
 
 			foreach ( $job['steps'] as $step ) {
+				// The same rule as Status: a layer that was not on the site when the clear was
+				// planned is not a row. A layer that was there at the plan and gone by its step
+				// still is — it says the site changed under the clear.
+				if ( 'skip' === $step['action'] && 'skipped' === $step['status'] ) {
+					continue;
+				}
+
 				echo '<tr>';
 				echo '<td>' . esc_html( $step['stage'] . ' · ' . $step['label'] ) . '</td>';
 				echo '<td><strong>' . esc_html( $step['status'] ) . '</strong></td>';
@@ -582,13 +723,5 @@ final class ADVCM_Screen {
 			echo '</tbody></table></details>';
 		}
 
-		if ( $moving ) {
-			// A background job is moving: show its progress without anybody pressing reload.
-			// The screen moves the job itself, in the background of the page: an admin-ajax call
-			// runs whatever step is due — the cron a site behind authentication never gets — and
-			// the page reloads to show it. The order and the pauses are the job's own.
-			echo '<p class="description">' . esc_html__( 'While a clear is running this page moves it along and refreshes every 15 seconds. You can also leave; WP-Cron carries on where it can.', 'advcm' ) . '</p>';
-			echo '<script>(function(){var d=new FormData();d.append("action",' . wp_json_encode( ADVCM_Controller::TICK ) . ');d.append("_ajax_nonce",' . wp_json_encode( wp_create_nonce( ADVCM_Controller::TICK ) ) . ');var done=function(){setTimeout(function(){window.location.reload();},15000);};fetch(' . wp_json_encode( admin_url( 'admin-ajax.php' ) ) . ',{method:"POST",body:d,credentials:"same-origin"}).then(done,done);})();</script>';
-		}
 	}
 }
