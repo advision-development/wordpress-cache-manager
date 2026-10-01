@@ -594,17 +594,29 @@ final class ADVCM_Screen {
 
 		$found = null !== $nitro ? ADVCM_Safe::run( 'screen:nitropack', array( $nitro, 'detect' ), array( 'present' => false ) ) : array( 'present' => false );
 
+		// One choice, three answers, so it cannot be asked for two contradictory things at once.
 		if ( ! empty( $found['present'] ) ) {
-			echo '<p><label><input type="checkbox" name="skip_nitropack" value="1" /> ';
-			echo '<strong>' . esc_html__( 'Leave NitroPack as it is', 'advcm' ) . '</strong> — ';
-			echo esc_html__( 'everything else is cleared, and NitroPack keeps serving its optimized copies instead of rebuilding every page, which on a large site takes hours and purges the host cache page by page as it goes. Pages NitroPack holds keep showing what they showed until it refreshes them itself, so use this when the change is somewhere NitroPack does not hold: pages it does not optimize, the object cache, the host cache.', 'advcm' );
-			echo '</label></p>';
+			$choices = array(
+				'invalidate' => array( __( 'Invalidate', 'advcm' ), __( 'NitroPack keeps serving its optimized copies while it rebuilds every page in the background. On a large site the rebuild takes hours and purges the host cache page by page as it goes.', 'advcm' ) ),
+				'leave'      => array( __( 'Leave as it is', 'advcm' ), __( 'everything else is cleared and NitroPack is not touched. Pages NitroPack holds keep showing what they showed until it refreshes them itself, so use this when the change is somewhere NitroPack does not hold: pages it does not optimize, the object cache, the host cache.', 'advcm' ) ),
+			);
+
+			if ( $hard ) {
+				$choices['purge'] = array( __( 'Purge', 'advcm' ), __( 'every page is served un-optimized until NitroPack rebuilds it, which on a large site takes hours. Administrators only.', 'advcm' ) );
+			}
+
+			echo '<fieldset style="margin:8px 0"><legend><strong>' . esc_html__( 'NitroPack', 'advcm' ) . '</strong></legend>';
+
+			foreach ( $choices as $value => $choice ) {
+				echo '<p style="margin:4px 0"><label><input type="radio" name="nitropack" value="' . esc_attr( $value ) . '"' . ( 'invalidate' === $value ? ' checked' : '' ) . ' /> ';
+				echo '<strong>' . esc_html( $choice[0] ) . '</strong>' . ( 'invalidate' === $value ? ' <em>(' . esc_html__( 'recommended', 'advcm' ) . ')</em>' : '' ) . ' — ' . esc_html( $choice[1] );
+				echo '</label></p>';
+			}
+
+			echo '</fieldset>';
 		}
 
 		if ( $hard ) {
-			echo '<p><label><input type="checkbox" name="nitropack_mode" value="purge" /> ';
-			echo esc_html__( 'Purge NitroPack instead of invalidating it. Every page is then served un-optimized until NitroPack rebuilds it, which on a large site takes hours.', 'advcm' );
-			echo '</label></p>';
 			echo '<p><label><input type="checkbox" name="override_hold" value="1" /> ';
 			echo esc_html__( 'Clear the page caches even if builder CSS fails. They may then store unstyled pages.', 'advcm' );
 			echo '</label></p>';

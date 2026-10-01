@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.5 — 2026-10-01
+
+- **The two NitroPack options could be ticked together and contradict each other.** "Leave
+  NitroPack as it is" and "Purge NitroPack instead of invalidating it" were separate checkboxes;
+  with both ticked the clear left NitroPack alone and dropped the purge without saying so. They are
+  now one choice of three — **Invalidate** (default, recommended), **Leave as it is**, **Purge**
+  (administrators only) — and the server reads exactly one value: two at once, an unknown one, or a
+  purge asked for by somebody who may not, all become the default. The choice appears only where
+  NitroPack is installed, where before the purge box showed to administrators on any site.
+
 ## 0.2.4 — 2026-10-01
 
 - **Clear the whole site without NitroPack.** A whole-site clear on a NitroPack site sets it

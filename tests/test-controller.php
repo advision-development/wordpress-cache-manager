@@ -86,31 +86,50 @@ check( 'a URL list larger than the cap is refused before it is parsed or stored'
 
 // ------------------------------------------------------------------ the costly options
 
-$r = ADVCM_Controller::request( array( 'scope' => 'all', 'skip_nitropack' => '1' ), false );
+// ---------------------------------------------------------------- NitroPack, one choice
+
+$r = ADVCM_Controller::request( array( 'scope' => 'all' ), false );
+
+check( 'by default NitroPack is invalidated: nothing is left out and nothing purged', ! isset( $r['options']['except'] ) && ! isset( $r['options']['nitropack_mode'] ) );
+
+$r = ADVCM_Controller::request( array( 'scope' => 'all', 'nitropack' => 'leave' ), false );
 
 check( 'anyone who can clear may leave NitroPack out of a whole-site clear', array( 'nitropack' ) === $r['options']['except'] );
 
-$r = ADVCM_Controller::request( array( 'scope' => 'urls', 'urls' => '/a/', 'skip_nitropack' => '1' ), false );
+$r = ADVCM_Controller::request( array( 'scope' => 'all', 'nitropack' => 'purge' ), true );
 
-check( 'but not out of a per-page clear, where NitroPack is the point', ! isset( $r['options']['except'] ) );
+check( 'an administrator may purge it', 'purge' === $r['options']['nitropack_mode'] && ! isset( $r['options']['except'] ) );
+
+$r = ADVCM_Controller::request( array( 'scope' => 'all', 'nitropack' => 'purge' ), false );
+
+check( 'anyone else asking to purge gets the default, not the purge', ! isset( $r['options']['nitropack_mode'] ) && ! isset( $r['options']['except'] ) );
+
+$r = ADVCM_Controller::request( array( 'scope' => 'all', 'nitropack' => array( 'leave', 'purge' ) ), true );
+
+check( 'two answers at once is not an answer: the default, never both', ! isset( $r['options']['nitropack_mode'] ) && ! isset( $r['options']['except'] ) );
+
+$r = ADVCM_Controller::request( array( 'scope' => 'all', 'skip_nitropack' => '1', 'nitropack_mode' => 'purge' ), true );
+
+check( 'and the two old checkboxes, sent together, do nothing contradictory: they are not read any more', ! isset( $r['options']['nitropack_mode'] ) && ! isset( $r['options']['except'] ) );
+
+$r = ADVCM_Controller::request( array( 'scope' => 'urls', 'urls' => '/a/', 'nitropack' => 'leave' ), true );
+
+check( 'a per-page clear has no NitroPack choice: NitroPack is the point of it', ! isset( $r['options']['except'] ) && ! isset( $r['options']['nitropack_mode'] ) );
+
+$r = ADVCM_Controller::request( array( 'scope' => 'all', 'nitropack' => 'whatever' ), true );
+
+check( 'an unknown choice is the default', ! isset( $r['options']['nitropack_mode'] ) && ! isset( $r['options']['except'] ) );
 
 $r = ADVCM_Controller::request( array( 'scope' => 'all', 'except' => array( 'wp-engine' ) ), true );
 
 check( 'and nothing else can be left out, by anyone', ! isset( $r['options']['except'] ) );
 
-$costly = array( 'nitropack_mode' => 'purge', 'override_hold' => '1' );
+$r = ADVCM_Controller::request( array( 'override_hold' => '1' ), false );
 
-$r = ADVCM_Controller::request( $costly, false );
+check( 'overriding the hold is dropped for somebody without the stronger capability', ! isset( $r['options']['override_hold'] ) );
 
-check( 'a full NitroPack purge is dropped for somebody without the stronger capability', ! isset( $r['options']['nitropack_mode'] ) );
-check( 'and so is overriding the hold', ! isset( $r['options']['override_hold'] ) );
+$r = ADVCM_Controller::request( array( 'override_hold' => '1' ), true );
 
-$r = ADVCM_Controller::request( $costly, true );
-
-check( 'and kept for somebody with it', 'purge' === $r['options']['nitropack_mode'] && true === $r['options']['override_hold'] );
-
-$r = ADVCM_Controller::request( array( 'nitropack_mode' => 'something-else' ), true );
-
-check( 'an unknown NitroPack mode is not passed through', ! isset( $r['options']['nitropack_mode'] ) );
+check( 'and kept for somebody with it', true === $r['options']['override_hold'] );
 
 finish();
