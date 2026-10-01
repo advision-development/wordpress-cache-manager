@@ -30,6 +30,9 @@ build.sh                   lint, PHP 7.4 gate, tests, zip
 **Use Docker, not a local PHP.** Do not install PHP on the machine to run these; `docker.sh` is
 the way. `run.sh` and `build.sh` are what CI calls, with PHP on its PATH.
 
+`./tests/smoke.sh` (and `PHP=7.4 ./tests/smoke.sh`) runs the plugin in a real WordPress with
+Elementor and WordPress Malware Quick Scan from its public release. Run it before a release.
+
 **Every guard here was mutation-tested** when it was written: break it, watch its suite fail.
 Counting `FAIL` lines is not enough — the `Throwable` guard's mutation fails by taking the whole
 suite down with a fatal (exit 255), which prints no `FAIL` at all. Read the exit code.
@@ -38,9 +41,23 @@ suite down with a fatal (exit 255), which prints no `FAIL` at all. Read the exit
 
 These are requirements, not preferences. Each was either asked for explicitly or measured.
 
-- **The order is fixed by stage number**, never by an adapter or a caller: builder assets, asset
-  optimizers, object cache, page cache plugins, host cache, NitroPack, CDN, warm. A caller asking
-  for some layers gets them in stage order.
+- **The order is fixed by stage number**, never by an adapter or a caller: object cache, builder
+  CSS, asset files, page cache plugin, NitroPack, host cache, warm-up, CDN. A caller asking for
+  some layers gets them in stage order. **NitroPack is before the host cache** because its drop-in
+  answers from PHP, behind WP Engine's Varnish — read from NitroPack's code, and the first version
+  had it the other way round.
+- **Nothing this plugin hooks may break a page.** Every `add_action`/`add_filter` goes through
+  `ADVCM_Safe` (a test fails on one that does not), every catch is `Throwable`, the bootstrap is
+  inside a try, and the screen renders each section on its own. This was asked for explicitly:
+  installing, running or using it must never produce a white screen or an error on the site.
+- **No pause from builder CSS through the host cache.** Pauses belong after the object cache and
+  before the CDN; `ADVCM_Modes` refuses any other placement, filtered or not.
+- **Background work is WP-Cron**, which is core and on every site. Not Action Scheduler: it is a
+  library some plugins bundle, not something a site from zero has.
+- **Everything written to a site is named `advcm`**, and `footprint.json` lists all of it; both
+  are tests. Never put exceptions for a scanner inside this plugin — a site that tells a scanner
+  what not to look at is what a compromised site does. Exceptions belong in the scanner or in
+  Hawkeye, anchored on the release checksums.
 - **Detect at run time.** An adapter's `detect()` runs right before its stage, not from a stored
   inventory. A plugin removed since the last inventory is `skipped: not installed`.
 - **Preflight before the first call**: which stages will run, in what order, which are skipped

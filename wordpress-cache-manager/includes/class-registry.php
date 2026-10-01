@@ -32,6 +32,7 @@ final class ADVCM_Registry {
 			new ADVCM_Adapter_Wp_Rocket(),
 			new ADVCM_Adapter_Wp_Engine(),
 			new ADVCM_Adapter_Nitropack(),
+			new ADVCM_Adapter_Warm(),
 		);
 
 		/**

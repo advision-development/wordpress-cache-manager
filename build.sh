@@ -55,7 +55,15 @@ rsync -a \
 echo "==> zipping"
 mkdir -p "${DIST}"
 ZIP="${DIST}/${SLUG}-${VERSION}.zip"
-rm -f "${ZIP}"
+SUMS="${DIST}/${SLUG}-${VERSION}.sha256"
+rm -f "${ZIP}" "${SUMS}"
+
+# One line per file in the package, paths as they are installed under wp-content/plugins/. A
+# scanner, or a person, can then tell whether a directory on a site is this release unmodified —
+# the only kind of recognition worth trusting, because a file the site carries saying "this is
+# Advision's" is something any site could write.
+echo "==> checksums"
+( cd "${STAGE}" && find "${SLUG}" -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum ) > "${SUMS}"
 
 ( cd "${STAGE}" && zip -qr "${ZIP}" "${SLUG}" -x '*.DS_Store' )
 

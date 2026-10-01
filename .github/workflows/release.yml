@@ -54,5 +54,6 @@ jobs:
         run: |
           gh release create "${GITHUB_REF_NAME}" \
             dist/wordpress-cache-manager-*.zip \
+            dist/wordpress-cache-manager-*.sha256 \
             --title "${GITHUB_REF_NAME#v}" \
             --generate-notes

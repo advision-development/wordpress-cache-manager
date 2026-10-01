@@ -1,6 +1,9 @@
 <?php
 /**
- * Tools → Cache, and the admin bar menu.
+ * Tools → Adv Cache, and the admin bar menu.
+ *
+ * Every label says whose it is. A menu reading only "Cache" sits beside WP Rocket's, NitroPack's
+ * and the host's own cache menus, and nobody can tell which one clears everything in order.
  *
  * The screen shows the plan before anybody presses anything: every layer this plugin knows, in
  * the order it would be cleared, and for each one whether it will run on this site or why not.
@@ -30,8 +33,8 @@ final class ADVCM_Screen {
 	 * @return void
 	 */
 	public static function register() {
-		add_action( 'admin_menu', array( __CLASS__, 'menu' ) );
-		add_action( 'admin_bar_menu', array( __CLASS__, 'admin_bar' ), 100 );
+		ADVCM_Safe::action( 'admin_menu', array( __CLASS__, 'menu' ) );
+		ADVCM_Safe::action( 'admin_bar_menu', array( __CLASS__, 'admin_bar' ), 100 );
 	}
 
 	/**
@@ -41,8 +44,8 @@ final class ADVCM_Screen {
 	 */
 	public static function menu() {
 		add_management_page(
-			__( 'Cache', 'advcm' ),
-			__( 'Cache', 'advcm' ),
+			__( 'Advision Cache Management', 'advcm' ),
+			__( 'Adv Cache', 'advcm' ),
 			ADVCM_Capabilities::PURGE,
 			self::SLUG,
 			array( __CLASS__, 'render' )
@@ -65,7 +68,7 @@ final class ADVCM_Screen {
 		$bar->add_node(
 			array(
 				'id'    => 'advcm',
-				'title' => __( 'Cache', 'advcm' ),
+				'title' => __( 'Adv Cache', 'advcm' ),
 				'href'  => admin_url( 'tools.php?page=' . self::SLUG ),
 			)
 		);
@@ -102,7 +105,7 @@ final class ADVCM_Screen {
 	 * @return string
 	 */
 	private static function site_warning() {
-		return __( 'Clear every cache layer on the whole site? Each page is rebuilt on its next visit, so the site is slower for a while. To refresh one page, use "Clear this page" on that page instead.', 'advcm' );
+		return __( 'Clear every cache layer on the whole site? Every page is rebuilt on its next visit, so the site is slower for a while and the server takes extra load — more so on a busy site. To refresh one page, use "Clear this page" on that page instead.', 'advcm' );
 	}
 
 	/**
@@ -124,17 +127,53 @@ final class ADVCM_Screen {
 		}
 
 		echo '<div class="wrap">';
-		echo '<h1>' . esc_html__( 'Cache', 'advcm' ) . '</h1>';
+		echo '<h1>' . esc_html__( 'Advision Cache Management', 'advcm' ) . '</h1>';
 
 		if ( $notice ) {
 			echo '<div class="notice notice-warning"><p>' . esc_html( $notice ) . '</p></div>';
 		}
 
-		self::render_plan();
-		self::render_forms( $hard );
-		self::render_jobs( $open );
+		self::render_last_error();
+
+		// Each section on its own: one that throws prints a notice and the others still render,
+		// so the screen that reports faults is not the first thing a fault takes away.
+		foreach ( array(
+			'plan'  => function () { self::render_plan(); },
+			'forms' => function () use ( $hard ) { self::render_forms( $hard ); },
+			'jobs'  => function () use ( $open ) { self::render_jobs( $open ); },
+		) as $section => $render ) {
+			try {
+				$render();
+			} catch ( Throwable $e ) {
+				ADVCM_Safe::report( 'screen:' . $section, $e );
+				echo '<div class="notice notice-error inline"><p>' . esc_html( sprintf( __( 'This part of the screen could not be shown (%s). The error is in the PHP error log.', 'advcm' ), $section ) ) . '</p></div>';
+			}
+		}
 
 		echo '</div>';
+	}
+
+	/**
+	 * The last fault the guards caught, if recent, so it is seen without reading a log.
+	 *
+	 * @return void
+	 */
+	private static function render_last_error() {
+		$last = get_option( ADVCM_Safe::LAST_ERROR, array() );
+
+		if ( ! is_array( $last ) || empty( $last['at'] ) || time() - (int) $last['at'] > DAY_IN_SECONDS ) {
+			return;
+		}
+
+		echo '<div class="notice notice-warning inline"><p>' . esc_html(
+			sprintf(
+				/* translators: 1: time, 2: hook, 3: error. */
+				__( 'Caught at %1$s UTC in %2$s, without affecting the page: %3$s', 'advcm' ),
+				gmdate( 'Y-m-d H:i', (int) $last['at'] ),
+				$last['where'],
+				$last['what']
+			)
+		) . '</p></div>';
 	}
 
 	/**
@@ -245,6 +284,10 @@ final class ADVCM_Screen {
 	private static function render_forms( $hard ) {
 		$action = esc_url( ADVCM_Controller::url() );
 
+		if ( ! ADVCM_Modes::background_available() ) {
+			echo '<div class="notice notice-info inline"><p>' . esc_html__( 'WP-Cron is turned off on this site (DISABLE_WP_CRON), so only Fast is offered: the background modes would wait for an event nothing fires. If a server cron calls wp-cron.php, the advcm_background_available filter turns them back on.', 'advcm' ) . '</p></div>';
+		}
+
 		echo '<h2>' . esc_html__( 'Clear specific pages', 'advcm' ) . '</h2>';
 		echo '<form method="post" action="' . $action . '">'; // phpcs:ignore -- escaped above.
 		wp_nonce_field( ADVCM_Controller::ACTION );
@@ -252,6 +295,7 @@ final class ADVCM_Screen {
 		echo '<input type="hidden" name="scope" value="urls" />';
 		echo '<p><label for="advcm-urls">' . esc_html( sprintf( __( 'One URL or path per line, on this site only (up to %d).', 'advcm' ), ADVCM_Urls::MAX ) ) . '</label></p>';
 		echo '<textarea id="advcm-urls" name="urls" rows="5" class="large-text code" placeholder="/analysis/"></textarea>';
+		self::render_modes( 'urls' );
 		submit_button( __( 'Clear these pages', 'advcm' ), 'primary', 'submit', false );
 		echo '</form>';
 
@@ -260,6 +304,7 @@ final class ADVCM_Screen {
 		wp_nonce_field( ADVCM_Controller::ACTION );
 		echo '<input type="hidden" name="action" value="' . esc_attr( ADVCM_Controller::ACTION ) . '" />';
 		echo '<input type="hidden" name="scope" value="all" />';
+		self::render_modes( 'all' );
 
 		if ( $hard ) {
 			echo '<p><label><input type="checkbox" name="nitropack_mode" value="purge" /> ';
@@ -272,6 +317,64 @@ final class ADVCM_Screen {
 
 		submit_button( __( 'Clear the whole site', 'advcm' ), 'secondary', 'submit', false );
 		echo '</form>';
+	}
+
+	/**
+	 * The mode choice for a form, with the recommended one selected and every mode explained.
+	 *
+	 * @param string $scope `urls` or `all`.
+	 * @return void
+	 */
+	private static function render_modes( $scope ) {
+		$recommended = ADVCM_Modes::recommended( $scope );
+
+		echo '<fieldset style="margin:8px 0"><legend><strong>' . esc_html__( 'How', 'advcm' ) . '</strong></legend>';
+
+		foreach ( ADVCM_Modes::available() as $id ) {
+			$mode = ADVCM_Modes::get( $id );
+
+			echo '<p style="margin:4px 0"><label><input type="radio" name="mode" value="' . esc_attr( $id ) . '"' . ( $recommended === $id ? ' checked' : '' ) . ' /> ';
+			echo '<strong>' . esc_html( $mode['label'] ) . '</strong>';
+
+			if ( $recommended === $id ) {
+				echo ' <em>(' . esc_html__( 'recommended', 'advcm' ) . ')</em>';
+			}
+
+			echo ' — ' . esc_html( $mode['summary'] ) . '</label></p>';
+		}
+
+		echo '</fieldset>';
+	}
+
+	/**
+	 * Where a running job is, in words.
+	 *
+	 * @param array $job Job.
+	 * @return string
+	 */
+	public static function progress_line( array $job ) {
+		if ( 'running' !== $job['state'] ) {
+			return '';
+		}
+
+		if ( ADVCM_Runner::stuck( $job ) ) {
+			return __( 'stuck: WP-Cron has not picked up the next step. This happens on a site with no visitors, or a host that blocks the request WordPress makes to wake its own cron.', 'advcm' );
+		}
+
+		if ( ADVCM_Runner::locked( $job['id'] ) ) {
+			return __( 'running a step now', 'advcm' );
+		}
+
+		if ( ! empty( $job['next_at'] ) && $job['next_at'] > time() ) {
+			return sprintf(
+				/* translators: 1: time, 2: seconds. */
+				__( 'paused; the next step starts at %1$s UTC (in %2$d s)', 'advcm' ),
+				gmdate( 'H:i:s', (int) $job['next_at'] ),
+				(int) $job['next_at'] - time()
+			);
+		}
+
+		return __( 'waiting for WP-Cron to start the next step', 'advcm' );
 	}
 
 	/**
@@ -291,14 +394,35 @@ final class ADVCM_Screen {
 			return;
 		}
 
+		$moving = false;
+
 		foreach ( $jobs as $job ) {
 			$user    = $job['by'] ? get_userdata( $job['by'] ) : false;
 			$who     = $user ? $user->display_name : __( 'unknown', 'advcm' );
 			$what    = 'all' === $job['scope'] ? __( 'whole site', 'advcm' ) : implode( ', ', $job['urls'] );
-			$summary = sprintf( '%s — %s — %s — %s', gmdate( 'Y-m-d H:i', (int) $job['created'] ) . ' UTC', $who, $what, $job['state'] );
+			$mode    = ADVCM_Modes::get( isset( $job['mode'] ) ? $job['mode'] : ADVCM_Modes::FAST );
+			$summary = sprintf( '%s — %s — %s — %s — %s', gmdate( 'Y-m-d H:i', (int) $job['created'] ) . ' UTC', $who, $what, $mode['label'], $job['state'] );
+			$running = 'running' === $job['state'];
 
-			echo '<details' . ( $open === $job['id'] ? ' open' : '' ) . ' style="margin:0 0 8px">';
+			if ( $running && ! ADVCM_Runner::stuck( $job ) ) {
+				$moving = true;
+			}
+
+			echo '<details' . ( ( $open === $job['id'] || $running ) ? ' open' : '' ) . ' style="margin:0 0 8px">';
 			echo '<summary>' . esc_html( $summary ) . '</summary>';
+
+			if ( $running ) {
+				echo '<p><strong>' . esc_html( self::progress_line( $job ) ) . '</strong></p>';
+
+				if ( ADVCM_Runner::stuck( $job ) ) {
+					echo '<form method="post" action="' . esc_url( ADVCM_Controller::url() ) . '">';
+					wp_nonce_field( ADVCM_Controller::RESUME );
+					echo '<input type="hidden" name="action" value="' . esc_attr( ADVCM_Controller::RESUME ) . '" />';
+					echo '<input type="hidden" name="job" value="' . esc_attr( $job['id'] ) . '" />';
+					submit_button( __( 'Continue now, without the remaining pauses', 'advcm' ), 'secondary small', 'submit', false );
+					echo '</form>';
+				}
+			}
 
 			if ( ! empty( $job['refused'] ) ) {
 				echo '<p>' . esc_html( __( 'Not on this site, so not cleared:', 'advcm' ) . ' ' . implode( ', ', $job['refused'] ) ) . '</p>';
@@ -316,6 +440,12 @@ final class ADVCM_Screen {
 			}
 
 			echo '</tbody></table></details>';
+		}
+
+		if ( $moving ) {
+			// A background job is moving: show its progress without anybody pressing reload.
+			echo '<p class="description">' . esc_html__( 'This page refreshes every 15 seconds while a clear is running.', 'advcm' ) . '</p>';
+			echo '<script>setTimeout(function(){ window.location.reload(); }, 15000);</script>';
 		}
 	}
 }

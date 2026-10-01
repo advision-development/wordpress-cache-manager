@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.2.0 — 2026-10-01
+
+- **NitroPack now clears before WP Engine.** Its drop-in answers from PHP, behind WP Engine's
+  Varnish, so clearing Varnish first let it store NitroPack's old copy in between. Read from
+  NitroPack's own code, whose WP Engine integration purges Varnish after every NitroPack purge.
+  The object cache now clears first of all.
+- **Modes.** Fast (in the request), Balanced (background, recommended for the whole site) and
+  Careful (background, longer pauses, a larger warm-up). Each is explained beside its button and
+  the recommended one is selected. Background modes run on WP-Cron; a job that stops moving shows
+  as stuck with a button to finish it now. With `DISABLE_WP_CRON`, only Fast is offered.
+- **Warm-up.** The cleared pages are requested once as desktop and mobile, so the next visitor is
+  not the one who waits. Site-wide: the home page and the most recently updated pages. Never an
+  address off the site. User agent `AdvisionCacheWarm/<version>`, batches spaced so a rate limit
+  in front does not see a burst, and a large warm-up continues across requests.
+- **WP Engine per URL purges by path** — archives, categories and query strings included — in one
+  call. The old loop stopped silently at WP Engine's limit of three purges per request and
+  reported the rest as purged.
+- **Nothing the plugin hooks can break a page.** Every hook goes through a guard; a failing filter
+  returns what it was given, the screen shows a notice instead of a white page, and the fault is
+  logged and shown on the screen. The plugin does not start on a PHP below 7.4, or if a file fails
+  to load, and says so to administrators.
+- **Easy to recognise.** Everything it writes is prefixed `advcm`; `FOOTPRINT.md` and
+  `footprint.json` list it all; each release publishes per-file checksums.
+- `Update URI` in the header, so a plugin registering this slug on wordpress.org can never be
+  offered as its update.
+- The menus said only "Cache"; they now read **Adv Cache**, and the screen **Advision Cache
+  Management**.
+- `tests/smoke.sh`: the plugin in a real WordPress, on PHP 7.4 and 8.3, with WordPress Malware
+  Quick Scan run against it.
+
 ## 0.1.1 — 2026-09-30
 
 - The plan said Bricks CSS "will be cleared" when every run skips it. A report-only layer is now
