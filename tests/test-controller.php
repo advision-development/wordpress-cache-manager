@@ -12,7 +12,7 @@ function wp_parse_url( $url, $component = -1 ) {
 require __DIR__ . '/store-stubs.php';
 require __DIR__ . '/bootstrap.php';
 
-foreach ( array( 'stages', 'adapter', 'urls', 'jobs', 'runner', 'capabilities', 'controller' ) as $class ) {
+foreach ( array( 'safe', 'stages', 'modes', 'adapter', 'urls', 'jobs', 'runner', 'capabilities', 'controller' ) as $class ) {
 	load_class( $class );
 }
 

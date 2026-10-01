@@ -13,7 +13,9 @@
 require __DIR__ . '/store-stubs.php';
 require __DIR__ . '/bootstrap.php';
 
+load_class( 'safe' );
 load_class( 'stages' );
+load_class( 'modes' );
 load_class( 'adapter' );
 load_class( 'jobs' );
 load_class( 'runner' );
@@ -127,7 +129,7 @@ ADVCM_Runner::use_adapters(
 
 $plan = ADVCM_Runner::plan( array( 'scope' => 'all' ) );
 
-check( 'the plan runs in stage order whatever order the layers were registered in', 'css,object,host,nitro,cdn' === order_of( $plan ), order_of( $plan ) );
+check( 'the plan runs in stage order whatever order the layers were registered in', 'object,css,nitro,host,cdn' === order_of( $plan ), order_of( $plan ) );
 
 $plan = ADVCM_Runner::plan( array( 'scope' => 'all', 'layers' => array( 'nitro', 'css' ) ) );
 
@@ -287,8 +289,10 @@ $object = new Fake_Adapter( 'object', ADVCM_Stages::OBJECT );
 $page   = new Fake_Adapter( 'page', ADVCM_Stages::PAGE );
 $host   = new Fake_Adapter( 'host', ADVCM_Stages::HOST );
 $nitro  = new Fake_Adapter( 'nitro', ADVCM_Stages::OPTIMIZER );
+$warm   = new Fake_Adapter( 'warm', ADVCM_Stages::WARM );
+$assets = new Fake_Adapter( 'assets', ADVCM_Stages::ASSETS );
 
-ADVCM_Runner::use_adapters( array( $broken_css(), $object, $page, $host, $nitro ) );
+ADVCM_Runner::use_adapters( array( $broken_css(), $object, $page, $host, $nitro, $warm, $assets ) );
 
 $job = ADVCM_Runner::start( array( 'scope' => 'all' ) );
 $st  = statuses( $job );
@@ -296,6 +300,8 @@ $st  = statuses( $job );
 check( 'when builder CSS fails, the page cache is held', 'held' === $st['page'] && 0 === $page->calls );
 check( 'and so is the host cache', 'held' === $st['host'] && 0 === $host->calls );
 check( 'and NitroPack', 'held' === $st['nitro'] && 0 === $nitro->calls );
+check( 'and the warm-up, which would request pages rendered against half-rebuilt CSS into the caches', 'held' === $st['warm'] && 0 === $warm->calls );
+check( 'and the minified files, which are built from that CSS', 'held' === $st['assets'] && 0 === $assets->calls );
 check( 'but the object cache, which stores no pages, still clears', 'ok' === $st['object'] && 1 === $object->calls );
 check( 'and a held job is not a success', 'done with failures' === $job['state'] );
 

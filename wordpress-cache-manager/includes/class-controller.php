@@ -22,6 +22,9 @@ final class ADVCM_Controller {
 	/** The admin-post action. */
 	const ACTION = 'advcm_purge';
 
+	/** The admin-post action that runs a stuck background job now. */
+	const RESUME = 'advcm_resume';
+
 	/**
 	 * How long a site-wide job blocks another one.
 	 *
@@ -36,7 +39,8 @@ final class ADVCM_Controller {
 	 * @return void
 	 */
 	public static function register() {
-		add_action( 'admin_post_' . self::ACTION, array( __CLASS__, 'handle' ) );
+		ADVCM_Safe::action( 'admin_post_' . self::ACTION, array( __CLASS__, 'guarded_handle' ) );
+		ADVCM_Safe::action( 'admin_post_' . self::RESUME, array( __CLASS__, 'guarded_resume' ) );
 	}
 
 	/**
@@ -60,6 +64,7 @@ final class ADVCM_Controller {
 				array(
 					'action' => self::ACTION,
 					'scope'  => 'urls',
+					'mode'   => ADVCM_Modes::recommended( 'urls' ),
 					'urls'   => rawurlencode( $url ),
 				),
 				self::url()
@@ -74,7 +79,46 @@ final class ADVCM_Controller {
 	 * @return string
 	 */
 	public static function purge_site_link() {
-		return wp_nonce_url( add_query_arg( array( 'action' => self::ACTION, 'scope' => 'all' ), self::url() ), self::ACTION );
+		return wp_nonce_url(
+			add_query_arg(
+				array(
+					'action' => self::ACTION,
+					'scope'  => 'all',
+					'mode'   => ADVCM_Modes::recommended( 'all' ),
+				),
+				self::url()
+			),
+			self::ACTION
+		);
+	}
+
+	/**
+	 * A press, guarded: anything that throws sends the person back to the screen with what went
+	 * wrong, rather than leaving them on a blank admin-post.php.
+	 *
+	 * @return void
+	 */
+	public static function guarded_handle() {
+		try {
+			self::handle();
+		} catch ( Throwable $e ) {
+			ADVCM_Safe::report( 'admin_post_' . self::ACTION, $e );
+			self::back( '', __( 'The clear could not be started because of an error in this plugin. It has been written to the PHP error log; nothing on the site was changed by it.', 'advcm' ) );
+		}
+	}
+
+	/**
+	 * The resume button, guarded the same way.
+	 *
+	 * @return void
+	 */
+	public static function guarded_resume() {
+		try {
+			self::handle_resume();
+		} catch ( Throwable $e ) {
+			ADVCM_Safe::report( 'admin_post_' . self::RESUME, $e );
+			self::back( '', __( 'The job could not be continued because of an error in this plugin. It has been written to the PHP error log.', 'advcm' ) );
+		}
 	}
 
 	/**
@@ -120,8 +164,12 @@ final class ADVCM_Controller {
 	public static function request( array $input, $hard ) {
 		$scope = isset( $input['scope'] ) && 'urls' === $input['scope'] ? 'urls' : 'all';
 
+		$mode = isset( $input['mode'] ) ? (string) $input['mode'] : '';
+
 		$request = array(
 			'scope'   => $scope,
+			// Only a mode this site can run; anything else is the recommended one for the scope.
+			'mode'    => in_array( $mode, ADVCM_Modes::available(), true ) ? $mode : ADVCM_Modes::recommended( $scope ),
 			'urls'    => array(),
 			'refused' => array(),
 			'layers'  => array(),
@@ -181,6 +229,10 @@ final class ADVCM_Controller {
 		}
 
 		foreach ( ADVCM_Jobs::all() as $job ) {
+			if ( 'all' === $job['scope'] && 'running' === $job['state'] && ! ADVCM_Runner::stuck( $job ) ) {
+				return __( 'A clear of the whole site is still running. Its progress is below.', 'advcm' );
+			}
+
 			if ( 'all' === $job['scope'] && ( time() - (int) $job['created'] ) < self::SITE_WIDE_GAP ) {
 				return sprintf(
 					/* translators: %d: seconds. */
@@ -191,6 +243,30 @@ final class ADVCM_Controller {
 		}
 
 		return '';
+	}
+
+	/**
+	 * Run a stuck background job now.
+	 *
+	 * @return void
+	 */
+	public static function handle_resume() {
+		if ( ! current_user_can( ADVCM_Capabilities::PURGE ) ) {
+			wp_die( esc_html__( 'You are not allowed to clear the cache on this site.', 'advcm' ), '', array( 'response' => 403 ) );
+		}
+
+		check_admin_referer( self::RESUME );
+
+		$id  = isset( $_POST['job'] ) ? sanitize_text_field( wp_unslash( $_POST['job'] ) ) : ''; // phpcs:ignore -- verified above.
+		$job = ADVCM_Jobs::get( $id );
+
+		if ( ! is_array( $job ) || ! ADVCM_Runner::stuck( $job ) ) {
+			self::back( $id, __( 'That job is not stuck; it is either moving or finished.', 'advcm' ) );
+		}
+
+		ADVCM_Runner::resume_now( $id );
+
+		self::back( $id, '' );
 	}
 
 	/**

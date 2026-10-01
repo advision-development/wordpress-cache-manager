@@ -75,15 +75,15 @@ class ADVCM_Updater {
 	 * @return void
 	 */
 	public static function register() {
-		add_filter( 'pre_set_site_transient_update_plugins', array( __CLASS__, 'offer' ) );
-		add_filter( 'plugins_api', array( __CLASS__, 'details' ), 10, 3 );
-		add_action( 'upgrader_process_complete', array( __CLASS__, 'forget' ), 10, 2 );
+		ADVCM_Safe::filter( 'pre_set_site_transient_update_plugins', array( __CLASS__, 'offer' ) );
+		ADVCM_Safe::filter( 'plugins_api', array( __CLASS__, 'details' ), 10, 3 );
+		ADVCM_Safe::action( 'upgrader_process_complete', array( __CLASS__, 'forget' ), 10, 2 );
 
 		// Applied unattended, and see automatically() for the reasoning and the way out.
 		// risk the pinning cannot reduce.
-		add_filter( 'auto_update_plugin', array( __CLASS__, 'automatically' ), 10, 2 );
-		add_filter( 'plugin_auto_update_setting_html', array( __CLASS__, 'explain_auto_update' ), 10, 2 );
-		add_action( 'admin_post_' . self::CHECK_ACTION, array( __CLASS__, 'handle_check' ) );
+		ADVCM_Safe::filter( 'auto_update_plugin', array( __CLASS__, 'automatically' ), 10, 2 );
+		ADVCM_Safe::filter( 'plugin_auto_update_setting_html', array( __CLASS__, 'explain_auto_update' ), 10, 2 );
+		ADVCM_Safe::action( 'admin_post_' . self::CHECK_ACTION, array( __CLASS__, 'handle_check' ) );
 	}
 
 	/**

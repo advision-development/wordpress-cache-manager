@@ -53,10 +53,24 @@ function nitropack_invalidate( $url = null, $tag = null, $reason = null ) {
 
 // ------------------------------------------------------------------------- WP Engine
 
+$GLOBALS['wpe_answer'] = null;
+
 class WpeCommon {
 
+	/**
+	 * Like the real one: no post id is a full purge, offered to the paths filter as ['.*'], and the
+	 * answer is false when it did not purge.
+	 */
 	public static function purge_varnish_cache( $post_id = null, $force = false ) {
-		vendor_called( 'WpeCommon::purge_varnish_cache', array( $post_id ) );
+		$paths = array( '.*' );
+
+		foreach ( isset( $GLOBALS['filters']['wpe_purge_varnish_cache_paths'] ) ? $GLOBALS['filters']['wpe_purge_varnish_cache_paths'] : array() as $callback ) {
+			$paths = call_user_func( $callback, $paths, $post_id );
+		}
+
+		vendor_called( 'WpeCommon::purge_varnish_cache', array( $post_id, $force, $paths ) );
+
+		return $GLOBALS['wpe_answer'];
 	}
 
 	public static function purge_memcached() {

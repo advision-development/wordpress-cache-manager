@@ -13,6 +13,22 @@ function wp_parse_url( $url, $component = -1 ) {
 	return parse_url( $url, $component );
 }
 
+$GLOBALS['filters'] = array();
+
+function add_filter( $hook, $callback, $priority = 10, $args = 1 ) {
+	$GLOBALS['filters'][ $hook ][] = $callback;
+}
+
+function remove_filter( $hook, $callback, $priority = 10 ) {
+	foreach ( isset( $GLOBALS['filters'][ $hook ] ) ? $GLOBALS['filters'][ $hook ] : array() as $i => $registered ) {
+		if ( $registered === $callback ) {
+			unset( $GLOBALS['filters'][ $hook ][ $i ] );
+		}
+	}
+
+	return true;
+}
+
 function url_to_postid( $url ) {
 	return 'https://example.test/analysis/' === $url ? 12 : 0;
 }
@@ -48,7 +64,8 @@ check( 'Elementor is a builder stage', ADVCM_Stages::BUILDER === $elementor->sta
 check( 'WP Rocket\'s files come before any page cache', ADVCM_Stages::ASSETS === $assets->stage() );
 check( 'the object cache comes before the page caches', ADVCM_Stages::OBJECT === $object->stage() );
 check( 'WP Rocket\'s page cache comes before the host\'s', ADVCM_Stages::PAGE === $rocket->stage() && $rocket->stage() < $wpe->stage() );
-check( 'and the host\'s before NitroPack, which reads the origin through it', $wpe->stage() < $nitro->stage() );
+check( 'and NitroPack before the host\'s: its drop-in answers from PHP, behind the host cache', $nitro->stage() < $wpe->stage() );
+check( 'and the object cache before builder CSS, so a pause after it can let it refill', $object->stage() < $elementor->stage() );
 
 // ------------------------------------------------------------- with the vendors
 
@@ -135,17 +152,49 @@ $GLOBALS['nitropack_connected'] = true;
 // ------------------------------------------------------------------------ WP Engine
 
 $wpe->clear( 'all', array(), array() );
+$calls = $GLOBALS['vendor_calls'];
 $names = called();
 
 check( 'WP Engine site-wide purges its page cache', array( 'WpeCommon::purge_varnish_cache' ) === $names, implode( ',', $names ) );
+check( 'with force, so its three-purges-per-request limit cannot silently skip it', true === $calls[0][1][1] );
 check( 'and does not flush memcached a second time after the object-cache stage', ! in_array( 'WpeCommon::purge_memcached', $names, true ) );
 
-$result = $wpe->clear( 'urls', array( 'https://example.test/analysis/', 'https://example.test/category/x/' ), array() );
+$urls   = array( 'https://example.test/analysis/', 'https://example.test/category/x/', 'https://example.test/odds/?sport=nfl', 'https://example.test/a/', 'https://example.test/b/' );
+$result = $wpe->clear( 'urls', $urls, array() );
 $calls  = $GLOBALS['vendor_calls'];
 called();
 
-check( 'per URL it purges the post each URL resolves to', 1 === count( $calls ) && 12 === $calls[0][1][0] );
-check( 'and a URL that is not a post is reported, not escalated to a full purge', 'partial' === $result['status'], $result['message'] );
+check( 'per URL it is one purge, not one per post — WP Engine stops after three in a request', 1 === count( $calls ), (string) count( $calls ) );
+check( 'carrying a path for every URL, archives and query strings included', 5 === count( $calls[0][1][2] ), implode( ' ', $calls[0][1][2] ) );
+check( 'and the result says so', 'ok' === $result['status'], $result['message'] );
+check( 'the paths filter is removed afterwards, so a later full purge in the request stays full', empty( $GLOBALS['filters']['wpe_purge_varnish_cache_paths'] ) );
+
+$paths = ADVCM_Adapter_Wp_Engine::paths( array( 'https://example.test/odds/?sport=nfl', 'https://example.test/analysis/', 'https://example.test/' ) );
+
+check(
+	'a query is escaped, because WP Engine reads these as regular expressions',
+	1 === preg_match( '~' . $paths[0] . '~', '/odds/?sport=nfl' ) && 0 === preg_match( '~' . $paths[0] . '~', '/odds/Xsport=nfl' ) && 0 === preg_match( '~' . $paths[0] . '~', '/odds/?sport=nfl&x=1' ),
+	$paths[0]
+);
+check( 'a page matches itself with or without the slash and any query, and nothing longer', 1 === preg_match( '~' . $paths[1] . '~', '/analysis?x=1' ) && 0 === preg_match( '~' . $paths[1] . '~', '/analysis-old/' ) );
+check( 'the home page is the root only', 1 === preg_match( '~' . $paths[2] . '~', '/' ) && 0 === preg_match( '~' . $paths[2] . '~', '/anything/' ) );
+
+// Somebody else's purge in the same request: not ours to narrow.
+$GLOBALS['filters']['wpe_purge_varnish_cache_paths'] = array();
+$GLOBALS['wpe_answer']                               = false;
+
+$threw = false;
+try {
+	$wpe->clear( 'urls', array( 'https://example.test/a/' ), array() );
+} catch ( RuntimeException $e ) {
+	$threw = true;
+}
+called();
+
+check( 'an answer of false is a failure, not an ok: purging disabled, a snapshot, or the limit', $threw );
+check( 'and the filter is removed even then', empty( $GLOBALS['filters']['wpe_purge_varnish_cache_paths'] ) );
+
+$GLOBALS['wpe_answer'] = null;
 
 // ------------------------------------------------------------------------ object cache
 

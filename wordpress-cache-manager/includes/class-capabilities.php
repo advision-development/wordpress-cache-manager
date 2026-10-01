@@ -41,7 +41,8 @@ final class ADVCM_Capabilities {
 	 * @return void
 	 */
 	public static function register() {
-		add_filter( 'user_has_cap', array( __CLASS__, 'grant' ), 10, 1 );
+		// Guarded above all: this runs on every capability check of every request.
+		ADVCM_Safe::filter( 'user_has_cap', array( __CLASS__, 'grant' ), 10, 1 );
 	}
 
 	/**

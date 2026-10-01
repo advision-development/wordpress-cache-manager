@@ -1,0 +1,64 @@
+{
+  "plugin": "wordpress-cache-manager",
+  "name": "Advision Cache Management",
+  "publisher": "Advision Development",
+  "repository": "https://github.com/advision-development/wordpress-cache-manager",
+  "prefix": "advcm",
+  "note": "Documentation of what this plugin leaves on a site, for whoever writes a scanner rule or a Hawkeye mute. It is not a trust anchor: nothing should be exempted because this file says so. Verify the plugin directory against the release's checksums.sha256 first.",
+  "files": {
+    "directory": "wp-content/plugins/wordpress-cache-manager/",
+    "writes_files": false,
+    "changes_on": "self-update from this repository's GitHub releases"
+  },
+  "cron_events": [
+    {
+      "hook": "advcm_continue",
+      "args": ["job id, YYYYMMDD-HHMMSS-<6 hex>"],
+      "single": true,
+      "why": "runs the next step of a background clear: after a mode's pause, after a warm-up hands back a cursor, or after a fatal ended the request mid-step",
+      "callback": "ADVCM_Runner::run, registered on every request"
+    }
+  ],
+  "options": [
+    { "name": "advcm_jobs", "autoload": false, "why": "the last 10 clears (up to 30 while waiting for Hawkeye)" },
+    { "name": "advcm_layers", "autoload": false, "why": "per layer, when it was last cleared and how" },
+    { "name": "advcm_lock_<job id>", "autoload": false, "why": "one row while a job is running; deleted when it stops" },
+    { "name": "advcm_last_error", "autoload": false, "why": "the last fault the plugin's guards caught, shown on its screen for a day" }
+  ],
+  "wordpress_own_names_touched": [
+    { "name": "update_plugins", "type": "site transient", "action": "deleted", "why": "so the Plugins screen re-reads the update list after a release check, as WordPress does after an update" }
+  ],
+  "transients": [
+    { "name": "advcm_release", "site": true, "why": "the updater's cached answer from GitHub" },
+    { "name": "advcm_notice_<user id>", "site": false, "why": "a one-minute message after a refused press" }
+  ],
+  "capabilities": [
+    { "name": "advcm_purge", "granted_to": "users holding edit_others_posts", "stored": false },
+    { "name": "advcm_purge_hard", "granted_to": "users holding manage_options", "stored": false }
+  ],
+  "capability_mechanism": "a user_has_cap filter that only adds advcm_* keys; never written to roles or user meta",
+  "endpoints": [
+    { "type": "admin-post", "action": "advcm_purge", "auth": "logged in, advcm_purge, nonce" },
+    { "type": "admin-post", "action": "advcm_resume", "auth": "logged in, advcm_purge, nonce" },
+    { "type": "admin-post", "action": "advcm_check_release", "auth": "logged in, update_plugins, nonce" },
+    { "type": "admin-page", "slug": "advcm-cache", "parent": "tools.php" },
+    { "type": "admin-bar", "nodes": ["advcm", "advcm-page", "advcm-site"] }
+  ],
+  "no_endpoints": ["REST routes", "wp_ajax_nopriv_*", "anything reachable without logging in"],
+  "outbound_requests": [
+    { "to": "https://api.github.com/repos/advision-development/wordpress-cache-manager/releases/latest", "why": "update check, at most every 12 hours" },
+    { "to": "https://github.com/advision-development/wordpress-cache-manager/releases/download/", "why": "the update package, through WordPress's own upgrader" },
+    { "to": "this site's own URLs only", "why": "warm-up and WordPress's own spawn_cron()", "user_agent_contains": "AdvisionCacheWarm/" }
+  ],
+  "calls_into_other_plugins": [
+    "wp_cache_flush(), clean_post_cache()",
+    "Elementor: Plugin::$instance->files_manager->clear_cache() (deletes and lazily rebuilds uploads/elementor/css/*)",
+    "WP Rocket: rocket_clean_minify(), rocket_clean_domain(), rocket_clean_files()",
+    "NitroPack: nitropack_sdk_invalidate(), nitropack_sdk_purge()",
+    "WP Engine: WpeCommon::purge_varnish_cache(), filter wpe_purge_varnish_cache_paths"
+  ],
+  "expected_scanner_findings": [
+    { "rule": "plugin_not_in_directory", "severity": "info", "why": "not published on wordpress.org" },
+    { "rule": "recent_application_files", "severity": "info", "target": "wp-content/plugins/wordpress-cache-manager", "why": "after each self-update" }
+  ]
+}
