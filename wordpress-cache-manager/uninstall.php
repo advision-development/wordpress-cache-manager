@@ -20,12 +20,17 @@ try {
 	delete_option( 'advcm_layers' );
 	delete_option( 'advcm_last_error' );
 	delete_option( 'advcm_site_wide_at' );
+	delete_option( 'advcm_rules' );
 	wp_unschedule_hook( 'advcm_continue' ); // every job id, not only events with no arguments.
+	wp_unschedule_hook( 'advcm_auto_flush' );
 
 	// A job's lock is a row named after the job. Normally released, but a run killed hard enough
 	// can leave one behind; the prefix is this plugin's own, so the wildcard reaches nothing else.
 	global $wpdb;
 	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s", $wpdb->esc_like( 'advcm_lock_' ) . '%' ) );
+
+	// A rule waiting for its clear is a row named after the rule, the same way.
+	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s", $wpdb->esc_like( 'advcm_auto_' ) . '%' ) );
 } catch ( Throwable $e ) {
 	error_log( '[advcm] uninstall: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- best effort.
 }

@@ -10,6 +10,9 @@
 #     200 with no fatal, no "critical error", and nothing from this plugin in the PHP error log
 #   - a background mode finishes through WP-Cron, in order
 #   - deactivating a layer's plugin between two clears makes that step "skipped", nothing else
+#   - auto-clear: a rule written through the screen by an administrator (and refused to an editor),
+#     posts published through the block editor's REST path and wp_insert_post, a burst coalesced
+#     into one clear run by the site's real WP-Cron, and a fault in the hook that never fails a save
 #   - WordPress Malware Quick Scan, installed from its public release, reports nothing about this
 #     plugin beyond the findings FOOTPRINT.md says to expect
 #
@@ -124,7 +127,7 @@ check_pages() {
 	curl -s -c "${jar}" -b "${jar}" -o /dev/null "${URL}/wp-login.php"
 	curl -s -c "${jar}" -b "${jar}" -o /dev/null --data-urlencode "log=ed" --data-urlencode "pwd=ed" -d "wp-submit=Log+In&testcookie=1" --data-urlencode "redirect_to=${URL}/wp-admin/" "${URL}/wp-login.php"
 
-	for path in "/" "/?p=1" "/wp-admin/" "/wp-admin/plugins.php" "/wp-admin/tools.php?page=advcm-cache" "/wp-admin/tools.php?page=advcm-cache&tab=clear" "/wp-admin/tools.php?page=advcm-cache&tab=check" "/wp-admin/tools.php?page=advcm-cache&tab=history" "/wp-admin/tools.php?page=advcm-cache&tab=nonsense"; do
+	for path in "/" "/?p=1" "/wp-admin/" "/wp-admin/plugins.php" "/wp-admin/tools.php?page=advcm-cache" "/wp-admin/tools.php?page=advcm-cache&tab=clear" "/wp-admin/tools.php?page=advcm-cache&tab=check" "/wp-admin/tools.php?page=advcm-cache&tab=history" "/wp-admin/tools.php?page=advcm-cache&tab=auto" "/wp-admin/tools.php?page=advcm-cache&tab=nonsense"; do
 		local code body
 		body="$(curl -s -L -b "${jar}" -w '\n%{http_code}' "${URL}${path}")"
 		code="$(echo "${body}" | tail -1)"
@@ -277,6 +280,140 @@ PHP
 wpeval "${WORK}/removed.php"
 check_pages "after a layer was removed"
 
+# ------------------------------------------------------------------------------ auto-clear
+
+login() { # user, jar
+	rm -f "$2"
+	curl -s -c "$2" -b "$2" -o /dev/null "${URL}/wp-login.php"
+	curl -s -c "$2" -b "$2" -o /dev/null --data-urlencode "log=$1" --data-urlencode "pwd=$1" -d "wp-submit=Log+In&testcookie=1" --data-urlencode "redirect_to=${URL}/wp-admin/" "${URL}/wp-login.php"
+}
+
+wpcli wp term create category Analysis --slug=analysis >/dev/null
+wpcli wp post create --post_type=page --post_title=Analysis --post_name=analysis --post_status=publish >/dev/null
+
+# Nothing to do before a rule exists: a publish schedules nothing.
+cat > "${WORK}/auto-none.php" <<'PHP'
+<?php
+$cat = get_term_by( 'slug', 'analysis', 'category' );
+wp_insert_post( array( 'post_title' => 'before any rule', 'post_status' => 'publish', 'post_category' => array( $cat->term_id ) ) );
+echo ( false === wp_next_scheduled( 'advcm_auto_flush' ) ? 'PASS  ' : 'FAIL  ' ), "with no rule, publishing schedules nothing\n";
+PHP
+wpeval "${WORK}/auto-none.php"
+
+# The rule, through the screen's own form, as an administrator; an editor is refused.
+admin_jar="${WORK}/jar-admin"
+login admin "${admin_jar}"
+auto_tab="$(curl -s -b "${admin_jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=auto")"
+rules_nonce="$(grep -oE 'name="_wpnonce" value="[a-f0-9]+" /><input type="hidden" name="_wp_http_referer" value="[^"]*" /><input type="hidden" name="action" value="advcm_rules"' <<< "${auto_tab}" | head -1 | sed 's/.*name="_wpnonce" value="//; s/".*//')"
+curl -s -b "${admin_jar}" -o /dev/null -d "action=advcm_rules&op=add&_wpnonce=${rules_nonce}&post_type=post&taxonomy=category&term=analysis&nitropack=invalidate&enabled=1" --data-urlencode "urls=/analysis/" "${URL}/wp-admin/admin-post.php"
+rules="$(wpcli wp option get advcm_rules --format=json)"
+if grep -q '"term_name":"Analysis"' <<< "${rules}" && grep -q 'analysis' <<< "${rules}" && grep -q '"enabled":true' <<< "${rules}"; then
+	pass "an administrator adds a rule through the screen"
+else
+	fail "the rule was not added (nonce '${rules_nonce}'): ${rules}"
+fi
+ed_code="$(curl -s -b "${jar}" -o /dev/null -w '%{http_code}' -d "action=advcm_rules&op=add&_wpnonce=${rules_nonce}&post_type=post&urls=/x/" "${URL}/wp-admin/admin-post.php")"
+[[ "${ed_code}" == "403" ]] && pass "an editor cannot write a rule (HTTP ${ed_code})" || fail "an editor writing a rule answered HTTP ${ed_code}"
+
+cat > "${WORK}/auto-burst.php" <<'PHP'
+<?php
+$say = function ( $ok, $label ) { echo ( $ok ? 'PASS  ' : 'FAIL  ' ), $label, "\n"; };
+$cat = get_term_by( 'slug', 'analysis', 'category' );
+
+// A draft, and a post in another category: nothing.
+wp_insert_post( array( 'post_title' => 'a draft', 'post_status' => 'draft', 'post_category' => array( $cat->term_id ) ) );
+wp_insert_post( array( 'post_title' => 'elsewhere', 'post_status' => 'publish', 'post_category' => array( 1 ) ) );
+$say( false === wp_next_scheduled( 'advcm_auto_flush' ), 'a draft and a post outside the term schedule nothing' );
+
+// The block editor's path: REST sets the categories after the post is inserted, which is why the
+// hook is wp_after_insert_post. Run as an administrator through the REST server itself.
+wp_set_current_user( 1 );
+$r = new WP_REST_Request( 'POST', '/wp/v2/posts' );
+$r->set_body_params( array( 'title' => 'from the block editor', 'status' => 'publish', 'categories' => array( $cat->term_id ) ) );
+$res = rest_do_request( $r );
+$say( 201 === $res->get_status() && false !== wp_next_scheduled( 'advcm_auto_flush' ), 'a post published through REST, as the block editor does, schedules the clear (HTTP ' . $res->get_status() . ')' );
+$first = wp_next_scheduled( 'advcm_auto_flush' );
+
+// A burst: what each save costs, and that it is still one clear.
+$ms = array();
+for ( $i = 0; $i < 5; $i++ ) {
+	$t = microtime( true );
+	wp_insert_post( array( 'post_title' => 'burst ' . $i, 'post_status' => 'publish', 'post_category' => array( $cat->term_id ) ) );
+	$ms[] = ( microtime( true ) - $t ) * 1000;
+}
+$cron  = _get_cron_array();
+$count = 0;
+foreach ( $cron as $at => $hooks ) { if ( isset( $hooks['advcm_auto_flush'] ) ) { $count += count( $hooks['advcm_auto_flush'] ); } }
+$say( 1 === $count && $first === wp_next_scheduled( 'advcm_auto_flush' ), 'six posts published in the window are one scheduled clear (' . $count . ')' );
+$say( $first - time() > 30, 'and it runs later, not in the save: in ' . ( $first - time() ) . ' s' );
+
+// The hook's own cost, measured apart from wp_insert_post's.
+$post = get_post( wp_insert_post( array( 'post_title' => 'timed', 'post_status' => 'publish', 'post_category' => array( $cat->term_id ) ) ) );
+$t = microtime( true );
+for ( $i = 0; $i < 200; $i++ ) { ADVCM_Auto::saved( $post->ID, $post, true, $post ); }
+$hook = ( microtime( true ) - $t ) * 1000 / 200;
+$say( $hook < 5, sprintf( 'the hook costs %.2f ms a save; a whole wp_insert_post took %.0f ms on average', $hook, array_sum( $ms ) / count( $ms ) ) );
+
+// Due now, so the site's real WP-Cron runs it on the next request rather than in a minute.
+wp_clear_scheduled_hook( 'advcm_auto_flush' );
+wp_schedule_single_event( time() - 1, 'advcm_auto_flush' );
+delete_transient( 'doing_cron' );
+PHP
+wpeval "${WORK}/auto-burst.php"
+
+# WP-Cron as WordPress runs it: a visit, then the site requesting its own wp-cron.php.
+curl -s -o /dev/null "${URL}/"
+curl -s -o /dev/null "${URL}/wp-cron.php?doing_wp_cron"
+cat > "${WORK}/auto-ran.php" <<'PHP'
+<?php
+$auto = array();
+foreach ( ADVCM_Jobs::all() as $job ) { if ( isset( $job['source'] ) && 'auto' === $job['source'] ) { $auto[] = $job; } }
+$job = isset( $auto[0] ) ? $auto[0] : null;
+echo ( 1 === count( $auto ) ? 'PASS  ' : 'FAIL  ' ), 'WP-Cron ran exactly one auto-clear for the burst (', count( $auto ), ")\n";
+echo ( $job && array( home_url( '/analysis/' ) ) === $job['urls'] && in_array( $job['state'], array( 'done', 'done with skips' ), true ) ? 'PASS  ' : 'FAIL  ' ), 'of /analysis/ alone: ', $job ? implode( ', ', $job['urls'] ) . ' — ' . $job['state'] : 'no job', "\n";
+echo ( $job && 'invalidate' === $job['options']['nitropack_mode'] ? 'PASS  ' : 'FAIL  ' ), "asking NitroPack to invalidate\n";
+$warm = ''; if ( $job ) { foreach ( $job['steps'] as $s ) { if ( 'warm' === $s['id'] ) { $warm = $s['status'] . ' — ' . $s['message']; } } }
+echo ( 0 === strpos( $warm, 'ok' ) ? 'PASS  ' : 'FAIL  ' ), 'and the page was warmed: ', $warm, "\n";
+global $wpdb;
+$marks = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE 'advcm\\_auto\\_%'" );
+echo ( 0 === $marks && false === wp_next_scheduled( 'advcm_auto_flush' ) ? 'PASS  ' : 'FAIL  ' ), 'nothing left waiting after it (', $marks, " marks)\n";
+PHP
+wpeval "${WORK}/auto-ran.php"
+
+history="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=history")"
+grep -q "UTC — Auto-clear — ${URL}/analysis/" <<< "${history}" && pass "History names it Auto-clear" || fail "History does not show the auto-clear as Auto-clear"
+
+# The Auto-clear tab for an editor: the rule is there, the forms are not; the test form answers.
+auto_ed="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=auto")"
+test_nonce="$(grep -oE 'name="_wpnonce" value="[a-f0-9]+"' <<< "${auto_ed}" | head -1 | sed 's/.*value="//; s/"//')"
+tested="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=auto&advcm_test=$(wpcli wp post list --post_type=post --name=timed --field=ID | tr -d '\r')&_wpnonce=${test_nonce}")"
+if grep -q 'in category &quot;Analysis&quot;' <<< "${auto_ed}" && ! grep -q 'value="add"' <<< "${auto_ed}" && grep -q "/analysis/</li>" <<< "${tested}"; then
+	pass "an editor sees the rule and can test a post, and has no form to change it"
+else
+	fail "the Auto-clear tab for an editor is wrong: $(grep -oE 'notice[^>]*><p>[^<]*' <<< "${tested}" | head -2)"
+fi
+
+# A fault in the hook: the rules option made to throw when read. The save must still succeed, and the
+# fault be recorded by the guard. A save in the web server would log one expected line; the log check
+# at the end leaves it out.
+docker exec -i -u 33 "${WP}" bash -c "cat > /var/www/html/wp-content/mu-plugins/advcm-smoke-fault.php" <<'MU'
+<?php
+add_filter( 'option_advcm_rules', function () { throw new RuntimeException( 'smoke fault in the rules' ); } );
+MU
+cat > "${WORK}/auto-fault.php" <<'PHP'
+<?php
+$cat = get_term_by( 'slug', 'analysis', 'category' );
+$id  = wp_insert_post( array( 'post_title' => 'saved through a fault', 'post_status' => 'publish', 'post_category' => array( $cat->term_id ) ), true );
+echo ( ! is_wp_error( $id ) && 'publish' === get_post_status( $id ) ? 'PASS  ' : 'FAIL  ' ), "a post saves while the auto-clear hook throws\n";
+// WP-CLI runs in its own container, so its error_log goes to its stderr; the guard's record of the
+// fault is the option the screen reads.
+$last = get_option( 'advcm_last_error' );
+echo ( is_array( $last ) && 'wp_after_insert_post' === $last['where'] && false !== strpos( $last['what'], 'smoke fault in the rules' ) ? 'PASS  ' : 'FAIL  ' ), 'and the guard recorded the fault instead of passing it on: ', is_array( $last ) ? $last['where'] . ' — ' . $last['what'] : 'nothing', "\n";
+PHP
+wpeval "${WORK}/auto-fault.php"
+docker exec "${WP}" rm -f /var/www/html/wp-content/mu-plugins/advcm-smoke-fault.php
+check_pages "after auto-clear"
+
 # --------------------------------------------------------------------- the security scanner
 
 cat > "${WORK}/scan.php" <<'PHP'
@@ -308,9 +445,11 @@ docker exec "${WP}" bash -c "cat /tmp/php-errors.log 2>/dev/null" > "${WORK}/err
 
 # Deprecations count too: production runs a newer PHP than either suite version, and a
 # deprecation there is a fatal in the next one.
-if grep -iE "advcm|wordpress-cache-manager" "${WORK}/errors.log" >/dev/null; then
+# Less the one line the auto-clear check caused on purpose.
+grep -v "smoke fault in the rules" "${WORK}/errors.log" > "${WORK}/errors-unexpected.log" || true
+if grep -iE "advcm|wordpress-cache-manager" "${WORK}/errors-unexpected.log" >/dev/null; then
 	fail "the PHP error log names this plugin:"
-	grep -iE "advcm|wordpress-cache-manager" "${WORK}/errors.log" | head -10
+	grep -iE "advcm|wordpress-cache-manager" "${WORK}/errors-unexpected.log" | head -10
 else
 	pass "nothing from this plugin in the PHP error log"
 fi

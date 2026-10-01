@@ -3,7 +3,7 @@
  * Plugin Name:       CacheManager
  * Plugin URI:        https://github.com/advision-development/wordpress-cache-manager
  * Description:       Clears every cache layer a site has, in the order that keeps each one from re-caching stale content from the layer beneath it: object cache, builder CSS, page cache plugins, NitroPack, the host's page cache, a warm-up, and last the CDN. Detects what is installed at the moment it runs, skips what is not there and says so, and reports every step on its own.
- * Version:           0.2.5
+ * Version:           0.3.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Advision Development
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'ADVCM_VERSION', '0.2.5' );
+define( 'ADVCM_VERSION', '0.3.0' );
 define( 'ADVCM_FILE', __FILE__ );
 define( 'ADVCM_DIR', plugin_dir_path( __FILE__ ) );
 define( 'ADVCM_URL', plugin_dir_url( __FILE__ ) );
@@ -77,6 +77,9 @@ try {
 	ADVCM_Runner::register();
 	ADVCM_Controller::register();
 
+	// Off until an administrator writes a rule; with none, a post save costs one option read.
+	ADVCM_Auto::register();
+
 	// The admin bar menu is drawn on the front end too, where "clear this page" has a page to name.
 	ADVCM_Screen::register();
 
@@ -106,6 +109,7 @@ function advcm_deactivate() {
 		// wp_unschedule_hook, not wp_clear_scheduled_hook: each continuation carries its job id
 		// as an argument, and the second only clears events whose arguments match.
 		wp_unschedule_hook( 'advcm_continue' );
+		wp_unschedule_hook( 'advcm_auto_flush' );
 	} catch ( Throwable $e ) {
 		error_log( '[advcm] deactivate: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- deactivating must never fail.
 	}

@@ -8,7 +8,7 @@ The design spec lives in the team's internal workspace, not in this public repos
 
 ## Status
 
-**0.2.4.** Tools → CacheManager, in four tabs — Status, Clear, Cache age, History — and the
+**0.3.0.** Tools → CacheManager, in five tabs — Status, Clear, Cache age, History, Auto-clear — and the
 CacheManager menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
 time the screen opens: install a cache plugin later and it appears on the next load. Talking to Hawkeye is a later phase.
 
@@ -53,6 +53,19 @@ Tools → CacheManager → *Cache age*: the site requests the page once and read
 each layer says — Cloudflare, the host cache, NitroPack. The age is exact where a layer sends
 `Age`, 0 on a `MISS`, "at most N" since this plugin last cleared it when a layer only says `HIT`
 (WP Engine sends no `Age`), and otherwise "unknown" with the most it can be. It never guesses.
+
+## Auto-clear: listing pages refresh themselves
+
+A page that lists posts — a category page, a Page built from a query like `/analysis/` — is not
+refreshed by NitroPack when a new post appears on it: NitroPack invalidates the pages that rendered
+a post, and the listing never rendered the new one. Tools → CacheManager → *Auto-clear* holds rules:
+**a post type, optionally a term, and up to ten of this site's URLs**. When a matching post is
+published, updated while published, or taken down, its URLs are cleared about a minute later by
+WP-Cron, as one per-URL job with every post saved in between: object cache, NitroPack
+(invalidated by default), the host cache, a warm-up. Nothing runs in the save; with no rule
+switched on the hook costs one option read. Administrators write rules; anyone who can clear can
+read them and test a post against them. History shows each as *Auto-clear* and keeps the last
+three, so a day of publishing does not push out a clear somebody pressed.
 
 ## Nothing it does can break a page
 

@@ -17,6 +17,13 @@
       "single": true,
       "why": "runs the next step of a background clear: after a mode's pause, after a warm-up hands back a cursor, or after a fatal ended the request mid-step",
       "callback": "ADVCM_Runner::run, registered on every request"
+    },
+    {
+      "hook": "advcm_auto_flush",
+      "args": [],
+      "single": true,
+      "why": "the auto-clear: about 60 seconds after a post matching a rule is published, clears the URLs every waiting rule names, as one per-URL job. Scheduled only when a rule exists and is switched on",
+      "callback": "ADVCM_Auto::flush, registered on every request"
     }
   ],
   "options": [
@@ -24,7 +31,9 @@
     { "name": "advcm_layers", "autoload": false, "why": "per layer, when it was last cleared and how" },
     { "name": "advcm_lock_<job id>", "autoload": false, "why": "one row while a job is running; deleted when it stops" },
     { "name": "advcm_last_error", "autoload": false, "why": "the last fault the plugin's guards caught, shown on its screen for a day" },
-    { "name": "advcm_site_wide_at", "autoload": false, "why": "when a whole-site clear last started, for the two-minute gap between them" }
+    { "name": "advcm_site_wide_at", "autoload": false, "why": "when a whole-site clear last started, for the two-minute gap between them" },
+    { "name": "advcm_rules", "autoload": false, "why": "auto-clear rules: a post type, optionally a term, and up to 10 of this site's own URLs to clear when such a post is published. Written by administrators only" },
+    { "name": "advcm_auto_<rule id>", "autoload": false, "why": "one row while a rule is waiting for its clear; deleted when the clear picks it up" }
   ],
   "wordpress_own_names_touched": [
     { "name": "update_plugins", "type": "site transient", "action": "deleted", "why": "so the Plugins screen re-reads the update list after a release check, as WordPress does after an update" }
@@ -44,9 +53,13 @@
     { "type": "admin-post", "action": "advcm_purge", "auth": "logged in, advcm_purge, nonce" },
     { "type": "admin-post", "action": "advcm_resume", "auth": "logged in, advcm_purge, nonce" },
     { "type": "admin-post", "action": "advcm_check_release", "auth": "logged in, update_plugins, nonce" },
+    { "type": "admin-post", "action": "advcm_rules", "auth": "logged in, advcm_purge_hard, nonce", "why": "add, switch on or off, or delete an auto-clear rule" },
     { "type": "admin-ajax", "action": "advcm_tick", "auth": "logged in (wp_ajax_ only, no nopriv), advcm_purge, nonce", "why": "the status screen moves a due background clear where the site's cron cannot wake" },
     { "type": "admin-page", "slug": "advcm-cache", "parent": "tools.php" },
     { "type": "admin-bar", "nodes": ["advcm", "advcm-page", "advcm-site"] }
+  ],
+  "hooks_on_content": [
+    { "hook": "wp_after_insert_post", "why": "marks the auto-clear rules a saved post triggers; returns after one option read when no rule is switched on, and never clears anything in the save request" }
   ],
   "no_endpoints": ["REST routes", "wp_ajax_nopriv_*", "anything reachable without logging in"],
   "job_attribution": "a clear started from WP-CLI is recorded as WP-CLI, never as the account the command acted as",

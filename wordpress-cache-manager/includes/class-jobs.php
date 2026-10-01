@@ -45,6 +45,15 @@ final class ADVCM_Jobs {
 	const UNSENT_CAP = 30;
 
 	/**
+	 * How many auto-clears the buffer keeps.
+	 *
+	 * An auto-clear runs whenever the editorial team publishes, which on a busy site is dozens a
+	 * day; without its own cap the history would be nothing but auto-clears within a morning and a
+	 * clear somebody pressed would be pushed out of it. The per-layer summary still records each.
+	 */
+	const AUTO_KEEP = 3;
+
+	/**
 	 * Every stored job, newest first.
 	 *
 	 * @return array
@@ -132,8 +141,15 @@ final class ADVCM_Jobs {
 	public static function trim( array $jobs ) {
 		$kept  = array();
 		$count = 0;
+		$auto  = 0;
 
 		foreach ( $jobs as $id => $job ) {
+			$running = isset( $job['state'] ) && 'running' === $job['state'];
+
+			if ( isset( $job['source'] ) && 'auto' === $job['source'] && ! $running && ++$auto > self::AUTO_KEEP ) {
+				continue;
+			}
+
 			$count++;
 
 			// The second half is the cap. There was also a `break` at the cap after this, and
@@ -141,7 +157,7 @@ final class ADVCM_Jobs {
 			// could be kept anyway. It is gone rather than left looking like a second guard.
 			// A running job is never evicted: its next run would find nothing and stop silently
 			// half-way, which a burst of small clears could otherwise cause on purpose.
-			if ( $count <= self::KEEP || ( isset( $job['state'] ) && 'running' === $job['state'] ) || ( empty( $job['sent'] ) && count( $kept ) < self::UNSENT_CAP ) ) {
+			if ( $count <= self::KEEP || $running || ( empty( $job['sent'] ) && count( $kept ) < self::UNSENT_CAP ) ) {
 				$kept[ $id ] = $job;
 			}
 		}

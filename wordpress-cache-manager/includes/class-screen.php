@@ -170,6 +170,9 @@ final class ADVCM_Screen {
 			'history' => function () use ( $open ) {
 				self::render_jobs( $open );
 			},
+			'auto'    => function () use ( $hard ) {
+				self::render_auto( $hard );
+			},
 		);
 
 		// The tab on its own: if it throws it prints a notice, and the tabs above still lead to
@@ -192,7 +195,7 @@ final class ADVCM_Screen {
 	}
 
 	/** The tabs, in order, by id. */
-	const TABS = array( 'status', 'clear', 'check', 'history' );
+	const TABS = array( 'status', 'clear', 'check', 'history', 'auto' );
 
 	/**
 	 * The tab to show: the one asked for, or History when a press has just landed with its job,
@@ -238,6 +241,7 @@ final class ADVCM_Screen {
 			'clear'   => __( 'Clear', 'advcm' ),
 			'check'   => __( 'Cache age', 'advcm' ),
 			'history' => __( 'History', 'advcm' ),
+			'auto'    => __( 'Auto-clear', 'advcm' ),
 		);
 
 		echo '<nav class="nav-tab-wrapper" style="margin-bottom:12px">';
@@ -403,6 +407,10 @@ final class ADVCM_Screen {
 	public static function who( $by, $source ) {
 		if ( 'wp-cli' === $source ) {
 			return 'WP-CLI';
+		}
+
+		if ( ADVCM_Auto::SOURCE === $source ) {
+			return __( 'Auto-clear', 'advcm' );
 		}
 
 		$user = $by && function_exists( 'get_userdata' ) ? get_userdata( $by ) : false;
@@ -753,5 +761,202 @@ final class ADVCM_Screen {
 			echo '</tbody></table></details>';
 		}
 
+	}
+
+	/**
+	 * The Auto-clear tab: the rules, what is waiting, a test against a post, and for
+	 * administrators the forms that change the rules.
+	 *
+	 * @param bool $hard Whether the rules may be changed here.
+	 * @return void
+	 */
+	private static function render_auto( $hard ) {
+		$rules   = ADVCM_Auto::rules();
+		$waiting = ADVCM_Auto::waiting();
+		$next    = ADVCM_Auto::next_flush();
+
+		echo '<h2>' . esc_html__( 'Clear listing pages when a post is published', 'advcm' ) . '</h2>';
+		echo '<p>' . esc_html( sprintf( __( 'A page that lists posts — a category page, a Page built from a query — is not refreshed by NitroPack when a new post appears on it, because it never rendered that post. A rule names those pages. When a matching post is published, updated while published, or unpublished, its pages are cleared about %d seconds later in the background, with every other post saved in between: one clear, never one per post. NitroPack is invalidated, so it keeps serving the old optimized copy while it rebuilds. The post\'s own page is NitroPack\'s to refresh, and it does.', 'advcm' ), ADVCM_Auto::WINDOW ) ) . '</p>';
+
+		if ( ! empty( $waiting ) ) {
+			echo '<div class="notice notice-info inline"><p>' . esc_html(
+				$next > 0
+					? sprintf( __( '%1$d rule(s) waiting; the clear runs at %2$s UTC.', 'advcm' ), count( $waiting ), gmdate( 'H:i:s', $next ) )
+					: sprintf( __( '%d rule(s) waiting, and no clear is scheduled: it will be scheduled by the next matching save.', 'advcm' ), count( $waiting ) )
+			) . '</p></div>';
+		}
+
+		echo '<table class="widefat striped" style="margin-top:8px"><thead><tr>';
+		echo '<th>' . esc_html__( 'When', 'advcm' ) . '</th>';
+		echo '<th>' . esc_html__( 'Clears', 'advcm' ) . '</th>';
+		echo '<th>' . esc_html__( 'NitroPack', 'advcm' ) . '</th>';
+		echo '<th>' . esc_html__( 'State', 'advcm' ) . '</th>';
+		if ( $hard ) {
+			echo '<th></th>';
+		}
+		echo '</tr></thead><tbody>';
+
+		if ( empty( $rules ) ) {
+			echo '<tr><td colspan="' . ( $hard ? 5 : 4 ) . '">' . esc_html__( 'No rules: publishing a post clears nothing here.', 'advcm' ) . '</td></tr>';
+		}
+
+		foreach ( $rules as $rule ) {
+			echo '<tr>';
+			echo '<td>' . esc_html( self::rule_line( $rule ) ) . '</td>';
+			echo '<td><code>' . implode( '</code><br><code>', array_map( 'esc_html', $rule['urls'] ) ) . '</code></td>';
+			echo '<td>' . esc_html( 'purge' === $rule['nitropack'] ? __( 'purge', 'advcm' ) : __( 'invalidate', 'advcm' ) ) . '</td>';
+			echo '<td><strong>' . esc_html( $rule['enabled'] ? __( 'on', 'advcm' ) : __( 'off', 'advcm' ) ) . '</strong>' . ( in_array( $rule['id'], $waiting, true ) ? ' — ' . esc_html__( 'waiting', 'advcm' ) : '' ) . '</td>';
+
+			if ( $hard ) {
+				echo '<td>';
+				self::rule_button( $rule['id'], $rule['enabled'] ? 'disable' : 'enable', $rule['enabled'] ? __( 'Switch off', 'advcm' ) : __( 'Switch on', 'advcm' ) );
+				self::rule_button( $rule['id'], 'delete', __( 'Delete', 'advcm' ) );
+				echo '</td>';
+			}
+
+			echo '</tr>';
+		}
+
+		echo '</tbody></table>';
+
+		self::render_rule_test( $rules );
+
+		if ( ! $hard ) {
+			echo '<p class="description">' . esc_html__( 'Only administrators can add or change rules.', 'advcm' ) . '</p>';
+
+			return;
+		}
+
+		echo '<h2>' . esc_html__( 'Add a rule', 'advcm' ) . '</h2>';
+		echo '<form method="post" action="' . esc_url( ADVCM_Controller::url() ) . '">';
+		wp_nonce_field( ADVCM_Auto::SAVE );
+		echo '<input type="hidden" name="action" value="' . esc_attr( ADVCM_Auto::SAVE ) . '" />';
+		echo '<input type="hidden" name="op" value="add" />';
+		echo '<table class="form-table" role="presentation"><tbody>';
+
+		echo '<tr><th>' . esc_html__( 'When a post of type', 'advcm' ) . '</th><td><select name="post_type">';
+		foreach ( get_post_types( array( 'public' => true ), 'objects' ) as $type ) {
+			if ( 'attachment' === $type->name ) {
+				continue;
+			}
+			echo '<option value="' . esc_attr( $type->name ) . '"' . ( 'post' === $type->name ? ' selected' : '' ) . '>' . esc_html( $type->labels->singular_name . ' (' . $type->name . ')' ) . '</option>';
+		}
+		echo '</select></td></tr>';
+
+		echo '<tr><th>' . esc_html__( 'in the term (optional)', 'advcm' ) . '</th><td><select name="taxonomy">';
+		foreach ( get_taxonomies( array( 'public' => true ), 'objects' ) as $tax ) {
+			echo '<option value="' . esc_attr( $tax->name ) . '"' . ( 'category' === $tax->name ? ' selected' : '' ) . '>' . esc_html( $tax->labels->singular_name . ' (' . $tax->name . ')' ) . '</option>';
+		}
+		echo '</select> <input type="text" name="term" class="regular-text" placeholder="analysis" />';
+		echo '<p class="description">' . esc_html__( 'A slug or a name. Empty: every post of that type.', 'advcm' ) . '</p></td></tr>';
+
+		echo '<tr><th>' . esc_html__( 'is published, clear', 'advcm' ) . '</th><td><textarea name="urls" rows="3" class="large-text code" placeholder="/analysis/"></textarea>';
+		echo '<p class="description">' . esc_html( sprintf( __( 'One URL or path per line, on this site only, up to %d.', 'advcm' ), ADVCM_Auto::MAX_URLS ) ) . '</p></td></tr>';
+
+		echo '<tr><th>' . esc_html__( 'NitroPack', 'advcm' ) . '</th><td>';
+		echo '<p style="margin:0 0 4px"><label><input type="radio" name="nitropack" value="invalidate" checked /> <strong>' . esc_html__( 'Invalidate', 'advcm' ) . '</strong> <em>(' . esc_html__( 'recommended', 'advcm' ) . ')</em> — ' . esc_html__( 'the old optimized copy serves while NitroPack rebuilds it.', 'advcm' ) . '</label></p>';
+		echo '<p style="margin:0"><label><input type="radio" name="nitropack" value="purge" /> <strong>' . esc_html__( 'Purge', 'advcm' ) . '</strong> — ' . esc_html__( 'the new list shows at once, un-optimized until NitroPack rebuilds it, after every publish.', 'advcm' ) . '</label></p>';
+		echo '</td></tr>';
+
+		echo '<tr><th>' . esc_html__( 'Switch on now', 'advcm' ) . '</th><td><label><input type="checkbox" name="enabled" value="1" /> ' . esc_html__( 'Leave unticked to add it switched off and test a post against it first.', 'advcm' ) . '</label></td></tr>';
+		echo '</tbody></table>';
+		submit_button( __( 'Add the rule', 'advcm' ), 'secondary', 'submit', false );
+		echo '</form>';
+	}
+
+	/**
+	 * A rule's condition, in words.
+	 *
+	 * @param array $rule Rule.
+	 * @return string
+	 */
+	private static function rule_line( array $rule ) {
+		$line = sprintf( __( 'a %s is published', 'advcm' ), $rule['post_type'] );
+
+		if ( '' !== $rule['taxonomy'] && $rule['term'] > 0 ) {
+			$line .= ' ' . sprintf( __( 'in %1$s "%2$s"', 'advcm' ), $rule['taxonomy'], '' !== $rule['term_name'] ? $rule['term_name'] : '#' . $rule['term'] );
+		}
+
+		return $line;
+	}
+
+	/**
+	 * One button that changes one rule.
+	 *
+	 * @param string $id    Rule id.
+	 * @param string $op    enable, disable or delete.
+	 * @param string $label Label.
+	 * @return void
+	 */
+	private static function rule_button( $id, $op, $label ) {
+		echo '<form method="post" action="' . esc_url( ADVCM_Controller::url() ) . '" style="display:inline"' . ( 'delete' === $op ? ' onsubmit="return confirm(' . esc_attr( wp_json_encode( __( 'Delete this rule?', 'advcm' ) ) ) . ');"' : '' ) . '>';
+		wp_nonce_field( ADVCM_Auto::SAVE );
+		echo '<input type="hidden" name="action" value="' . esc_attr( ADVCM_Auto::SAVE ) . '" />';
+		echo '<input type="hidden" name="op" value="' . esc_attr( $op ) . '" />';
+		echo '<input type="hidden" name="rule" value="' . esc_attr( $id ) . '" />';
+		submit_button( $label, 'small', 'submit', false );
+		echo '</form> ';
+	}
+
+	/**
+	 * Test a post against the rules, switched off ones included: which would fire, and what they
+	 * would clear. Changes nothing.
+	 *
+	 * @param array $rules Rules.
+	 * @return void
+	 */
+	private static function render_rule_test( array $rules ) {
+		// phpcs:disable WordPress.Security.NonceVerification -- verified below before anything is read.
+		$asked = isset( $_GET['advcm_test'] ) ? trim( wp_unslash( (string) $_GET['advcm_test'] ) ) : '';
+		$valid = '' !== $asked && isset( $_GET['_wpnonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ), ADVCM_Auto::TEST );
+		// phpcs:enable
+
+		echo '<h2>' . esc_html__( 'Test a post against the rules', 'advcm' ) . '</h2>';
+		echo '<form method="get" action="' . esc_url( admin_url( 'tools.php' ) ) . '">';
+		echo '<input type="hidden" name="page" value="' . esc_attr( self::SLUG ) . '" />';
+		echo '<input type="hidden" name="tab" value="auto" />';
+		wp_nonce_field( ADVCM_Auto::TEST, '_wpnonce', false );
+		echo '<p><input type="text" name="advcm_test" class="regular-text code" placeholder="' . esc_attr__( 'post ID or URL', 'advcm' ) . '" value="' . esc_attr( $asked ) . '" /> ';
+		submit_button( __( 'Test', 'advcm' ), 'secondary', '', false );
+		echo '</p><p class="description">' . esc_html__( 'Says which rules this post triggers when it is published or updated, switched-off rules included, and what they would clear. Nothing is cleared.', 'advcm' ) . '</p></form>';
+
+		if ( ! $valid ) {
+			return;
+		}
+
+		$asked = substr( $asked, 0, 2048 );
+		$id    = ctype_digit( $asked ) ? (int) $asked : url_to_postid( $asked );
+		$post  = $id > 0 ? get_post( $id ) : null;
+
+		if ( ! is_object( $post ) || ! current_user_can( 'read_post', $post->ID ) ) {
+			echo '<div class="notice notice-warning inline"><p>' . esc_html__( 'No post found for that ID or URL.', 'advcm' ) . '</p></div>';
+
+			return;
+		}
+
+		$all = array();
+
+		foreach ( $rules as $key => $rule ) {
+			$rule['enabled'] = true;
+			$all[ $key ]     = $rule;
+		}
+
+		$hits = ADVCM_Auto::matching( $all, $post );
+
+		echo '<p><strong>' . esc_html( sprintf( '%s (%s, %s)', get_the_title( $post ), $post->post_type, $post->post_status ) ) . '</strong></p>';
+
+		if ( empty( $hits ) ) {
+			echo '<p>' . esc_html__( 'No rule matches this post: publishing it clears nothing.', 'advcm' ) . '</p>';
+
+			return;
+		}
+
+		echo '<ul style="list-style:disc;margin-left:20px">';
+
+		foreach ( $hits as $hit ) {
+			echo '<li>' . esc_html( self::rule_line( $hit ) . ' → ' . implode( ', ', $hit['urls'] ) ) . ( $rules[ $hit['id'] ]['enabled'] ? '' : ' <em>(' . esc_html__( 'switched off, so not yet', 'advcm' ) . ')</em>' ) . '</li>';
+		}
+
+		echo '</ul>';
 	}
 }
