@@ -134,6 +134,7 @@ final class ADVCM_Screen {
 		}
 
 		self::render_last_error();
+		self::render_loopback();
 
 		// Each section on its own: one that throws prints a notice and the others still render,
 		// so the screen that reports faults is not the first thing a fault takes away.
@@ -151,6 +152,45 @@ final class ADVCM_Screen {
 		}
 
 		echo '</div>';
+	}
+
+	/**
+	 * Whether this site can wake its own cron, checked here (and cached) because only this screen
+	 * may spend an HTTP request on it.
+	 *
+	 * @return void
+	 */
+	private static function render_loopback() {
+		$known = ADVCM_Safe::run( 'loopback', array( 'ADVCM_Modes', 'check_loopback' ), array( 'ok' => true, 'code' => 0 ) );
+
+		if ( ! empty( $known['ok'] ) ) {
+			return;
+		}
+
+		echo '<div class="notice notice-warning inline"><p>' . esc_html(
+			sprintf(
+				/* translators: %s: HTTP status, or "no answer". */
+				__( 'This site cannot reach itself (%s), so WordPress cannot wake its own cron: scheduled events, this plugin\'s included, only run if a server cron calls wp-cron.php. Fast is recommended here. A Balanced or Careful clear still finishes while this screen is open, because the screen moves it.', 'advcm' ),
+				$known['code'] ? 'HTTP ' . (int) $known['code'] : __( 'no answer', 'advcm' )
+			)
+		) . '</p></div>';
+	}
+
+	/**
+	 * Who started a job or cleared a layer, in words.
+	 *
+	 * @param int    $by     User id.
+	 * @param string $source Where it came from.
+	 * @return string
+	 */
+	public static function who( $by, $source ) {
+		if ( 'wp-cli' === $source ) {
+			return 'WP-CLI';
+		}
+
+		$user = $by && function_exists( 'get_userdata' ) ? get_userdata( $by ) : false;
+
+		return $user ? $user->display_name : __( 'unknown', 'advcm' );
 	}
 
 	/**
@@ -232,8 +272,7 @@ final class ADVCM_Screen {
 			return __( 'never, through this plugin', 'advcm' );
 		}
 
-		$user = ! empty( $last['by'] ) && function_exists( 'get_userdata' ) ? get_userdata( $last['by'] ) : false;
-		$who  = $user ? $user->display_name : __( 'unknown', 'advcm' );
+		$who  = self::who( isset( $last['by'] ) ? (int) $last['by'] : 0, isset( $last['source'] ) ? $last['source'] : '' );
 		$what = 'urls' === $last['scope'] ? __( 'some pages', 'advcm' ) : __( 'whole site', 'advcm' );
 		$line = sprintf( '%s UTC — %s — %s — %s', gmdate( 'Y-m-d H:i', (int) $last['at'] ), $last['status'], $what, $who );
 
@@ -374,6 +413,10 @@ final class ADVCM_Screen {
 			);
 		}
 
+		if ( false === ADVCM_Modes::loopback_ok() ) {
+			return __( 'moving while this screen is open: this site cannot wake its own cron', 'advcm' );
+		}
+
 		return __( 'waiting for WP-Cron to start the next step', 'advcm' );
 	}
 
@@ -397,14 +440,14 @@ final class ADVCM_Screen {
 		$moving = false;
 
 		foreach ( $jobs as $job ) {
-			$user    = $job['by'] ? get_userdata( $job['by'] ) : false;
-			$who     = $user ? $user->display_name : __( 'unknown', 'advcm' );
+			$who     = self::who( (int) $job['by'], isset( $job['source'] ) ? $job['source'] : '' );
 			$what    = 'all' === $job['scope'] ? __( 'whole site', 'advcm' ) : implode( ', ', $job['urls'] );
 			$mode    = ADVCM_Modes::get( isset( $job['mode'] ) ? $job['mode'] : ADVCM_Modes::FAST );
 			$summary = sprintf( '%s — %s — %s — %s — %s', gmdate( 'Y-m-d H:i', (int) $job['created'] ) . ' UTC', $who, $what, $mode['label'], $job['state'] );
 			$running = 'running' === $job['state'];
 
-			if ( $running && ! ADVCM_Runner::stuck( $job ) ) {
+			// Stuck ones too: the screen's own tick is what moves a job the site's cron never will.
+			if ( $running ) {
 				$moving = true;
 			}
 
@@ -444,8 +487,11 @@ final class ADVCM_Screen {
 
 		if ( $moving ) {
 			// A background job is moving: show its progress without anybody pressing reload.
-			echo '<p class="description">' . esc_html__( 'This page refreshes every 15 seconds while a clear is running.', 'advcm' ) . '</p>';
-			echo '<script>setTimeout(function(){ window.location.reload(); }, 15000);</script>';
+			// The screen moves the job itself, in the background of the page: an admin-ajax call
+			// runs whatever step is due — the cron a site behind authentication never gets — and
+			// the page reloads to show it. The order and the pauses are the job's own.
+			echo '<p class="description">' . esc_html__( 'While a clear is running this page moves it along and refreshes every 15 seconds. You can also leave; WP-Cron carries on where it can.', 'advcm' ) . '</p>';
+			echo '<script>(function(){var d=new FormData();d.append("action",' . wp_json_encode( ADVCM_Controller::TICK ) . ');d.append("_ajax_nonce",' . wp_json_encode( wp_create_nonce( ADVCM_Controller::TICK ) ) . ');var done=function(){setTimeout(function(){window.location.reload();},15000);};fetch(' . wp_json_encode( admin_url( 'admin-ajax.php' ) ) . ',{method:"POST",body:d,credentials:"same-origin"}).then(done,done);})();</script>';
 		}
 	}
 }
