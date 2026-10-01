@@ -277,6 +277,20 @@ $job = ADVCM_Runner::start( array( 'scope' => 'all' ) );
 
 check( 'and a report-only builder holds nothing, because it did not fail', 'ok' === statuses( $job )['page'] && 1 === $page->calls );
 
+// ------------------------------------------------------------------- left out on request
+
+$nitro = new Fake_Adapter( 'nitro', ADVCM_Stages::OPTIMIZER );
+$host  = new Fake_Adapter( 'host', ADVCM_Stages::HOST );
+
+ADVCM_Runner::use_adapters( array( $nitro, $host ) );
+
+$job = ADVCM_Runner::start( array( 'scope' => 'all', 'options' => array( 'except' => array( 'nitro' ) ) ) );
+$st  = statuses( $job );
+
+check( 'a layer left out on request is not called', 0 === $nitro->calls && 'skipped' === $st['nitro'] );
+check( 'and says why, in its own words', ADVCM_Runner::LEFT_OUT === $job['steps'][0]['message'], $job['steps'][0]['message'] );
+check( 'and the layers around it still run', 1 === $host->calls );
+
 // ---------------------------------------------------------------------------- the hold
 
 $broken_css = function () {

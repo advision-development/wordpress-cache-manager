@@ -1,6 +1,6 @@
 <?php
 /**
- * Tools → Adv Cache, and the admin bar menu.
+ * Tools → CacheManager, and the admin bar menu.
  *
  * Every label says whose it is. A menu reading only "Cache" sits beside WP Rocket's, NitroPack's
  * and the host's own cache menus, and nobody can tell which one clears everything in order.
@@ -46,7 +46,7 @@ final class ADVCM_Screen {
 	public static function menu() {
 		add_management_page(
 			__( 'Advision Cache Management', 'advcm' ),
-			__( 'Adv Cache', 'advcm' ),
+			__( 'CacheManager', 'advcm' ),
 			ADVCM_Capabilities::PURGE,
 			self::SLUG,
 			array( __CLASS__, 'render' )
@@ -69,7 +69,7 @@ final class ADVCM_Screen {
 		$bar->add_node(
 			array(
 				'id'    => 'advcm',
-				'title' => __( 'Adv Cache', 'advcm' ),
+				'title' => __( 'CacheManager', 'advcm' ),
 				'href'  => admin_url( 'tools.php?page=' . self::SLUG ),
 			)
 		);
@@ -583,6 +583,24 @@ final class ADVCM_Screen {
 		echo '<input type="hidden" name="scope" value="all" />';
 		self::render_modes( 'all' );
 
+		// Only where NitroPack is on the site: an option for a layer that is not here is noise.
+		$nitro = null;
+
+		foreach ( ADVCM_Runner::adapters() as $adapter ) {
+			if ( 'nitropack' === $adapter->id() ) {
+				$nitro = $adapter;
+			}
+		}
+
+		$found = null !== $nitro ? ADVCM_Safe::run( 'screen:nitropack', array( $nitro, 'detect' ), array( 'present' => false ) ) : array( 'present' => false );
+
+		if ( ! empty( $found['present'] ) ) {
+			echo '<p><label><input type="checkbox" name="skip_nitropack" value="1" /> ';
+			echo '<strong>' . esc_html__( 'Leave NitroPack as it is', 'advcm' ) . '</strong> — ';
+			echo esc_html__( 'everything else is cleared, and NitroPack keeps serving its optimized copies instead of rebuilding every page, which on a large site takes hours and purges the host cache page by page as it goes. Pages NitroPack holds keep showing what they showed until it refreshes them itself, so use this when the change is somewhere NitroPack does not hold: pages it does not optimize, the object cache, the host cache.', 'advcm' );
+			echo '</label></p>';
+		}
+
 		if ( $hard ) {
 			echo '<p><label><input type="checkbox" name="nitropack_mode" value="purge" /> ';
 			echo esc_html__( 'Purge NitroPack instead of invalidating it. Every page is then served un-optimized until NitroPack rebuilds it, which on a large site takes hours.', 'advcm' );
@@ -708,7 +726,7 @@ final class ADVCM_Screen {
 				// The same rule as Status: a layer that was not on the site when the clear was
 				// planned is not a row. A layer that was there at the plan and gone by its step
 				// still is — it says the site changed under the clear.
-				if ( 'skip' === $step['action'] && 'skipped' === $step['status'] ) {
+				if ( 'skip' === $step['action'] && 'skipped' === $step['status'] && ADVCM_Runner::LEFT_OUT !== $step['message'] ) {
 					continue;
 				}
 

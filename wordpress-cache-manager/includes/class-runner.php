@@ -40,6 +40,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 final class ADVCM_Runner {
 
+	/** The message of a step left out of a clear by request. */
+	const LEFT_OUT = 'left as it is, as asked';
+
 	/** The event a job continues on: after a pause, after a step's cursor, after a fatal. */
 	const CONTINUE_HOOK = 'advcm_continue';
 
@@ -689,6 +692,12 @@ final class ADVCM_Runner {
 	 * @return string
 	 */
 	private static function why_not( ADVCM_Adapter $adapter, array $request ) {
+		// Left out on purpose by the person who pressed: said first, before whether it is even
+		// installed, because that is the reason it did not run.
+		if ( ! empty( $request['options']['except'] ) && in_array( $adapter->id(), (array) $request['options']['except'], true ) ) {
+			return self::LEFT_OUT;
+		}
+
 		$detected = self::guard( array( $adapter, 'detect' ), $error );
 
 		if ( null === $detected ) {
