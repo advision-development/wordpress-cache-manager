@@ -17,7 +17,7 @@ changing the pipeline.
 wordpress-cache-manager/   the plugin; this directory is what the zip contains
 tests/                     CLI harnesses, no WordPress install needed
 build.sh                   lint, PHP 7.4 gate, tests, zip
-.github/workflows/         ci.yml (7.4 + 8.3), release.yml (on a v* tag)
+.github/workflows/         ci.yml (7.4, 8.3, 8.4), release.yml (on a v* tag)
 ```
 
 ## Commands
@@ -78,6 +78,12 @@ These are requirements, not preferences. Each was either asked for explicitly or
   not `nitropack_purge()` / `nitropack_invalidate()`, which also invalidate the home page and
   every archive on each call. A full-site default is invalidate; a full purge re-queues every page.
 
+- **Auto-clear never runs in the save request.** `wp_after_insert_post` only marks a rule
+  (`add_option`, so a burst is one mark) and schedules one event a minute out; the clear is a
+  per-URL job in WP-Cron. Not `transition_post_status`: REST — the block editor — sets terms after
+  it, so a rule on a category would miss every Gutenberg post. A rule names this site's URLs only,
+  re-checked when it runs, and never the whole site.
+
 ## Security rules
 
 From the adversarial review of 2026-10-01; each has a test or a workflow check.
@@ -98,6 +104,9 @@ From the adversarial review of 2026-10-01; each has a test or a workflow check.
   `footprint.json` lives in the repository and the build excludes it.
 - **Admin-bar JavaScript is a listener, never `meta.onclick`**: the admin bar runs `onclick`
   through `esc_js()`, which broke the confirmation into a syntax error.
+- **Auto-clear rules are written by administrators only** (`advcm_purge_hard`), through an
+  admin-post action with a nonce. A rule is an instruction the site carries out on every publish,
+  so it is held to the same bar as the costly options.
 - **HTTP goes through WordPress's API** (`wp_remote_*`), never `Requests` directly, so a site's
   HTTP policy applies.
 

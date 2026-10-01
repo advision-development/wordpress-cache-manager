@@ -74,8 +74,15 @@ class ADVCM_Adapter_Nitropack extends ADVCM_Adapter {
 		$done   = 0;
 		$failed = array();
 
+		// A person clearing a page wants to see it changed, so a per-URL clear purges. An auto-clear
+		// asks for invalidate instead: it runs every time a post is published, and a purge would
+		// serve the listing un-optimized after each one (class-auto.php).
+		$invalidate = isset( $options['nitropack_mode'] ) && 'invalidate' === $options['nitropack_mode'];
+
 		foreach ( $urls as $url ) {
-			if ( false === nitropack_sdk_purge( $url, null, $reason ) ) {
+			$answer = $invalidate ? nitropack_sdk_invalidate( $url, null, $reason ) : nitropack_sdk_purge( $url, null, $reason );
+
+			if ( false === $answer ) {
 				$failed[] = $url;
 				continue;
 			}
@@ -91,7 +98,7 @@ class ADVCM_Adapter_Nitropack extends ADVCM_Adapter {
 			return $this->partial( $done, count( $urls ), 'NitroPack refused ' . implode( ', ', $failed ) );
 		}
 
-		return $this->ok( sprintf( 'purged %d URL(s)', $done ) );
+		return $this->ok( sprintf( $invalidate ? 'invalidated %d URL(s): the old optimized copy serves while NitroPack rebuilds it' : 'purged %d URL(s)', $done ) );
 	}
 
 	public function info() {

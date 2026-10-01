@@ -189,8 +189,10 @@ final class ADVCM_Runner {
 			'finished' => 0,
 			// Run from WP-CLI, nobody pressed anything: the job says so, rather than naming
 			// whichever account the command happened to act as.
+			// An auto-clear keeps its own name even when WP-Cron is run from WP-CLI, as some hosts
+			// do: it was a post being published, not somebody at a terminal.
 			'by'       => self::from_cli() ? 0 : $request['by'],
-			'source'   => self::from_cli() ? 'wp-cli' : $request['source'],
+			'source'   => self::from_cli() && 'auto' !== $request['source'] ? 'wp-cli' : $request['source'],
 			'scope'    => $request['scope'],
 			'urls'     => $request['urls'],
 			'refused'  => $request['refused'],

@@ -21,17 +21,22 @@ and the code disagree.
 | Kind | Name | Notes |
 |---|---|---|
 | Cron (single) | `advcm_continue` | args `[job id]`; the next step of a background clear. Registered on every request, removed on deactivation and uninstall |
+| Cron (single) | `advcm_auto_flush` | no args; the auto-clear, about 60 s after a post matching a rule is published. Scheduled only when a rule is on; removed on deactivation and uninstall |
 | Option | `advcm_jobs` | not autoloaded; last 10 clears, up to 30 while waiting for Hawkeye |
 | Option | `advcm_layers` | not autoloaded; per layer, last clear |
 | Option | `advcm_lock_<job id>` | while a job runs; deleted when it stops |
 | Option | `advcm_last_error` | not autoloaded; the last fault the guards caught, shown on the screen for a day |
 | Option | `advcm_site_wide_at` | not autoloaded; when a whole-site clear last started |
+| Option | `advcm_rules` | not autoloaded; auto-clear rules, written by administrators |
+| Option | `advcm_auto_<rule id>` | while a rule waits for its clear; deleted when the clear picks it up |
 | Site transient | `advcm_release` | updater's cached GitHub answer |
 | Site transient | `advcm_loopback` | whether the site can reach its own home page; an hour (ten minutes when not) |
 | Transient | `advcm_notice_<user id>` | one minute |
 | Transient | `advcm_rate_<user id>` | per-URL clears in the last minute, at most 10 |
 | Capability | `advcm_purge`, `advcm_purge_hard` | granted by a `user_has_cap` filter from `edit_others_posts` / `manage_options`; never stored |
 | admin-post | `advcm_purge`, `advcm_resume`, `advcm_check_release` | logged in, capability and nonce |
+| admin-post | `advcm_rules` | logged in, `advcm_purge_hard` and nonce; changes auto-clear rules |
+| Hook | `wp_after_insert_post` | marks the auto-clear rules a saved post triggers. One option read when no rule is on; never clears in the save request |
 | admin-ajax | `advcm_tick` | `wp_ajax_` only, never `nopriv`; capability and nonce. The status screen moving a due background clear |
 | Page | `tools.php?page=advcm-cache` | |
 

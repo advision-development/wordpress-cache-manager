@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0 — 2026-10-01
+
+- **Listing pages refresh themselves when a post is published.** `/analysis/` kept showing an old
+  list for days: NitroPack invalidates the pages that rendered a post, a listing never rendered the
+  new one, and its copy lives 30 days. A new *Auto-clear* tab holds rules — a post type, optionally
+  a term, up to ten of this site's URLs. When a matching post is published, updated while
+  published, or taken down, the URLs are cleared about a minute later by WP-Cron, as one per-URL
+  job for every post saved in that minute. NitroPack is invalidated by default, so the optimized
+  copy keeps serving while it rebuilds; a rule may ask for a purge.
+  - Off until an administrator adds a rule. With none switched on, a save costs one option read;
+    with one, measured at 0.03 ms. Nothing is cleared in the save request, and a fault in the hook
+    is logged without touching the save.
+  - Hooked on `wp_after_insert_post`, so a post written in the block editor — whose terms REST
+    saves after the status changes — matches a category rule.
+  - Administrators write rules; editors see them and can test a post against them. History shows
+    each run as *Auto-clear* and keeps the last three.
+- A per-URL clear can now invalidate NitroPack instead of purging it; only an auto-clear asks for it.
+- A job started by a WP-Cron that WP-CLI drives keeps its auto-clear name instead of becoming
+  *WP-CLI*.
+- `tests/smoke.sh` covers it in a real WordPress on PHP 7.4, 8.3 and 8.4: a rule added through the
+  screen and refused to an editor, a post published through REST, a burst of six coalesced into one
+  clear run by the site's real WP-Cron, and a save that succeeds while the hook throws.
+
 ## 0.2.5 — 2026-10-01
 
 - **The two NitroPack options could be ticked together and contradict each other.** "Leave

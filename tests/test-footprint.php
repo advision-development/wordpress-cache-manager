@@ -92,7 +92,7 @@ check( 'and every name written could be resolved', array() === $opaque, implode(
 $code = implode( "\n", array_map( 'file_get_contents', $files ) );
 
 preg_match_all( "~ADVCM_Safe::action\(\s*'admin_post_'\s*\.\s*(self::\w+)~", $code, $posts );
-preg_match_all( "~const\s+(?:PURGE|HARD|SLUG|ACTION|RESUME|CHECK_ACTION|CONTINUE_HOOK)\s*=\s*'([^']+)'~", $code, $declared );
+preg_match_all( "~const\s+(?:PURGE|HARD|SLUG|ACTION|RESUME|CHECK_ACTION|CONTINUE_HOOK|FLUSH_HOOK|SAVE|RULES|MARK)\s*=\s*'([^']+)'~", $code, $declared );
 
 foreach ( $declared[1] as $name ) {
 	check( 'the declared name ' . $name . ' is advcm', 0 === strpos( $name, 'advcm' ) );
