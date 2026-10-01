@@ -8,8 +8,9 @@ The design spec lives in the team's internal workspace, not in this public repos
 
 ## Status
 
-**0.2.0.** Clears the layers below from wp-admin (Tools → Adv Cache, and the
-Adv Cache menu on the admin bar), in one of three modes. Talking to Hawkeye is a later phase.
+**0.2.3.** Tools → Adv Cache, in four tabs — Status, Clear, Cache age, History — and the Adv
+Cache menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
+time the screen opens: install a cache plugin later and it appears on the next load. Talking to Hawkeye is a later phase.
 
 ## The order
 

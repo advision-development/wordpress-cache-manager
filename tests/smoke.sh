@@ -28,6 +28,12 @@ WORK=""
 FAILED=0
 
 cleanup() {
+	# KEEP=1 leaves the site running after the run, to look at it in a browser. The next run
+	# removes it first either way.
+	if [[ "${KEEP:-0}" == "1" && "${FINISHED:-0}" == "1" ]]; then
+		echo "      left running at ${URL} (admin/admin, ed/ed); ./tests/smoke.sh removes it"
+		return 0
+	fi
 	docker rm -f "${WP}" "${DB}" >/dev/null 2>&1 || true
 	docker network rm "${NET}" >/dev/null 2>&1 || true
 	[[ -n "${WORK}" ]] && rm -rf "${WORK}"
@@ -116,7 +122,7 @@ check_pages() {
 	curl -s -c "${jar}" -b "${jar}" -o /dev/null "${URL}/wp-login.php"
 	curl -s -c "${jar}" -b "${jar}" -o /dev/null --data-urlencode "log=ed" --data-urlencode "pwd=ed" -d "wp-submit=Log+In&testcookie=1" --data-urlencode "redirect_to=${URL}/wp-admin/" "${URL}/wp-login.php"
 
-	for path in "/" "/?p=1" "/wp-admin/" "/wp-admin/plugins.php" "/wp-admin/tools.php?page=advcm-cache"; do
+	for path in "/" "/?p=1" "/wp-admin/" "/wp-admin/plugins.php" "/wp-admin/tools.php?page=advcm-cache" "/wp-admin/tools.php?page=advcm-cache&tab=clear" "/wp-admin/tools.php?page=advcm-cache&tab=check" "/wp-admin/tools.php?page=advcm-cache&tab=history" "/wp-admin/tools.php?page=advcm-cache&tab=nonsense"; do
 		local code body
 		body="$(curl -s -L -b "${jar}" -w '\n%{http_code}' "${URL}${path}")"
 		code="$(echo "${body}" | tail -1)"
@@ -202,10 +208,26 @@ else
 	fail "the admin bar's whole-site clear has no working confirmation"
 fi
 
-# How old a page's cache is, read on the screen.
-# The first nonce on the page is the cache-age form's: it is the first section.
-probe_nonce="$(echo "${page}" | grep -oE 'name="_wpnonce" value="[a-f0-9]+"' | head -1 | sed 's/.*value="//; s/"//')"
-reading="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&advcm_probe=%2F&_wpnonce=${probe_nonce}")"
+# Status lists only what a clear runs here: Elementor is installed, WP Rocket and NitroPack are not.
+status="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=status")"
+if grep -q "<strong>Elementor CSS</strong>" <<< "${status}" && ! grep -q "WP Rocket" <<< "${status}" && ! grep -q "NitroPack" <<< "${status}" && ! grep -q "not installed" <<< "${status}"; then
+	pass "Status lists only the layers a clear runs here"
+else
+	fail "Status lists layers that are not on this site"
+fi
+
+# History follows the same rule: no row for a layer that was never on the site.
+history="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=history")"
+if grep -q "Elementor CSS" <<< "${history}" && ! grep -q "WP Rocket page cache" <<< "${history}"; then
+	pass "History lists only the layers that ran"
+else
+	fail "History lists layers that were never on this site"
+fi
+
+# How old a page's cache is, read on its tab. The first nonce there is the check's own form.
+check="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=check")"
+probe_nonce="$(grep -oE 'name="_wpnonce" value="[a-f0-9]+"' <<< "${check}" | head -1 | sed 's/.*value="//; s/"//')"
+reading="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=check&advcm_probe=%2F&_wpnonce=${probe_nonce}")"
 if grep -q "HTTP 200 in" <<< "${reading}" && grep -q "Age</th><td>" <<< "${reading}"; then
 	pass "the screen reads a page's cache age: $(echo "${reading}" | sed -n 's/.*Age<\/th><td>\([^<]*\).*/\1/p' | head -1)"
 else
@@ -283,6 +305,8 @@ fi
 out="$(wpcli wp plugin deactivate wordpress-cache-manager)"
 grep -q "Success" <<< "${out}" && pass "deactivates" || fail "deactivates: ${out}"
 check_pages "after deactivation"
+
+FINISHED=1
 
 if [[ "${FAILED}" -ne 0 ]]; then
 	echo "SMOKE FAILED" >&2
