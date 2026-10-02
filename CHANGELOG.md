@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.3.1 — 2026-10-01
+
+- **An auto-clear says what triggered it.** History showed an auto-clear as *Auto-clear* and
+  nothing else, so "why was `/analysis/` cleared at 10:42" meant reading the editorial log. A
+  waiting rule now records the posts whose saves set it off — title, ID, type, and whether each
+  was *published*, *updated* or *unpublished* — up to ten per rule and a count of the rest ("and
+  7 more"). History shows each rule in words and its posts above the steps, each title linking to
+  its edit screen for somebody who may edit it. A post saved twice in the window is listed once.
+  Clears from 0.3.0 show as before.
+- **The rules table has a *Last clear* column**: when each rule last fired, how many posts
+  triggered it, and how the clear went, linked to the job while History still holds it. Kept in
+  its own row, `advcm_rules_last`, which the clear writes; the rules themselves are written only by
+  the form, so a clear running while an administrator deletes a rule cannot put it back.
+- **A rule can cover any content**: every post type a visitor can view, so one rule clears the home
+  page whether a post, a page or a custom type is published. It leaves out media, menus, reusable
+  blocks, theme and page-builder templates (Elementor, Bricks), and ACF, WPCode, WPForms and
+  TablePress records — public types that every template save would otherwise turn into a clear of
+  every listing. The `advcm_auto_excluded_post_types` filter can change that list; revisions,
+  auto-drafts and menu items stay out whatever it returns.
+- **A rule on a category also fires for its subcategories.** A post filed only under
+  `news-local` never cleared the `news` listing it appears on, because the rule matched the term
+  alone. In a hierarchical taxonomy a rule now matches the term and every term under it, as
+  WordPress's own category archive does; in a flat one, such as tags, only the term.
+- **Auto-clear can be paused as a whole**, by an administrator, without touching any rule: while
+  paused a publish marks nothing, a clear already scheduled clears nothing and drops what was
+  waiting, and the tab says so above everything else. Resuming gives back exactly the rules that
+  were on. With no rule switched on a save still costs one option read; with one on, a save that a
+  visitor can see costs one more, for the pause.
+- Fixed a test that failed about one run in forty, when a random rule id was all digits.
+
 ## 0.3.0 — 2026-10-01
 
 - **Listing pages refresh themselves when a post is published.** `/analysis/` kept showing an old

@@ -12,7 +12,9 @@
 #   - deactivating a layer's plugin between two clears makes that step "skipped", nothing else
 #   - auto-clear: a rule written through the screen by an administrator (and refused to an editor),
 #     posts published through the block editor's REST path and wp_insert_post, a burst coalesced
-#     into one clear run by the site's real WP-Cron, and a fault in the hook that never fails a save
+#     into one clear run by the site's real WP-Cron, and a fault in the hook that never fails a save;
+#     a post only in a subcategory firing its parent's rule, an "any content" rule firing on a page
+#     and not on a builder template, History naming the posts, and the pause stopping a publish
 #   - WordPress Malware Quick Scan, installed from its public release, reports nothing about this
 #     plugin beyond the findings FOOTPRINT.md says to expect
 #
@@ -297,6 +299,10 @@ cat > "${WORK}/auto-none.php" <<'PHP'
 $cat = get_term_by( 'slug', 'analysis', 'category' );
 wp_insert_post( array( 'post_title' => 'before any rule', 'post_status' => 'publish', 'post_category' => array( $cat->term_id ) ) );
 echo ( false === wp_next_scheduled( 'advcm_auto_flush' ) ? 'PASS  ' : 'FAIL  ' ), "with no rule, publishing schedules nothing\n";
+$post = get_post( wp_insert_post( array( 'post_title' => 'timed, no rule', 'post_status' => 'publish' ) ) );
+$t    = microtime( true );
+for ( $i = 0; $i < 1000; $i++ ) { ADVCM_Auto::saved( $post->ID, $post, true, $post ); }
+printf( "PASS  with no rule the hook costs %.4f ms a save\n", ( microtime( true ) - $t ) * 1000 / 1000 );
 PHP
 wpeval "${WORK}/auto-none.php"
 
@@ -392,6 +398,88 @@ if grep -q 'in category &quot;Analysis&quot;' <<< "${auto_ed}" && ! grep -q 'val
 else
 	fail "the Auto-clear tab for an editor is wrong: $(grep -oE 'notice[^>]*><p>[^<]*' <<< "${tested}" | head -2)"
 fi
+
+# 0.3.1: subcategories, "any content", what History says triggered a clear, and the pause.
+curl -s -b "${admin_jar}" -o /dev/null -d "action=advcm_rules&op=add&_wpnonce=${rules_nonce}&post_type=*&nitropack=invalidate&enabled=1" --data-urlencode "urls=/" "${URL}/wp-admin/admin-post.php"
+cat > "${WORK}/auto-more.php" <<'PHP'
+<?php
+$say = function ( $ok, $label ) { echo ( $ok ? 'PASS  ' : 'FAIL  ' ), $label, "\n"; };
+$ids = function ( $rule ) { $m = ADVCM_Auto::mark_from( get_option( 'advcm_auto_' . $rule, false ) ); $out = array(); foreach ( $m['posts'] as $p ) { $out[] = $p['id']; } return $out; };
+
+$analysis = ''; $any = '';
+foreach ( ADVCM_Auto::rules() as $id => $rule ) {
+	if ( '*' === $rule['post_type'] ) { $any = $id; } elseif ( 'category' === $rule['taxonomy'] ) { $analysis = $id; }
+}
+$say( '' !== $any && 'any content is published' === ADVCM_Auto::describe( ADVCM_Auto::rules()[ $any ] ), 'an administrator adds an "any content" rule through the screen' );
+
+$parent = get_term_by( 'slug', 'analysis', 'category' );
+$child  = wp_insert_term( 'Analysis weekly', 'category', array( 'slug' => 'analysis-weekly', 'parent' => $parent->term_id ) );
+$in_child = wp_insert_post( array( 'post_title' => 'Only in the subcategory', 'post_status' => 'publish', 'post_category' => array( $child['term_id'] ) ) );
+$say( in_array( $in_child, $ids( $analysis ), true ) && false !== wp_next_scheduled( 'advcm_auto_flush' ), 'a post only in a subcategory triggers the parent category\'s rule' );
+
+$page = wp_insert_post( array( 'post_type' => 'page', 'post_title' => 'A page for any content', 'post_status' => 'publish' ) );
+$say( in_array( $page, $ids( $any ), true ) && ! in_array( $page, $ids( $analysis ), true ), 'a page published fires the "any content" rule, and not the category one' );
+
+register_post_type( 'review', array( 'public' => true, 'label' => 'Reviews' ) );
+register_post_type( 'bricks_template', array( 'public' => true, 'label' => 'Templates' ) );
+$review   = wp_insert_post( array( 'post_type' => 'review', 'post_title' => 'A custom type', 'post_status' => 'publish' ) );
+$template = wp_insert_post( array( 'post_type' => 'bricks_template', 'post_title' => 'A header template', 'post_status' => 'publish' ) );
+$say( in_array( $review, $ids( $any ), true ) && ! in_array( $template, $ids( $any ), true ), 'and a public custom type too, but not a page-builder template' );
+
+$job = ADVCM_Auto::flush();
+wp_clear_scheduled_hook( 'advcm_auto_flush' );
+$names = array();
+foreach ( $job ? $job['options']['triggers'] : array() as $t ) { foreach ( $t['posts'] as $p ) { $names[] = $p['title'] . ' (' . $p['change'] . ')'; } }
+$say( $job && in_array( 'Only in the subcategory (published)', $names, true ) && in_array( 'A page for any content (published)', $names, true ), 'the clear carries the posts that triggered it: ' . implode( ', ', $names ) );
+$last = ADVCM_Auto::last();
+$say( $job && isset( $last[ $any ], $last[ $analysis ] ) && $job['id'] === $last[ $any ]['job'], 'and each rule\'s last clear points at it' );
+PHP
+wpeval "${WORK}/auto-more.php"
+
+history="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=history")"
+if grep -q "When any content is published" <<< "${history}" && grep -q '>Only in the subcategory</a>' <<< "${history}" && grep -q '>A page for any content</a>' <<< "${history}" && grep -q "from the block editor" <<< "${history}" && grep -q "triggered by 7 posts" <<< "${history}"; then
+	pass "History names each rule and the posts that triggered it, linked to their edit screens"
+else
+	fail "History does not show what triggered the auto-clears: $(grep -oE 'advcm-triggers.{0,300}' <<< "${history}" | head -2)"
+fi
+auto_tab="$(curl -s -b "${admin_jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=auto")"
+if grep -q "<th>Last clear</th>" <<< "${auto_tab}" && grep -qE "UTC</a><br>[0-9]+ posts? — done" <<< "${auto_tab}" && grep -q "or under it" <<< "${auto_tab}"; then
+	pass "the rules table shows each rule's last clear"
+else
+	fail "the rules table has no last clear: $(grep -oE 'Last clear.{0,200}' <<< "${auto_tab}" | head -1)"
+fi
+
+# The pause, through the same form: an editor is refused, an administrator pauses, a publish
+# schedules nothing, and the tab says so.
+ed_code="$(curl -s -b "${jar}" -o /dev/null -w '%{http_code}' -d "action=advcm_rules&op=pause&_wpnonce=${rules_nonce}" "${URL}/wp-admin/admin-post.php")"
+paused="$(wpcli wp option get advcm_rules_paused 2>/dev/null || true)"
+[[ "${ed_code}" == "403" && ! "${paused}" =~ ^[0-9]+$ ]] && pass "an editor cannot pause auto-clear (HTTP ${ed_code})" || fail "an editor pausing answered HTTP ${ed_code}, paused '${paused}'"
+curl -s -b "${admin_jar}" -o /dev/null -d "action=advcm_rules&op=pause&_wpnonce=${rules_nonce}" "${URL}/wp-admin/admin-post.php"
+cat > "${WORK}/auto-paused.php" <<'PHP'
+<?php
+$say = function ( $ok, $label ) { echo ( $ok ? 'PASS  ' : 'FAIL  ' ), $label, "\n"; };
+$say( ADVCM_Auto::paused(), 'an administrator pauses auto-clear through the screen' );
+$cat = get_term_by( 'slug', 'analysis', 'category' );
+wp_insert_post( array( 'post_title' => 'published while paused', 'post_status' => 'publish', 'post_category' => array( $cat->term_id ) ) );
+wp_insert_post( array( 'post_type' => 'page', 'post_title' => 'a page while paused', 'post_status' => 'publish' ) );
+global $wpdb;
+$marks = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE 'advcm\\_auto\\_%'" );
+$say( false === wp_next_scheduled( 'advcm_auto_flush' ) && 0 === $marks, 'while paused, a publish schedules nothing and marks nothing (' . $marks . ' marks)' );
+$post = get_post( wp_insert_post( array( 'post_title' => 'timed, paused', 'post_status' => 'publish', 'post_category' => array( $cat->term_id ) ) ) );
+$t = microtime( true );
+for ( $i = 0; $i < 1000; $i++ ) { ADVCM_Auto::saved( $post->ID, $post, true, $post ); }
+printf( "PASS  while paused the hook costs %.4f ms a save\n", ( microtime( true ) - $t ) * 1000 / 1000 );
+PHP
+wpeval "${WORK}/auto-paused.php"
+auto_tab="$(curl -s -b "${admin_jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=auto")"
+if grep -q "Auto-clear is paused — no rule runs." <<< "${auto_tab}" && grep -q 'value="Resume auto-clear"' <<< "${auto_tab}"; then
+	pass "the tab says auto-clear is paused, with the button to resume it"
+else
+	fail "the tab does not say auto-clear is paused"
+fi
+curl -s -b "${admin_jar}" -o /dev/null -d "action=advcm_rules&op=resume&_wpnonce=${rules_nonce}" "${URL}/wp-admin/admin-post.php"
+paused="$(wpcli wp option get advcm_rules_paused 2>/dev/null || true)"
+[[ ! "${paused}" =~ ^[0-9]+$ ]] && pass "and an administrator resumes it" || fail "resuming left it paused: '${paused}'"
 
 # A fault in the hook: the rules option made to throw when read. The save must still succeed, and the
 # fault be recorded by the guard. A save in the web server would log one expected line; the log check

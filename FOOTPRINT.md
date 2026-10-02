@@ -28,15 +28,18 @@ and the code disagree.
 | Option | `advcm_last_error` | not autoloaded; the last fault the guards caught, shown on the screen for a day |
 | Option | `advcm_site_wide_at` | not autoloaded; when a whole-site clear last started |
 | Option | `advcm_rules` | not autoloaded; auto-clear rules, written by administrators |
-| Option | `advcm_auto_<rule id>` | while a rule waits for its clear; deleted when the clear picks it up |
+| Option | `advcm_auto_<rule id>` | while a rule waits for its clear, with the first 10 posts that triggered it and a count of the rest; deleted when the clear picks it up |
+| Option | `advcm_rules_last` | not autoloaded; per rule, when it last fired, how many posts and the job's state. Written by the clear, never by the rules form |
+| Option | `advcm_rules_paused` | not autoloaded; while an administrator has paused every auto-clear rule |
 | Site transient | `advcm_release` | updater's cached GitHub answer |
 | Site transient | `advcm_loopback` | whether the site can reach its own home page; an hour (ten minutes when not) |
 | Transient | `advcm_notice_<user id>` | one minute |
 | Transient | `advcm_rate_<user id>` | per-URL clears in the last minute, at most 10 |
 | Capability | `advcm_purge`, `advcm_purge_hard` | granted by a `user_has_cap` filter from `edit_others_posts` / `manage_options`; never stored |
 | admin-post | `advcm_purge`, `advcm_resume`, `advcm_check_release` | logged in, capability and nonce |
-| admin-post | `advcm_rules` | logged in, `advcm_purge_hard` and nonce; changes auto-clear rules |
+| admin-post | `advcm_rules` | logged in, `advcm_purge_hard` and nonce; changes auto-clear rules, or pauses and resumes them all |
 | Hook | `wp_after_insert_post` | marks the auto-clear rules a saved post triggers. One option read when no rule is on; never clears in the save request |
+| Filter (offered) | `advcm_auto_excluded_post_types` | the post types an "any content" rule leaves out; validated, and `revision`, `auto-draft`, `nav_menu_item` stay out whatever it returns |
 | admin-ajax | `advcm_tick` | `wp_ajax_` only, never `nopriv`; capability and nonce. The status screen moving a due background clear |
 | Page | `tools.php?page=advcm-cache` | |
 

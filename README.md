@@ -8,7 +8,7 @@ The design spec lives in the team's internal workspace, not in this public repos
 
 ## Status
 
-**0.3.0.** Tools → CacheManager, in five tabs — Status, Clear, Cache age, History, Auto-clear — and the
+**0.3.1.** Tools → CacheManager, in five tabs — Status, Clear, Cache age, History, Auto-clear — and the
 CacheManager menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
 time the screen opens: install a cache plugin later and it appears on the next load. Talking to Hawkeye is a later phase.
 
@@ -59,13 +59,25 @@ each layer says — Cloudflare, the host cache, NitroPack. The age is exact wher
 A page that lists posts — a category page, a Page built from a query like `/analysis/` — is not
 refreshed by NitroPack when a new post appears on it: NitroPack invalidates the pages that rendered
 a post, and the listing never rendered the new one. Tools → CacheManager → *Auto-clear* holds rules:
-**a post type, optionally a term, and up to ten of this site's URLs**. When a matching post is
-published, updated while published, or taken down, its URLs are cleared about a minute later by
-WP-Cron, as one per-URL job with every post saved in between: object cache, NitroPack
-(invalidated by default), the host cache, a warm-up. Nothing runs in the save; with no rule
-switched on the hook costs one option read. Administrators write rules; anyone who can clear can
-read them and test a post against them. History shows each as *Auto-clear* and keeps the last
-three, so a day of publishing does not push out a clear somebody pressed.
+**a post type (or any content), optionally a term, and up to ten of this site's URLs**. When a
+matching post is published, updated while published, or taken down, its URLs are cleared about a
+minute later by WP-Cron, as one per-URL job with every post saved in between: object cache,
+NitroPack (invalidated by default), the host cache, a warm-up. Nothing runs in the save; with no
+rule switched on the hook costs one option read.
+
+- **Any content** covers every post type a visitor can view, less media, menus, reusable blocks,
+  theme and page-builder templates and form or snippet plugins' records; the
+  `advcm_auto_excluded_post_types` filter changes that list, never to let revisions in.
+- **A term in a hierarchical taxonomy includes its children**: a rule on the category `news`
+  fires for a post filed only under `news-local`, as the `news` archive lists it.
+- **History says what triggered each clear**: every rule in words, and up to ten posts per rule —
+  title, ID, type, and whether it was published, updated or unpublished — with a count of the
+  rest. The rules table shows each rule's last clear.
+- **Pause** stops every rule at once and keeps each one's own on or off for the resume.
+
+Administrators write rules and pause them; anyone who can clear can read them and test a post
+against them. History keeps the last three auto-clears, so a day of publishing does not push out
+a clear somebody pressed.
 
 ## Nothing it does can break a page
 

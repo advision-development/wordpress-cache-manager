@@ -83,6 +83,16 @@ These are requirements, not preferences. Each was either asked for explicitly or
   per-URL job in WP-Cron. Not `transition_post_status`: REST — the block editor — sets terms after
   it, so a rule on a category would miss every Gutenberg post. A rule names this site's URLs only,
   re-checked when it runs, and never the whole site.
+- **Only the rules form writes `advcm_rules`.** Anything the cron learns about a rule — its last
+  clear — goes to `advcm_rules_last`, and the pause to `advcm_rules_paused`. A cron writing the
+  rules row while an administrator edits it would put back a rule they had just deleted. Both are
+  tests.
+- **The save hook's cost is an assertion**: with no rule on, exactly one option read
+  (`advcm_rules`); the pause is read only after a rule is on and the save is a visible one. A new
+  check goes after those two, not before.
+- **"Any content" never covers revisions, auto-drafts or menu items**, whatever
+  `advcm_auto_excluded_post_types` returns, and a filter answer that is not a list of post type
+  names is ignored — a lone `*` would otherwise switch every such rule off silently.
 
 ## Security rules
 
