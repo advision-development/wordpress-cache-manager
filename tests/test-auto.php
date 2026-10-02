@@ -1,7 +1,8 @@
 <?php
 /**
  * Auto-clear: which saves mark a rule, that a burst is one clear, what the clear asks for, who may
- * write a rule and what a rule may name.
+ * write a rule and what a rule may name. Since 0.3.1 also what a clear says triggered it, when each
+ * rule last fired, "any content", subcategories and the pause.
  *
  * @package ADVCM
  */
@@ -20,6 +21,136 @@ function sanitize_title( $title ) {
 
 function taxonomy_exists( $taxonomy ) {
 	return in_array( $taxonomy, array( 'category', 'post_tag' ), true );
+}
+
+function is_taxonomy_hierarchical( $taxonomy ) {
+	return 'category' === $taxonomy;
+}
+
+// Children by taxonomy and parent id. post_tag has some too, though WordPress would not: it shows
+// a rule on a flat taxonomy is never widened, whatever get_term_children() would answer.
+$GLOBALS['term_children'] = array(
+	'category' => array( 7 => array( 70, 71 ) ),
+	'post_tag' => array( 30 => array( 31 ) ),
+);
+
+function get_term_children( $term, $taxonomy ) {
+	return isset( $GLOBALS['term_children'][ $taxonomy ][ $term ] ) ? $GLOBALS['term_children'][ $taxonomy ][ $term ] : array();
+}
+
+// Post types by name: whether a visitor can view one, and whether it is registered public.
+$GLOBALS['types'] = array(
+	'post'              => array( true, true ),
+	'page'              => array( true, true ),
+	'review'            => array( true, true ),
+	'attachment'        => array( true, true ),
+	'elementor_library' => array( true, true ),
+	'acf-field-group'   => array( true, true ),
+	'wpforms_log'       => array( true, true ),
+	'wpcode'            => array( true, true ),
+	'bricks_template'   => array( true, true ),
+	// Viewable and public here, as no real site has it, to show "any content" never covers it.
+	'revision'          => array( true, true ),
+	'queryable_only'    => array( true, false ),
+	'public_unviewable' => array( false, true ),
+	'hidden'            => array( false, false ),
+);
+$GLOBALS['stub_post_types'] = array_keys( $GLOBALS['types'] );
+
+function is_post_type_viewable( $type ) {
+	return isset( $GLOBALS['types'][ $type ] ) && $GLOBALS['types'][ $type ][0];
+}
+
+// The type each post has now, for History's links; a post not listed is a post.
+$GLOBALS['live_types'] = array();
+
+function get_post_type( $id ) {
+	return array_key_exists( $id, $GLOBALS['live_types'] ) ? $GLOBALS['live_types'][ $id ] : 'post';
+}
+
+function get_post_type_object( $type ) {
+	return isset( $GLOBALS['types'][ $type ] ) ? (object) array( 'name' => $type, 'public' => $GLOBALS['types'][ $type ][1] ) : null;
+}
+
+// Every option read, by name, so the cost of the save hook is an assertion and not a comment.
+$GLOBALS['options']   = array();
+$GLOBALS['reads']     = array();
+$GLOBALS['additions'] = array();
+
+function get_option( $name, $default = false ) {
+	$GLOBALS['reads'][] = $name;
+
+	return array_key_exists( $name, $GLOBALS['options'] ) ? $GLOBALS['options'][ $name ] : $default;
+}
+
+function add_option( $name, $value = '', $deprecated = '', $autoload = 'yes' ) {
+	$GLOBALS['additions'][] = $name;
+
+	if ( array_key_exists( $name, $GLOBALS['options'] ) ) {
+		return false;
+	}
+
+	$GLOBALS['options'][ $name ] = $value;
+
+	return true;
+}
+
+// Who is asking, for the rules form and History's links.
+$GLOBALS['can']       = array();
+$GLOBALS['can_edit']  = array();
+$GLOBALS['referer']   = array();
+
+function current_user_can( $cap, $id = 0 ) {
+	if ( 'edit_post' === $cap ) {
+		return in_array( (int) $id, $GLOBALS['can_edit'], true );
+	}
+
+	return ! empty( $GLOBALS['can'][ $cap ] );
+}
+
+class Died extends Exception {}
+class Redirected extends Exception {}
+
+function wp_die( $message = '' ) {
+	throw new Died( (string) $message );
+}
+
+function wp_safe_redirect( $url ) {
+	throw new Redirected( (string) $url );
+}
+
+function check_admin_referer( $action ) {
+	$GLOBALS['referer'][] = $action;
+
+	return 1;
+}
+
+function wp_unslash( $value ) {
+	return $value;
+}
+
+function set_transient( $name, $value, $ttl = 0 ) {
+	return true;
+}
+
+function add_query_arg( $args, $url = '' ) {
+	return $url . ( false === strpos( $url, '?' ) ? '?' : '&' ) . http_build_query( $args );
+}
+
+function admin_url( $path = '' ) {
+	return 'https://example.test/wp-admin/' . $path;
+}
+
+function esc_url( $url ) {
+	return htmlspecialchars( (string) $url, ENT_QUOTES );
+}
+
+function esc_attr( $text ) {
+	return htmlspecialchars( (string) $text, ENT_QUOTES );
+}
+
+function esc_html__( $text, $domain = '' ) {
+	return htmlspecialchars( (string) $text, ENT_QUOTES );
 }
 
 $GLOBALS['stub_terms'] = array(
@@ -45,13 +176,16 @@ function has_term( $term, $taxonomy, $post ) {
 		throw new RuntimeException( 'has_term broke' );
 	}
 
-	return in_array( $term, isset( $GLOBALS['post_terms'][ $post->ID ] ) ? $GLOBALS['post_terms'][ $post->ID ] : array(), true );
+	// One id or a list, as WordPress takes either: true when the post has any of them.
+	$has = isset( $GLOBALS['post_terms'][ $post->ID ] ) ? $GLOBALS['post_terms'][ $post->ID ] : array();
+
+	return array() !== array_intersect( (array) $term, $has );
 }
 
 require __DIR__ . '/store-stubs.php';
 require __DIR__ . '/bootstrap.php';
 
-foreach ( array( 'safe', 'stages', 'modes', 'adapter', 'urls', 'jobs', 'runner', 'capabilities', 'auto' ) as $class ) {
+foreach ( array( 'safe', 'stages', 'modes', 'adapter', 'urls', 'jobs', 'runner', 'capabilities', 'auto', 'screen' ) as $class ) {
 	load_class( $class );
 }
 
@@ -97,10 +231,10 @@ ADVCM_Runner::use_adapters( array( $layer ) );
  * @param int[]  $terms  Term ids.
  * @return object
  */
-function post( $id, $status = 'publish', $type = 'post', array $terms = array() ) {
+function post( $id, $status = 'publish', $type = 'post', array $terms = array(), $title = '' ) {
 	$GLOBALS['post_terms'][ $id ] = $terms;
 
-	return (object) array( 'ID' => $id, 'post_status' => $status, 'post_type' => $type );
+	return (object) array( 'ID' => $id, 'post_status' => $status, 'post_type' => $type, 'post_title' => '' !== $title ? $title : 'Post ' . $id );
 }
 
 /**
@@ -312,7 +446,9 @@ reset_waiting();
 
 check( 'adding a rule stores it', '' === ADVCM_Auto::change( array( 'op' => 'add', 'post_type' => 'post', 'urls' => '/analysis/', 'enabled' => '1' ) ) && 1 === count( ADVCM_Auto::rules() ) );
 
-$id = array_keys( ADVCM_Auto::rules() )[0];
+// A string, as the form posts it: an id of eight digits is an int as an array key, and passing
+// that on made this section fail about one run in forty.
+$id = (string) array_keys( ADVCM_Auto::rules() )[0];
 
 check( 'switching it off', '' === ADVCM_Auto::change( array( 'op' => 'disable', 'rule' => $id ) ) && false === ADVCM_Auto::rules()[ $id ]['enabled'] );
 check( 'and on', '' === ADVCM_Auto::change( array( 'op' => 'enable', 'rule' => $id ) ) && true === ADVCM_Auto::rules()[ $id ]['enabled'] );
@@ -334,6 +470,325 @@ check( 'a malformed row in the option is dropped on the read, not trusted', arra
 $code = file_get_contents( ADVCM_DIR . 'includes/class-auto.php' );
 check( 'only the stronger capability may write rules', 1 === preg_match( '~function save\(\)\s*\{\s*if \( ! current_user_can\( ADVCM_Capabilities::HARD \) \)~', $code ) && false !== strpos( $code, 'check_admin_referer( self::SAVE )' ) );
 check( 'and the hook is on wp_after_insert_post, after terms are saved, never transition_post_status', false !== strpos( $code, "ADVCM_Safe::action( 'wp_after_insert_post'" ) && false === strpos( $code, "action( 'transition_post_status'" ) );
+
+
+// ------------------------------------------------------------- what triggered it (0.3.1)
+
+/**
+ * A waiting rule's mark, as the clear will read it.
+ *
+ * @param string $id Rule id.
+ * @return array
+ */
+function mark_of( $id ) {
+	return ADVCM_Auto::mark_from( get_option( ADVCM_Auto::MARK . $id, false ) );
+}
+
+/**
+ * The posts on a mark, as id => change.
+ *
+ * @param string $id Rule id.
+ * @return array
+ */
+function changes_of( $id ) {
+	$out = array();
+
+	foreach ( mark_of( $id )['posts'] as $p ) {
+		$out[ $p['id'] ] = $p['change'];
+	}
+
+	return $out;
+}
+
+rules( array( 'a1' => $analysis ) );
+reset_waiting();
+$GLOBALS['additions'] = array();
+
+ADVCM_Auto::saved( 11, post( 11, 'publish', 'post', array( 7 ), 'A new pick' ), false, null );
+
+check( 'the first trigger is still an add_option, which inserts only when the row is absent', array( ADVCM_Auto::MARK . 'a1' ) === $GLOBALS['additions'], implode( ',', $GLOBALS['additions'] ) );
+
+ADVCM_Auto::saved( 12, post( 12, 'publish', 'post', array( 7 ) ), true, post( 12, 'publish', 'post', array( 7 ) ) );
+ADVCM_Auto::saved( 13, post( 13, 'trash', 'post', array( 7 ) ), true, post( 13, 'publish', 'post', array( 7 ) ) );
+ADVCM_Auto::saved( 14, post( 14, 'draft', 'post', array( 7 ) ), true, post( 14, 'publish', 'post', array( 7 ) ) );
+
+check( 'a waiting rule names each post that triggered it and what happened to it', array( 11 => 'published', 12 => 'updated', 13 => 'unpublished', 14 => 'unpublished' ) === changes_of( 'a1' ), wp_json_encode( changes_of( 'a1' ) ) );
+check( 'with its title and type', 'A new pick' === mark_of( 'a1' )['posts'][0]['title'] && 'post' === mark_of( 'a1' )['posts'][0]['type'] );
+check( 'and still one mark and one clear for all of them', array( 'a1' ) === marks() && 1 === count( $GLOBALS['scheduled'] ) );
+
+ADVCM_Auto::saved( 11, post( 11, 'publish', 'post', array( 7 ), 'A new pick, retitled' ), true, post( 11, 'publish', 'post', array( 7 ) ) );
+ADVCM_Auto::saved( 12, post( 12, 'draft', 'post', array( 7 ) ), true, post( 12, 'publish', 'post', array( 7 ) ) );
+
+check( 'a post saved again is counted once', 4 === mark_of( 'a1' )['total'] && 4 === count( mark_of( 'a1' )['posts'] ) );
+check( 'published then updated still says published, with the newer title', 'published' === changes_of( 'a1' )[11] && 'A new pick, retitled' === mark_of( 'a1' )['posts'][0]['title'] );
+check( 'updated then taken down says unpublished', 'unpublished' === changes_of( 'a1' )[12] );
+
+for ( $i = 20; $i < 31; $i++ ) {
+	ADVCM_Auto::saved( $i, post( $i, 'publish', 'post', array( 7 ) ), false, null );
+}
+
+// The stored row, not the read: mark_from() caps on the read too, and only the row's size is a
+// bound on what a burst writes.
+check( 'a rule names at most ' . ADVCM_Auto::MAX_POSTS . ' posts', ADVCM_Auto::MAX_POSTS === count( $GLOBALS['options'][ ADVCM_Auto::MARK . 'a1' ]['posts'] ), (string) count( $GLOBALS['options'][ ADVCM_Auto::MARK . 'a1' ]['posts'] ) );
+check( 'and counts the rest', 15 === mark_of( 'a1' )['total'], (string) mark_of( 'a1' )['total'] );
+
+ADVCM_Auto::saved( 30, post( 30, 'publish', 'post', array( 7 ) ), true, post( 30, 'publish', 'post', array( 7 ) ) );
+check( 'a post past the ten saved twice is still counted once', 15 === mark_of( 'a1' )['total'], (string) mark_of( 'a1' )['total'] );
+
+reset_waiting();
+add_option( ADVCM_Auto::MARK . 'a1', time() - 30 );
+ADVCM_Auto::saved( 40, post( 40, 'publish', 'post', array( 7 ) ), false, null );
+check( 'a mark left by 0.3.0, a bare time, takes posts from the next save', array( 40 => 'published' ) === changes_of( 'a1' ) && mark_of( 'a1' )['at'] > 0 );
+
+// ------------------------------------------------------------- copied into the job
+
+rules(
+	array(
+		'a1' => $analysis,
+		'b2' => array_merge( $analysis, array( 'term' => 8, 'term_name' => 'News', 'urls' => array( 'https://example.test/news/' ) ) ),
+	)
+);
+reset_waiting();
+update_option( ADVCM_Auto::LAST, array( 'gone' => array( 'at' => 1, 'job' => 'x', 'state' => 'done', 'total' => 1 ) ) );
+
+ADVCM_Auto::saved( 50, post( 50, 'publish', 'post', array( 7 ), 'Fifty' ), false, null );
+ADVCM_Auto::saved( 51, post( 51, 'publish', 'post', array( 8 ), 'Fifty-one' ), false, null );
+
+$rules_before = $GLOBALS['options'][ ADVCM_Auto::RULES ];
+$job          = ADVCM_Auto::flush();
+$triggers     = is_array( $job ) && isset( $job['options']['triggers'] ) ? $job['options']['triggers'] : array();
+$by_rule      = array();
+
+foreach ( $triggers as $t ) {
+	$by_rule[ $t['rule'] ] = $t;
+}
+
+check( 'the job carries each rule that fired it', array( 'a1', 'b2' ) === array_keys( $by_rule ), implode( ',', array_keys( $by_rule ) ) );
+check( 'in words', isset( $by_rule['b2'] ) && 'a post is published in category "News" or under it' === $by_rule['b2']['line'], isset( $by_rule['b2'] ) ? $by_rule['b2']['line'] : '' );
+check( 'with its posts and its count', isset( $by_rule['a1'] ) && 1 === $by_rule['a1']['total'] && 50 === $by_rule['a1']['posts'][0]['id'] && 'Fifty' === $by_rule['a1']['posts'][0]['title'] && 'published' === $by_rule['a1']['posts'][0]['change'] );
+check( 'and the job as stored says the same, for History', isset( ADVCM_Jobs::get( $job['id'] )['options']['triggers'][1]['posts'][0]['id'] ) && 51 === ADVCM_Jobs::get( $job['id'] )['options']['triggers'][1]['posts'][0]['id'] );
+
+$last = ADVCM_Auto::last();
+
+check( 'the clear records when each rule last fired, against its job', isset( $last['a1'], $last['b2'] ) && $job['id'] === $last['a1']['job'] && $last['a1']['at'] >= time() - 5 && 1 === $last['b2']['total'] && $job['state'] === $last['a1']['state'], wp_json_encode( $last ) );
+check( 'and keeps that row to the rules that exist', ! isset( $last['gone'] ) );
+check( 'in its own row: the clear never writes the rules, which only the admin form does', $rules_before === $GLOBALS['options'][ ADVCM_Auto::RULES ] && ! isset( $GLOBALS['options'][ ADVCM_Auto::RULES ]['a1']['last'] ) );
+
+ADVCM_Auto::change( array( 'op' => 'delete', 'rule' => 'b2' ) );
+check( 'deleting a rule deletes its last clear', ! isset( ADVCM_Auto::last()['b2'] ) && isset( ADVCM_Auto::last()['a1'] ) );
+
+// ------------------------------------------------------------------------ any content
+
+$any = array_merge( $analysis, array( 'post_type' => ADVCM_Auto::ANY, 'taxonomy' => '', 'term' => 0 ) );
+rules( array( 'any' => $any ) );
+
+$fires = function ( $type ) {
+	return 1 === count( ADVCM_Auto::matching( ADVCM_Auto::rules(), post( 60, 'publish', $type ) ) );
+};
+
+check( '"any content" fires for a post', $fires( 'post' ) );
+check( 'for a page', $fires( 'page' ) );
+check( 'and for a custom public post type', $fires( 'review' ) );
+check( 'not for a page-builder template, though it is public', ! $fires( 'elementor_library' ) && ! $fires( 'bricks_template' ) );
+check( 'nor media', ! $fires( 'attachment' ) );
+check( 'nor a type under an excluded prefix', ! $fires( 'acf-field-group' ) && ! $fires( 'wpforms_log' ) && ! $fires( 'wpcode' ) );
+check( 'nor one a visitor cannot view, or that is not registered public', ! $fires( 'hidden' ) && ! $fires( 'queryable_only' ) && ! $fires( 'public_unviewable' ) );
+check( 'nor a revision, even on a site that made one viewable', ! ADVCM_Auto::is_content_type( 'revision' ) );
+
+$GLOBALS['filter_values'][ ADVCM_Auto::EXCLUDED_FILTER ] = array( 'review' );
+check( 'the filter can leave a type out', ! $fires( 'review' ) && $fires( 'post' ) );
+check( 'and let one back in', $fires( 'elementor_library' ) );
+check( 'but never a revision, an auto-draft or a menu item', in_array( 'revision', ADVCM_Auto::excluded_types(), true ) && in_array( 'auto-draft', ADVCM_Auto::excluded_types(), true ) && ! ADVCM_Auto::is_content_type( 'revision' ) );
+
+$GLOBALS['filter_values'][ ADVCM_Auto::EXCLUDED_FILTER ] = array( '*', '', 'not a type', array( 'x' ), 7 );
+check( 'what a filter returns that is not a post type name is dropped: a lone * would switch every rule off', $fires( 'post' ) && $fires( 'review' ) );
+
+$GLOBALS['filter_values'][ ADVCM_Auto::EXCLUDED_FILTER ] = 'elementor_library';
+check( 'and an answer that is not a list is ignored', ! $fires( 'elementor_library' ) && $fires( 'post' ) );
+unset( $GLOBALS['filter_values'][ ADVCM_Auto::EXCLUDED_FILTER ] );
+
+$r = ADVCM_Auto::rule_from( array( 'post_type' => '*', 'urls' => '/latest/' ) );
+check( 'an administrator can write one', is_array( $r ) && ADVCM_Auto::ANY === $r['post_type'] );
+check( 'and it reads "any content is published"', 'any content is published' === ADVCM_Auto::describe( $any ) );
+check( 'while a type name still has to exist', is_string( ADVCM_Auto::rule_from( array( 'post_type' => '**', 'urls' => '/latest/' ) ) ) );
+
+reset_waiting();
+ADVCM_Auto::saved( 61, post( 61, 'publish', 'page' ), false, null );
+check( 'a page published marks an "any content" rule', array( 'any' ) === marks() );
+
+// ------------------------------------------------------------------------ subcategories
+
+rules( array( 'a1' => $analysis ) );
+reset_waiting();
+
+ADVCM_Auto::saved( 70, post( 70, 'publish', 'post', array( 71 ) ), false, null );
+check( 'a post only in a child of the rule\'s category triggers it', array( 'a1' ) === marks() );
+
+reset_waiting();
+ADVCM_Auto::saved( 72, post( 72, 'publish', 'post', array( 8 ) ), false, null );
+check( 'a post in another category still does not', array() === marks() );
+
+rules( array( 't1' => array_merge( $analysis, array( 'taxonomy' => 'post_tag', 'term' => 30, 'term_name' => 'tagged' ) ) ) );
+ADVCM_Auto::saved( 73, post( 73, 'publish', 'post', array( 31 ) ), false, null );
+check( 'in a flat taxonomy only the term itself counts', array() === marks() );
+ADVCM_Auto::saved( 74, post( 74, 'publish', 'post', array( 30 ) ), false, null );
+check( 'which still does', array( 't1' ) === marks() );
+check( 'and its words do not promise more', 'a post is published in post_tag "tagged"' === ADVCM_Auto::describe( ADVCM_Auto::rules()['t1'] ) );
+
+// ---------------------------------------------------------------------------- the pause
+
+rules( array( 'a1' => $analysis ) );
+reset_waiting();
+$rules_before = $GLOBALS['options'][ ADVCM_Auto::RULES ];
+
+check( 'pausing is a change the form makes', '' === ADVCM_Auto::change( array( 'op' => 'pause' ) ) && ADVCM_Auto::paused() );
+check( 'in its own row, leaving every rule as it was', $rules_before === $GLOBALS['options'][ ADVCM_Auto::RULES ] && is_int( get_option( ADVCM_Auto::PAUSED ) ) );
+
+ADVCM_Auto::saved( 80, post( 80, 'publish', 'post', array( 7 ) ), false, null );
+check( 'while paused a publish marks nothing and schedules nothing', array() === marks() && false === flush_at() );
+
+add_option( ADVCM_Auto::MARK . 'a1', time() );
+$layer->asked = array();
+$jobs_before  = count( ADVCM_Jobs::all() );
+
+check( 'and a clear that fires clears nothing', null === ADVCM_Auto::flush() && array() === $layer->asked && $jobs_before === count( ADVCM_Jobs::all() ) );
+check( 'and drops what was waiting, rather than clearing it on the first publish after the resume', array() === marks() );
+
+check( 'resuming', '' === ADVCM_Auto::change( array( 'op' => 'resume' ) ) && ! ADVCM_Auto::paused() && $rules_before === $GLOBALS['options'][ ADVCM_Auto::RULES ] );
+ADVCM_Auto::saved( 81, post( 81, 'publish', 'post', array( 7 ) ), false, null );
+check( 'and publishing marks again', array( 'a1' ) === marks() && false !== flush_at() );
+
+// Through the form's own handler, as admin-post runs it.
+$_POST = array( 'op' => 'pause', '_wpnonce' => 'n' );
+
+$GLOBALS['can']     = array( ADVCM_Capabilities::HARD => false );
+$GLOBALS['referer'] = array();
+$died               = false;
+
+try {
+	ADVCM_Auto::save();
+} catch ( Died $e ) {
+	$died = true;
+} catch ( Redirected $e ) {
+	$died = false;
+}
+
+check( 'somebody who is not an administrator cannot pause', $died && ! ADVCM_Auto::paused() );
+
+$GLOBALS['can'] = array( ADVCM_Capabilities::HARD => true );
+
+try {
+	ADVCM_Auto::save();
+} catch ( Redirected $e ) {
+	$redirect = $e->getMessage();
+}
+
+check( 'an administrator can, through the form\'s nonce', ADVCM_Auto::paused() && array( ADVCM_Auto::SAVE ) === $GLOBALS['referer'] );
+
+$_POST              = array( 'op' => 'resume', '_wpnonce' => 'n' );
+$GLOBALS['can']     = array( ADVCM_Capabilities::HARD => false );
+$died               = false;
+
+try {
+	ADVCM_Auto::save();
+} catch ( Died $e ) {
+	$died = true;
+} catch ( Redirected $e ) {
+	$died = false;
+}
+
+check( 'nor resume', $died && ADVCM_Auto::paused() );
+
+$GLOBALS['can'] = array( ADVCM_Capabilities::HARD => true );
+
+try {
+	ADVCM_Auto::save();
+} catch ( Redirected $e ) {
+	$redirect = $e->getMessage();
+}
+
+check( 'which an administrator can', ! ADVCM_Auto::paused() );
+$_POST          = array();
+$GLOBALS['can'] = array();
+
+// ------------------------------------------------------------------ what a save costs
+
+reset_waiting();
+rules( array() );
+$GLOBALS['reads'] = array();
+ADVCM_Auto::saved( 90, post( 90, 'publish', 'post', array( 7 ) ), false, null );
+check( 'with no rule, a save still costs exactly one option read', array( ADVCM_Auto::RULES ) === $GLOBALS['reads'], implode( ',', $GLOBALS['reads'] ) );
+
+rules( array( 'a1' => array_merge( $analysis, array( 'enabled' => false ) ) ) );
+$GLOBALS['reads'] = array();
+ADVCM_Auto::saved( 90, post( 90, 'publish', 'post', array( 7 ) ), false, null );
+check( 'and with every rule switched off', array( ADVCM_Auto::RULES ) === $GLOBALS['reads'], implode( ',', $GLOBALS['reads'] ) );
+
+rules( array( 'a1' => $analysis ) );
+$GLOBALS['reads'] = array();
+ADVCM_Auto::saved( 90, post( 90, 'draft', 'post', array( 7 ) ), false, null );
+check( 'a draft saved with a rule on does not read the pause either', array( ADVCM_Auto::RULES ) === $GLOBALS['reads'], implode( ',', $GLOBALS['reads'] ) );
+reset_waiting();
+
+// --------------------------------------------------------------------------- History
+
+/**
+ * A private method of the screen, called as the screen calls it, its output returned.
+ *
+ * @param string $method Method.
+ * @param array  $args   Arguments.
+ * @return string
+ */
+function screen_part( $method, array $args ) {
+	$m = new ReflectionMethod( 'ADVCM_Screen', $method );
+	$m->setAccessible( true );
+	ob_start();
+	$returned = $m->invokeArgs( null, $args );
+
+	return ob_get_clean() . ( is_string( $returned ) ? $returned : '' );
+}
+
+$posts = array(
+	array( 'id' => 101, 'title' => '<script>alert(1)</script> & picks', 'type' => 'post', 'change' => 'published' ),
+	array( 'id' => 102, 'title' => 'Not yours', 'type' => 'review', 'change' => 'unpublished' ),
+	array( 'id' => 103, 'title' => '', 'type' => 'post', 'change' => 'nonsense' ),
+	array( 'id' => 104, 'title' => 'Type since removed', 'type' => 'gone_type', 'change' => 'published' ),
+	array( 'id' => 105, 'title' => 'Deleted since', 'type' => 'post', 'change' => 'published' ),
+);
+$GLOBALS['live_types'] = array( 104 => 'gone_type', 105 => false );
+$auto_job = array(
+	'source'  => 'auto',
+	'options' => array(
+		'triggers' => array(
+			array( 'rule' => 'a1', 'line' => 'a post is published in category "<b>Analysis</b>"', 'posts' => $posts, 'total' => 8 ),
+			array( 'rule' => 'b2', 'line' => 'any content is published', 'posts' => array(), 'total' => 0 ),
+			'junk',
+		),
+	),
+);
+
+$GLOBALS['can_edit'] = array( 101, 104, 105 );
+$html                = screen_part( 'render_triggers', array( $auto_job ) );
+
+check( 'History names each rule in words', false !== strpos( $html, 'When a post is published in category &quot;&lt;b&gt;Analysis&lt;/b&gt;&quot;' ), $html );
+check( 'and how many posts triggered it', false !== strpos( $html, 'triggered by 8 posts:' ) );
+check( 'with a post\'s title escaped, never as markup', false === strpos( $html, '<script>' ) && false !== strpos( $html, '&lt;script&gt;alert(1)&lt;/script&gt; &amp; picks' ) );
+check( 'linked to its edit screen for somebody who may edit it', false !== strpos( $html, '<a href="https://example.test/wp-admin/post.php?post=101&amp;action=edit">&lt;script&gt;' ) );
+check( 'and plain text for somebody who may not', false !== strpos( $html, '<li>Not yours <span' ) && false === strpos( $html, 'post=102' ) );
+check( 'with its id, type and what happened', false !== strpos( $html, '#102 · review · unpublished' ) );
+check( 'a post with no title says so, and a change it does not know is not printed', false !== strpos( $html, '(no title)' ) && false === strpos( $html, 'nonsense' ) );
+check( 'and the rest are a count', false !== strpos( $html, '<li>and 3 more</li>' ) );
+check( 'a post whose type is no longer registered, or that is gone, is plain text: WordPress would print a notice asking about it', false !== strpos( $html, '<li>Type since removed <span' ) && false !== strpos( $html, '<li>Deleted since <span' ) );
+check( 'a rule whose posts were not recorded says so', false !== strpos( $html, 'not recorded' ) );
+check( 'and a stored trigger that is not one is not a line', 2 === substr_count( $html, '<strong>When ' ) && 1 === substr_count( $html, 'not recorded' ), (string) substr_count( $html, '<strong>When ' ) );
+
+check( 'a job from before 0.3.1, with no triggers, shows nothing extra', '' === screen_part( 'render_triggers', array( array( 'source' => 'auto', 'options' => array( 'rules' => array( 'a1' ) ) ) ) ) && '' === screen_part( 'render_triggers', array( array( 'source' => 'auto' ) ) ) );
+check( 'nor a clear somebody pressed', '' === screen_part( 'render_triggers', array( array( 'source' => 'wp-admin', 'options' => $auto_job['options'] ) ) ) );
+
+check( 'a rule that never fired reads never', 'never' === screen_part( 'last_clear', array( null ) ) );
+$cell = screen_part( 'last_clear', array( array( 'at' => 1759312800, 'job' => 'gone-job', 'state' => 'done<i>', 'total' => 3 ) ) );
+check( 'one that did: when, how many posts, how it went, escaped', false !== strpos( $cell, '2025-10-01 10:00 UTC<br>3 posts — done&lt;i&gt;' ), $cell );
+$GLOBALS['can_edit'] = array();
 
 // ---------------------------------------------------------------- the history keeps room
 

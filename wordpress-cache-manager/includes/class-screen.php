@@ -740,6 +740,8 @@ final class ADVCM_Screen {
 				echo '<p>' . esc_html( __( 'Not on this site, so not cleared:', 'advcm' ) . ' ' . implode( ', ', $job['refused'] ) ) . '</p>';
 			}
 
+			self::render_triggers( $job );
+
 			echo '<table class="widefat striped" style="margin-top:6px"><tbody>';
 
 			foreach ( $job['steps'] as $step ) {
@@ -764,6 +766,85 @@ final class ADVCM_Screen {
 	}
 
 	/**
+	 * What set an auto-clear off: each rule in words, and the posts whose saves triggered it.
+	 *
+	 * A job from before 0.3.1 has no `triggers` and shows nothing here; one whose rule was waiting
+	 * across the update has the rule and says its posts were not recorded. Every value is from a
+	 * stored row and printed escaped, the titles included — an author writes those.
+	 *
+	 * @param array $job Job.
+	 * @return void
+	 */
+	private static function render_triggers( array $job ) {
+		if ( ! isset( $job['source'] ) || ADVCM_Auto::SOURCE !== $job['source'] || empty( $job['options']['triggers'] ) || ! is_array( $job['options']['triggers'] ) ) {
+			return;
+		}
+
+		$changes = array(
+			'published'   => __( 'published', 'advcm' ),
+			'updated'     => __( 'updated', 'advcm' ),
+			'unpublished' => __( 'unpublished', 'advcm' ),
+		);
+
+		echo '<div class="advcm-triggers" style="margin:8px 0 4px">';
+
+		foreach ( $job['options']['triggers'] as $trigger ) {
+			if ( ! is_array( $trigger ) ) {
+				continue;
+			}
+
+			$line  = isset( $trigger['line'] ) ? (string) $trigger['line'] : '';
+			$posts = isset( $trigger['posts'] ) && is_array( $trigger['posts'] ) ? $trigger['posts'] : array();
+			$total = max( isset( $trigger['total'] ) ? (int) $trigger['total'] : 0, count( $posts ) );
+
+			echo '<p style="margin:6px 0 2px"><strong>' . esc_html( sprintf( __( 'When %s', 'advcm' ), $line ) ) . '</strong>';
+
+			if ( $total > 0 ) {
+				/* translators: %d: number of posts. */
+				echo ' — ' . esc_html( sprintf( _n( 'triggered by %d post:', 'triggered by %d posts:', $total, 'advcm' ), $total ) );
+			}
+
+			echo '</p>';
+
+			if ( empty( $posts ) ) {
+				echo '<p class="description" style="margin:0 0 0 20px">' . esc_html__( 'Which posts triggered it was not recorded: it was waiting when this plugin was updated.', 'advcm' ) . '</p>';
+
+				continue;
+			}
+
+			echo '<ul style="list-style:disc;margin:0 0 0 20px">';
+
+			foreach ( $posts as $post ) {
+				if ( ! is_array( $post ) || ! isset( $post['id'] ) ) {
+					continue;
+				}
+
+				$id     = (int) $post['id'];
+				$title  = isset( $post['title'] ) && '' !== trim( (string) $post['title'] ) ? (string) $post['title'] : __( '(no title)', 'advcm' );
+				$change = isset( $post['change'], $changes[ $post['change'] ] ) ? $changes[ $post['change'] ] : '';
+				$type   = isset( $post['type'] ) ? (string) $post['type'] : '';
+				$live   = $id > 0 ? get_post_type( $id ) : false;
+				// Asked only of a post that still exists in a type still registered: for a type a
+				// plugin took away since the clear, WordPress answers "may not edit" with a notice
+				// printed into this page, measured in the smoke run.
+				$link = $live && post_type_exists( $live ) && current_user_can( 'edit_post', $id ) ? get_edit_post_link( $id, 'raw' ) : '';
+
+				echo '<li>' . ( $link ? '<a href="' . esc_url( $link ) . '">' . esc_html( $title ) . '</a>' : esc_html( $title ) );
+				echo ' <span class="description">' . esc_html( sprintf( '#%d · %s · %s', $id, $type, $change ) ) . '</span></li>';
+			}
+
+			if ( $total > count( $posts ) ) {
+				/* translators: %d: number of posts. */
+				echo '<li>' . esc_html( sprintf( __( 'and %d more', 'advcm' ), $total - count( $posts ) ) ) . '</li>';
+			}
+
+			echo '</ul>';
+		}
+
+		echo '</div>';
+	}
+
+	/**
 	 * The Auto-clear tab: the rules, what is waiting, a test against a post, and for
 	 * administrators the forms that change the rules.
 	 *
@@ -774,15 +855,35 @@ final class ADVCM_Screen {
 		$rules   = ADVCM_Auto::rules();
 		$waiting = ADVCM_Auto::waiting();
 		$next    = ADVCM_Auto::next_flush();
+		$paused  = ADVCM_Auto::paused();
+		$last    = ADVCM_Auto::last();
 
 		echo '<h2>' . esc_html__( 'Clear listing pages when a post is published', 'advcm' ) . '</h2>';
+
+		// First on the tab, above the explanation: a paused auto-clear read as a working one is
+		// the failure this switch can cause, so it is the first thing anybody opening the tab sees.
+		if ( $paused ) {
+			echo '<div class="notice notice-warning inline"><p><strong>' . esc_html__( 'Auto-clear is paused — no rule runs.', 'advcm' ) . '</strong> ';
+			echo esc_html( sprintf( __( 'Paused at %s UTC. Publishing clears nothing until it is resumed; the rules are kept as they are, each with its own on or off.', 'advcm' ), gmdate( 'Y-m-d H:i', (int) get_option( ADVCM_Auto::PAUSED, 0 ) ) ) ) . '</p>';
+
+			if ( $hard ) {
+				echo '<p>';
+				self::rule_button( '', 'resume', __( 'Resume auto-clear', 'advcm' ), 'primary' );
+				echo '</p>';
+			}
+
+			echo '</div>';
+		}
+
 		echo '<p>' . esc_html( sprintf( __( 'A page that lists posts — a category page, a Page built from a query — is not refreshed by NitroPack when a new post appears on it, because it never rendered that post. A rule names those pages. When a matching post is published, updated while published, or unpublished, its pages are cleared about %d seconds later in the background, with every other post saved in between: one clear, never one per post. NitroPack is invalidated, so it keeps serving the old optimized copy while it rebuilds. The post\'s own page is NitroPack\'s to refresh, and it does.', 'advcm' ), ADVCM_Auto::WINDOW ) ) . '</p>';
 
 		if ( ! empty( $waiting ) ) {
 			echo '<div class="notice notice-info inline"><p>' . esc_html(
-				$next > 0
-					? sprintf( __( '%1$d rule(s) waiting; the clear runs at %2$s UTC.', 'advcm' ), count( $waiting ), gmdate( 'H:i:s', $next ) )
-					: sprintf( __( '%d rule(s) waiting, and no clear is scheduled: it will be scheduled by the next matching save.', 'advcm' ), count( $waiting ) )
+				$paused
+					? sprintf( __( '%d rule(s) waiting from before the pause; the clear will drop them and clear nothing.', 'advcm' ), count( $waiting ) )
+					: ( $next > 0
+						? sprintf( __( '%1$d rule(s) waiting; the clear runs at %2$s UTC.', 'advcm' ), count( $waiting ), gmdate( 'H:i:s', $next ) )
+						: sprintf( __( '%d rule(s) waiting, and no clear is scheduled: it will be scheduled by the next matching save.', 'advcm' ), count( $waiting ) ) )
 			) . '</p></div>';
 		}
 
@@ -791,21 +892,25 @@ final class ADVCM_Screen {
 		echo '<th>' . esc_html__( 'Clears', 'advcm' ) . '</th>';
 		echo '<th>' . esc_html__( 'NitroPack', 'advcm' ) . '</th>';
 		echo '<th>' . esc_html__( 'State', 'advcm' ) . '</th>';
+		echo '<th>' . esc_html__( 'Last clear', 'advcm' ) . '</th>';
 		if ( $hard ) {
 			echo '<th></th>';
 		}
 		echo '</tr></thead><tbody>';
 
 		if ( empty( $rules ) ) {
-			echo '<tr><td colspan="' . ( $hard ? 5 : 4 ) . '">' . esc_html__( 'No rules: publishing a post clears nothing here.', 'advcm' ) . '</td></tr>';
+			echo '<tr><td colspan="' . ( $hard ? 6 : 5 ) . '">' . esc_html__( 'No rules: publishing a post clears nothing here.', 'advcm' ) . '</td></tr>';
 		}
 
 		foreach ( $rules as $rule ) {
+			$state = $rule['enabled'] ? __( 'on', 'advcm' ) : __( 'off', 'advcm' );
+
 			echo '<tr>';
-			echo '<td>' . esc_html( self::rule_line( $rule ) ) . '</td>';
+			echo '<td>' . esc_html( ADVCM_Auto::describe( $rule ) ) . '</td>';
 			echo '<td><code>' . implode( '</code><br><code>', array_map( 'esc_html', $rule['urls'] ) ) . '</code></td>';
 			echo '<td>' . esc_html( 'purge' === $rule['nitropack'] ? __( 'purge', 'advcm' ) : __( 'invalidate', 'advcm' ) ) . '</td>';
-			echo '<td><strong>' . esc_html( $rule['enabled'] ? __( 'on', 'advcm' ) : __( 'off', 'advcm' ) ) . '</strong>' . ( in_array( $rule['id'], $waiting, true ) ? ' — ' . esc_html__( 'waiting', 'advcm' ) : '' ) . '</td>';
+			echo '<td><strong>' . esc_html( $state ) . '</strong>' . ( $rule['enabled'] && $paused ? ' — ' . esc_html__( 'paused', 'advcm' ) : '' ) . ( in_array( $rule['id'], $waiting, true ) ? ' — ' . esc_html__( 'waiting', 'advcm' ) : '' ) . '</td>';
+			echo '<td>' . self::last_clear( isset( $last[ $rule['id'] ] ) ? $last[ $rule['id'] ] : null ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput -- escaped inside.
 
 			if ( $hard ) {
 				echo '<td>';
@@ -818,6 +923,12 @@ final class ADVCM_Screen {
 		}
 
 		echo '</tbody></table>';
+
+		if ( $hard && ! $paused && ! empty( $rules ) ) {
+			echo '<p style="margin-top:10px">';
+			self::rule_button( '', 'pause', __( 'Pause auto-clear', 'advcm' ) );
+			echo '<span class="description">' . esc_html__( 'Stops every rule at once, and keeps each one\'s own on or off for when it is resumed.', 'advcm' ) . '</span></p>';
+		}
 
 		self::render_rule_test( $rules );
 
@@ -835,20 +946,22 @@ final class ADVCM_Screen {
 		echo '<table class="form-table" role="presentation"><tbody>';
 
 		echo '<tr><th>' . esc_html__( 'When a post of type', 'advcm' ) . '</th><td><select name="post_type">';
+		echo '<option value="' . esc_attr( ADVCM_Auto::ANY ) . '">' . esc_html__( 'Any content (every public post type)', 'advcm' ) . '</option>';
 		foreach ( get_post_types( array( 'public' => true ), 'objects' ) as $type ) {
 			if ( 'attachment' === $type->name ) {
 				continue;
 			}
 			echo '<option value="' . esc_attr( $type->name ) . '"' . ( 'post' === $type->name ? ' selected' : '' ) . '>' . esc_html( $type->labels->singular_name . ' (' . $type->name . ')' ) . '</option>';
 		}
-		echo '</select></td></tr>';
+		echo '</select>';
+		echo '<p class="description">' . esc_html__( '"Any content", first in the list, is every post type a visitor can view, leaving out media, menus, reusable blocks, theme and page-builder templates, and form and snippet plugins\' records.', 'advcm' ) . '</p></td></tr>';
 
 		echo '<tr><th>' . esc_html__( 'in the term (optional)', 'advcm' ) . '</th><td><select name="taxonomy">';
 		foreach ( get_taxonomies( array( 'public' => true ), 'objects' ) as $tax ) {
 			echo '<option value="' . esc_attr( $tax->name ) . '"' . ( 'category' === $tax->name ? ' selected' : '' ) . '>' . esc_html( $tax->labels->singular_name . ' (' . $tax->name . ')' ) . '</option>';
 		}
 		echo '</select> <input type="text" name="term" class="regular-text" placeholder="analysis" />';
-		echo '<p class="description">' . esc_html__( 'A slug or a name. Empty: every post of that type.', 'advcm' ) . '</p></td></tr>';
+		echo '<p class="description">' . esc_html__( 'A slug or a name. Empty: every post of that type. In a taxonomy with levels, such as categories, the term\'s subcategories count too: a rule on "news" also fires for a post filed only under "news-local", a child of "news" — as the "news" category page lists it.', 'advcm' ) . '</p></td></tr>';
 
 		echo '<tr><th>' . esc_html__( 'is published, clear', 'advcm' ) . '</th><td><textarea name="urls" rows="3" class="large-text code" placeholder="/analysis/"></textarea>';
 		echo '<p class="description">' . esc_html( sprintf( __( 'One URL or path per line, on this site only, up to %d.', 'advcm' ), ADVCM_Auto::MAX_URLS ) ) . '</p></td></tr>';
@@ -865,36 +978,56 @@ final class ADVCM_Screen {
 	}
 
 	/**
-	 * A rule's condition, in words.
+	 * A rule's last clear, as a cell: when, how many posts, how it went, and a link to the job
+	 * while History still holds it. The state is the job's own when it is still there, since a
+	 * clear recorded as running may have finished since.
 	 *
-	 * @param array $rule Rule.
-	 * @return string
+	 * @param array|null $last The rule's entry in ADVCM_Auto::last().
+	 * @return string HTML, escaped.
 	 */
-	private static function rule_line( array $rule ) {
-		$line = sprintf( __( 'a %s is published', 'advcm' ), $rule['post_type'] );
-
-		if ( '' !== $rule['taxonomy'] && $rule['term'] > 0 ) {
-			$line .= ' ' . sprintf( __( 'in %1$s "%2$s"', 'advcm' ), $rule['taxonomy'], '' !== $rule['term_name'] ? $rule['term_name'] : '#' . $rule['term'] );
+	private static function last_clear( $last ) {
+		if ( ! is_array( $last ) || $last['at'] <= 0 ) {
+			return esc_html__( 'never', 'advcm' );
 		}
 
-		return $line;
+		$job   = '' !== $last['job'] ? ADVCM_Jobs::get( $last['job'] ) : null;
+		$state = is_array( $job ) && isset( $job['state'] ) ? (string) $job['state'] : $last['state'];
+		$when  = esc_html( gmdate( 'Y-m-d H:i', $last['at'] ) . ' UTC' );
+
+		if ( is_array( $job ) ) {
+			$when = '<a href="' . esc_url( add_query_arg( 'advcm_job', $last['job'], self::tab_url( 'history' ) ) ) . '">' . $when . '</a>';
+		}
+
+		/* translators: %d: number of posts. */
+		$posts = $last['total'] > 0 ? sprintf( _n( '%d post', '%d posts', $last['total'], 'advcm' ), $last['total'] ) : __( 'posts not recorded', 'advcm' );
+
+		return $when . '<br>' . esc_html( $posts . ( '' !== $state ? ' — ' . $state : '' ) );
 	}
 
 	/**
 	 * One button that changes one rule.
 	 *
-	 * @param string $id    Rule id.
-	 * @param string $op    enable, disable or delete.
+	 * @param string $id    Rule id, or empty for pause and resume, which change no rule.
+	 * @param string $op    enable, disable, delete, pause or resume.
 	 * @param string $label Label.
+	 * @param string $class Button class.
 	 * @return void
 	 */
-	private static function rule_button( $id, $op, $label ) {
-		echo '<form method="post" action="' . esc_url( ADVCM_Controller::url() ) . '" style="display:inline"' . ( 'delete' === $op ? ' onsubmit="return confirm(' . esc_attr( wp_json_encode( __( 'Delete this rule?', 'advcm' ) ) ) . ');"' : '' ) . '>';
+	private static function rule_button( $id, $op, $label, $class = 'small' ) {
+		$confirm = array(
+			'delete' => __( 'Delete this rule?', 'advcm' ),
+			'pause'  => __( 'Pause every auto-clear rule? Publishing will clear no listing page until it is resumed.', 'advcm' ),
+		);
+
+		echo '<form method="post" action="' . esc_url( ADVCM_Controller::url() ) . '" style="display:inline"' . ( isset( $confirm[ $op ] ) ? ' onsubmit="return confirm(' . esc_attr( wp_json_encode( $confirm[ $op ] ) ) . ');"' : '' ) . '>';
 		wp_nonce_field( ADVCM_Auto::SAVE );
 		echo '<input type="hidden" name="action" value="' . esc_attr( ADVCM_Auto::SAVE ) . '" />';
 		echo '<input type="hidden" name="op" value="' . esc_attr( $op ) . '" />';
-		echo '<input type="hidden" name="rule" value="' . esc_attr( $id ) . '" />';
-		submit_button( $label, 'small', 'submit', false );
+		if ( '' !== $id ) {
+			echo '<input type="hidden" name="rule" value="' . esc_attr( $id ) . '" />';
+		}
+
+		submit_button( $label, $class, 'submit', false );
 		echo '</form> ';
 	}
 
@@ -954,7 +1087,7 @@ final class ADVCM_Screen {
 		echo '<ul style="list-style:disc;margin-left:20px">';
 
 		foreach ( $hits as $hit ) {
-			echo '<li>' . esc_html( self::rule_line( $hit ) . ' → ' . implode( ', ', $hit['urls'] ) ) . ( $rules[ $hit['id'] ]['enabled'] ? '' : ' <em>(' . esc_html__( 'switched off, so not yet', 'advcm' ) . ')</em>' ) . '</li>';
+			echo '<li>' . esc_html( ADVCM_Auto::describe( $hit ) . ' → ' . implode( ', ', $hit['urls'] ) ) . ( $rules[ $hit['id'] ]['enabled'] ? '' : ' <em>(' . esc_html__( 'switched off, so not yet', 'advcm' ) . ')</em>' ) . '</li>';
 		}
 
 		echo '</ul>';
