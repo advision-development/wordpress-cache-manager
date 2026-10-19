@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.2 — unreleased
+## 0.3.2 — 2026-10-19
 
 - **A listing stayed old for hours after an auto-clear that reported ok.** On BMR a pick was
   published on 2026-10-18, its rule cleared `/analysis/` a minute later, every step said ok, and the
