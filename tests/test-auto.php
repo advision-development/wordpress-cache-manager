@@ -34,6 +34,28 @@ $GLOBALS['term_children'] = array(
 	'post_tag' => array( 30 => array( 31 ) ),
 );
 
+// As WordPress's: false when there was no row to delete — when another request took it first.
+$GLOBALS['taken_elsewhere'] = array();
+
+function delete_option( $name ) {
+	if ( in_array( $name, $GLOBALS['taken_elsewhere'], true ) || ! array_key_exists( $name, $GLOBALS['options'] ) ) {
+		unset( $GLOBALS['options'][ $name ] );
+
+		return false;
+	}
+
+	unset( $GLOBALS['options'][ $name ] );
+
+	return true;
+}
+
+// WP-Cron's own list, timestamp => hook => key => event. Empty: a cron that keeps up.
+$GLOBALS['cron_array'] = array();
+
+function _get_cron_array() {
+	return $GLOBALS['cron_array'];
+}
+
 function get_term_children( $term, $taxonomy ) {
 	return isset( $GLOBALS['term_children'][ $taxonomy ][ $term ] ) ? $GLOBALS['term_children'][ $taxonomy ][ $term ] : array();
 }
@@ -825,6 +847,69 @@ check( 'NitroPack: an auto-clear invalidates exactly its URL', array( array( 'ni
 $GLOBALS['vendor_calls'] = array();
 $nitro->clear( 'urls', array( 'https://example.test/analysis/' ), array() );
 check( 'and a page somebody clears is still purged', array( array( 'nitropack_sdk_purge', array( 'https://example.test/analysis/' ) ) ) === $GLOBALS['vendor_calls'] );
+
+// ------------------------------------------------------------ a cron that is hours behind
+
+// Measured on BMR, 2026-10-18: another plugin had left 3,500 copies of one hourly event, WP-Cron
+// ran due events oldest first, and a clear scheduled a minute out ran 8.5 hours late.
+rules( array( 'a1' => $analysis ) );
+reset_waiting();
+
+$old                   = time() - 7200;
+$GLOBALS['cron_array'] = array(
+	$old         => array( 'someone_elses_sync' => array( 'k' => array() ) ),
+	time() + 600 => array( 'later' => array( 'k' => array() ) ),
+);
+
+ADVCM_Auto::saved( 1, post( 1, 'publish', 'post', array( 7 ) ), false, null );
+
+check( 'when WP-Cron is behind, the clear is scheduled ahead of everything waiting', $old - 1 === flush_at(), (string) flush_at() );
+
+reset_waiting();
+$GLOBALS['cron_array'] = array( time() - 30 => array( 'just_due' => array( 'k' => array() ) ) );
+
+ADVCM_Auto::saved( 1, post( 1, 'publish', 'post', array( 7 ) ), false, null );
+
+check( 'a cron only seconds late keeps the window, so a burst stays one clear', flush_at() >= time() + ADVCM_Auto::WINDOW - 1, (string) flush_at() );
+
+$now                   = time();
+$GLOBALS['cron_array'] = array(
+	$now - 7200 => array( 'a' => array( 'k1' => array(), 'k2' => array() ) ),
+	$now - 100  => array( 'b' => array( 'k' => array() ) ),
+	$now + 50   => array( 'c' => array( 'k' => array() ) ),
+);
+$backlog = ADVCM_Auto::cron_backlog( $now );
+
+check( 'the backlog counts every event that is due and names the oldest', 3 === $backlog['due'] && $now - 7200 === $backlog['oldest'], json_encode( $backlog ) );
+
+$GLOBALS['cron_array'] = array();
+$backlog               = ADVCM_Auto::cron_backlog( $now );
+
+check( 'and is empty for a cron that keeps up', 0 === $backlog['due'] && 0 === $backlog['oldest'] );
+
+// --------------------------------------------------------- the screen moves a late clear
+
+reset_waiting();
+add_option( ADVCM_Auto::MARK . 'a1', time() );
+wp_schedule_single_event( time() - ADVCM_Auto::WINDOW - 1, ADVCM_Auto::FLUSH_HOOK );
+
+check( 'the screen runs a clear WP-Cron has left waiting', 1 === ADVCM_Auto::tick() && array() === marks() && false === flush_at() );
+
+add_option( ADVCM_Auto::MARK . 'a1', time() );
+wp_schedule_single_event( time() + 30, ADVCM_Auto::FLUSH_HOOK );
+
+check( 'but never one that is not due yet: the window stays', 0 === ADVCM_Auto::tick() && array( 'a1' ) === marks() );
+
+reset_waiting();
+
+// The tick and WP-Cron can now both reach a clear. Whichever deletes the mark first clears it.
+add_option( ADVCM_Auto::MARK . 'a1', time() );
+$GLOBALS['taken_elsewhere'] = array( ADVCM_Auto::MARK . 'a1' );
+
+check( 'a mark another request took first is not cleared again', null === ADVCM_Auto::flush() );
+
+$GLOBALS['taken_elsewhere'] = array();
+reset_waiting();
 
 // --------------------------------------------------------------- WP-CLI keeps the name
 

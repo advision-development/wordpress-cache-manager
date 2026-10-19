@@ -159,6 +159,7 @@ final class ADVCM_Screen {
 			'status'  => function () {
 				self::render_last_error();
 				self::render_loopback();
+				self::render_backlog();
 				self::render_plan();
 			},
 			'clear'   => function () use ( $hard ) {
@@ -283,7 +284,11 @@ final class ADVCM_Screen {
 	 * @return void
 	 */
 	private static function render_tick( $reload ) {
-		if ( ! self::running_job() ) {
+		// Also for an auto-clear WP-Cron has left a window past due: the tick runs it
+		// (ADVCM_Auto::tick()), as it moves a background job.
+		$late_clear = ADVCM_Auto::next_flush() > 0 && ADVCM_Auto::next_flush() <= time() - ADVCM_Auto::WINDOW;
+
+		if ( ! self::running_job() && ! $late_clear ) {
 			return;
 		}
 
@@ -373,6 +378,31 @@ final class ADVCM_Screen {
 		}
 
 		echo '</tbody></table>';
+	}
+
+	/**
+	 * WP-Cron running behind, and what it means for auto-clears.
+	 *
+	 * On BMR another plugin's duplicated event kept cron hours behind and an auto-clear ran 8.5
+	 * hours late; nothing on this screen said so. Read-only: the cron option WordPress already holds.
+	 *
+	 * @return void
+	 */
+	private static function render_backlog() {
+		$backlog = ADVCM_Auto::cron_backlog( time() );
+
+		if ( 0 === $backlog['oldest'] || $backlog['oldest'] >= time() - ADVCM_Auto::BEHIND ) {
+			return;
+		}
+
+		echo '<div class="notice notice-warning inline"><p>' . esc_html(
+			sprintf(
+				/* translators: 1: how late, 2: how many events. */
+				__( 'WP-Cron is %1$s behind, with %2$d events waiting. Scheduled work on this site runs late, other plugins\' included. An auto-clear is put ahead of them, and this screen runs one that is still late while it is open.', 'advcm' ),
+				ADVCM_Probe::duration( time() - $backlog['oldest'] ),
+				$backlog['due']
+			)
+		) . '</p></div>';
 	}
 
 	/**

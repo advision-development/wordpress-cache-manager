@@ -65,6 +65,12 @@ minute later by WP-Cron, as one per-URL job with every post saved in between: ob
 NitroPack (purged, as a new rule recommends, or invalidated), the host cache, a warm-up. Nothing
 runs in the save; with no rule switched on the hook costs one option read.
 
+**A cron that is behind.** WP-Cron runs due events oldest first, so on a site where something
+else has flooded it a clear a minute out waits behind all of them (on BMR, 8.5 hours). When cron's
+oldest due event is more than 2 minutes late, the clear is scheduled just before it instead and
+runs first. *Status* says how far behind cron is, and while the screen is open it runs a clear that
+is still a minute past due.
+
 **No warm-up after an invalidate.** An invalidated NitroPack page keeps answering with its old
 copy while it rebuilds, so requesting it straight away has the host cache store that copy in front
 of NitroPack: on BMR, `/analysis/` stayed old for 18 hours that way. A job that invalidated

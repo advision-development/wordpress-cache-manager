@@ -359,7 +359,7 @@ final class ADVCM_Controller {
 		}
 
 		try {
-			$moved = ADVCM_Runner::tick();
+			$moved = ADVCM_Runner::tick() + ADVCM_Auto::tick();
 		} catch ( Throwable $e ) {
 			ADVCM_Safe::report( 'wp_ajax_' . self::TICK, $e );
 			$moved = 0;

@@ -12,6 +12,15 @@
   - A warm-up answered with `X-Nitro-Cache: STALE` is `partial`, naming the pages, not `ok`.
   - A new rule offers **Purge** first and recommends it: the new list shows at once, un-optimized
     for a few minutes. Existing rules keep what they were saved with.
+- **An auto-clear ran 8.5 hours late on a site whose WP-Cron was behind.** BMR's cron held 3,500
+  copies of another plugin's hourly event; cron runs due events oldest first, so a clear scheduled
+  a minute out waited behind every one. Now:
+  - When cron's oldest due event is more than 2 minutes late, the clear is scheduled just before
+    it, so the next cron run does it first. A burst of saves may then be two clears instead of one.
+  - *Status* says how far behind WP-Cron is and how many events wait.
+  - While the screen is open, its tick runs an auto-clear that is a full minute past due, as it
+    already moved background jobs. Only the request whose `delete_option` takes a rule's mark
+    clears it, so the tick and cron never clear the same mark twice.
 - Every step is told how the steps before it in the job ended (`earlier`), and whether NitroPack
   invalidates or purges is decided in one place, `ADVCM_Adapter_Nitropack::invalidates()`.
 

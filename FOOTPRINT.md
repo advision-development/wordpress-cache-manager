@@ -21,7 +21,7 @@ and the code disagree.
 | Kind | Name | Notes |
 |---|---|---|
 | Cron (single) | `advcm_continue` | args `[job id]`; the next step of a background clear. Registered on every request, removed on deactivation and uninstall |
-| Cron (single) | `advcm_auto_flush` | no args; the auto-clear, about 60 s after a post matching a rule is published. Scheduled only when a rule is on; removed on deactivation and uninstall |
+| Cron (single) | `advcm_auto_flush` | no args; the auto-clear, about 60 s after a post matching a rule is published — or, when WP-Cron is more than 2 minutes behind, timestamped just before its oldest due event, so it runs first. Scheduled only when a rule is on; removed on deactivation and uninstall |
 | Option | `advcm_jobs` | not autoloaded; last 10 clears, up to 30 while waiting for Hawkeye |
 | Option | `advcm_layers` | not autoloaded; per layer, last clear |
 | Option | `advcm_lock_<job id>` | while a job runs; deleted when it stops |

@@ -22,7 +22,7 @@
       "hook": "advcm_auto_flush",
       "args": [],
       "single": true,
-      "why": "the auto-clear: about 60 seconds after a post matching a rule is published, clears the URLs every waiting rule names, as one per-URL job. Scheduled only when a rule exists and is switched on",
+      "why": "the auto-clear: about 60 seconds after a post matching a rule is published, or, when WP-Cron is more than 2 minutes behind, timestamped just before its oldest due event so it runs first; clears the URLs every waiting rule names, as one per-URL job. Scheduled only when a rule exists and is switched on",
       "callback": "ADVCM_Auto::flush, registered on every request"
     }
   ],
