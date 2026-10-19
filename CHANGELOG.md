@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.2 — unreleased
+
+- **A listing stayed old for hours after an auto-clear that reported ok.** On BMR a pick was
+  published on 2026-10-18, its rule cleared `/analysis/` a minute later, every step said ok, and the
+  page still showed the old list 18 hours on. The rule invalidated NitroPack, which keeps serving
+  the old copy while it rebuilds, and the warm-up then requested the page at once: the host cache
+  stored NitroPack's old copy in front of it. Now:
+  - A job that invalidated NitroPack skips its warm-up and says why. After a purge, or where
+    NitroPack did not run, the warm-up runs as before.
+  - A warm-up answered with `X-Nitro-Cache: STALE` is `partial`, naming the pages, not `ok`.
+  - A new rule offers **Purge** first and recommends it: the new list shows at once, un-optimized
+    for a few minutes. Existing rules keep what they were saved with.
+- Every step is told how the steps before it in the job ended (`earlier`), and whether NitroPack
+  invalidates or purges is decided in one place, `ADVCM_Adapter_Nitropack::invalidates()`.
+
 ## 0.3.1 — 2026-10-01
 
 - **An auto-clear says what triggered it.** History showed an auto-clear as *Auto-clear* and

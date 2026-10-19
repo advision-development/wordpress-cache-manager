@@ -59,8 +59,10 @@ class ADVCM_Adapter_Nitropack extends ADVCM_Adapter {
 	public function clear( $scope, array $urls, array $options ) {
 		$reason = 'CacheManager';
 
+		$invalidate = self::invalidates( $scope, $options );
+
 		if ( 'all' === $scope ) {
-			if ( isset( $options['nitropack_mode'] ) && 'purge' === $options['nitropack_mode'] ) {
+			if ( ! $invalidate ) {
 				$this->expect( nitropack_sdk_purge( null, null, $reason ), 'full purge' );
 
 				return $this->ok( 'full purge: every page is served un-optimized until NitroPack rebuilds it' );
@@ -75,9 +77,7 @@ class ADVCM_Adapter_Nitropack extends ADVCM_Adapter {
 		$failed = array();
 
 		// A person clearing a page wants to see it changed, so a per-URL clear purges. An auto-clear
-		// asks for invalidate instead: it runs every time a post is published, and a purge would
-		// serve the listing un-optimized after each one (class-auto.php).
-		$invalidate = isset( $options['nitropack_mode'] ) && 'invalidate' === $options['nitropack_mode'];
+		// rule may ask for invalidate instead (class-auto.php).
 
 		foreach ( $urls as $url ) {
 			$answer = $invalidate ? nitropack_sdk_invalidate( $url, null, $reason ) : nitropack_sdk_purge( $url, null, $reason );
@@ -99,6 +99,21 @@ class ADVCM_Adapter_Nitropack extends ADVCM_Adapter {
 		}
 
 		return $this->ok( sprintf( $invalidate ? 'invalidated %d URL(s): the old optimized copy serves while NitroPack rebuilds it' : 'purged %d URL(s)', $done ) );
+	}
+
+	/**
+	 * Whether a clear with these options invalidates rather than purges: a whole-site clear
+	 * unless a purge was asked for, a per-URL one only when an invalidate was. The one place the
+	 * choice is made, so clear() and the warm-up cannot disagree about it.
+	 *
+	 * @param string $scope   `all` or `urls`.
+	 * @param array  $options Request options.
+	 * @return bool
+	 */
+	public static function invalidates( $scope, array $options ) {
+		$mode = isset( $options['nitropack_mode'] ) ? $options['nitropack_mode'] : '';
+
+		return 'all' === $scope ? 'purge' !== $mode : 'invalidate' === $mode;
 	}
 
 	public function info() {

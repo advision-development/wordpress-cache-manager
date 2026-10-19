@@ -79,6 +79,15 @@ class ADVCM_Adapter_Warm extends ADVCM_Adapter {
 	 * @return array
 	 */
 	public function clear( $scope, array $urls, array $options ) {
+		// Not after NitroPack was invalidated in this job. An invalidated page keeps answering with
+		// the old copy while NitroPack rebuilds it, so requesting it now has the host cache store
+		// that copy in front of NitroPack. Measured on BMR: /analysis/ stayed old for 18 hours.
+		$nitropack = isset( $options['earlier']['nitropack'] ) ? $options['earlier']['nitropack'] : '';
+
+		if ( in_array( $nitropack, array( 'ok', 'partial' ), true ) && ADVCM_Adapter_Nitropack::invalidates( $scope, $options ) ) {
+			return $this->not_applicable( 'NitroPack is rebuilding these pages, and requesting them now would store its old copy in the host cache' );
+		}
+
 		$carry   = isset( $options['carry'] ) && is_array( $options['carry'] ) ? $options['carry'] : array();
 		$targets = isset( $carry['targets'] ) && is_array( $carry['targets'] )
 			? $carry['targets']
@@ -100,6 +109,7 @@ class ADVCM_Adapter_Warm extends ADVCM_Adapter {
 		$delay  = isset( $options['warm_delay'] ) ? max( 0, (int) $options['warm_delay'] ) : 0;
 		$cursor = isset( $carry['cursor'] ) ? max( 0, (int) $carry['cursor'] ) : 0;
 		$bad    = isset( $carry['bad'] ) && is_array( $carry['bad'] ) ? $carry['bad'] : array();
+		$stale  = isset( $carry['stale'] ) && is_array( $carry['stale'] ) ? $carry['stale'] : array();
 		$total  = count( $requests );
 
 		// `warm_budget` exists for the test suite, which needs to see a cursor handed back without
@@ -113,7 +123,7 @@ class ADVCM_Adapter_Warm extends ADVCM_Adapter {
 				return array(
 					'status'  => 'continue',
 					'message' => sprintf( '%d of %d requested so far', $cursor, $total ),
-					'carry'   => array( 'targets' => $targets, 'cursor' => $cursor, 'bad' => $bad ),
+					'carry'   => array( 'targets' => $targets, 'cursor' => $cursor, 'bad' => $bad, 'stale' => $stale ),
 				);
 			}
 
@@ -124,13 +134,23 @@ class ADVCM_Adapter_Warm extends ADVCM_Adapter {
 			$first = false;
 			$chunk = array_slice( $requests, $cursor, $batch );
 
-			foreach ( self::fetch( $chunk ) as $i => $code ) {
-				if ( $code < 200 || $code >= 400 ) {
-					$bad[ $chunk[ $i ][0] ] = $code;
+			foreach ( self::fetch( $chunk ) as $i => $answer ) {
+				if ( $answer['code'] < 200 || $answer['code'] >= 400 ) {
+					$bad[ $chunk[ $i ][0] ] = $answer['code'];
+				} elseif ( 'STALE' === $answer['nitro'] ) {
+					$stale[ $chunk[ $i ][0] ] = true;
 				}
 			}
 
 			$cursor += count( $chunk );
+		}
+
+		// A page NitroPack answered with its old copy is not warm: the clear did not reach it, and
+		// reporting ok would have people read the job as done while visitors see the old page.
+		if ( ! empty( $stale ) && empty( $bad ) ) {
+			$named = array_slice( array_keys( $stale ), 0, 5 );
+
+			return $this->partial( count( $targets ) - count( $stale ), count( $targets ), 'NitroPack still answered with its old copy (STALE): ' . implode( ', ', $named ) );
 		}
 
 		if ( ! empty( $bad ) ) {
@@ -199,10 +219,10 @@ class ADVCM_Adapter_Warm extends ADVCM_Adapter {
 	 * A batch is now the number of requests between pauses.
 	 *
 	 * @param array $chunk array( url, user agent ) pairs.
-	 * @return int[] Status code per request, 0 when there was no answer.
+	 * @return array Per request: `code` (0 when there was no answer) and NitroPack's `nitro` header.
 	 */
 	private static function fetch( array $chunk ) {
-		$codes = array();
+		$answers = array();
 
 		foreach ( $chunk as $pair ) {
 			$response = wp_remote_get(
@@ -214,9 +234,14 @@ class ADVCM_Adapter_Warm extends ADVCM_Adapter {
 				)
 			);
 
-			$codes[] = is_wp_error( $response ) ? 0 : (int) wp_remote_retrieve_response_code( $response );
+			$answers[] = is_wp_error( $response )
+				? array( 'code' => 0, 'nitro' => '' )
+				: array(
+					'code'  => (int) wp_remote_retrieve_response_code( $response ),
+					'nitro' => strtoupper( trim( (string) wp_remote_retrieve_header( $response, 'x-nitro-cache' ) ) ),
+				);
 		}
 
-		return $codes;
+		return $answers;
 	}
 }

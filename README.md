@@ -62,8 +62,14 @@ a post, and the listing never rendered the new one. Tools → CacheManager → *
 **a post type (or any content), optionally a term, and up to ten of this site's URLs**. When a
 matching post is published, updated while published, or taken down, its URLs are cleared about a
 minute later by WP-Cron, as one per-URL job with every post saved in between: object cache,
-NitroPack (invalidated by default), the host cache, a warm-up. Nothing runs in the save; with no
-rule switched on the hook costs one option read.
+NitroPack (purged, as a new rule recommends, or invalidated), the host cache, a warm-up. Nothing
+runs in the save; with no rule switched on the hook costs one option read.
+
+**No warm-up after an invalidate.** An invalidated NitroPack page keeps answering with its old
+copy while it rebuilds, so requesting it straight away has the host cache store that copy in front
+of NitroPack: on BMR, `/analysis/` stayed old for 18 hours that way. A job that invalidated
+NitroPack skips its warm-up and says why; a warm-up that NitroPack answers with `STALE` is
+`partial`, never `ok`.
 
 - **Any content** covers every post type a visitor can view, less media, menus, reusable blocks,
   theme and page-builder templates and form or snippet plugins' records; the
@@ -105,7 +111,7 @@ the exact shape of this repository's releases. The two controls left to the repo
 ## Build, test, release
 
 ```bash
-./tests/docker.sh         # the suite on PHP 7.4 and 8.3, in containers
+./tests/docker.sh         # the suite on PHP 7.4, 8.3 and 8.4, in containers
 ./tests/docker.sh build   # build.sh: lint, PHP 7.4 syntax gate, tests, dist/wordpress-cache-manager-<version>.zip
 ./tests/run.sh            # the suite on whatever php is on PATH, which is what CI calls
 ./tests/smoke.sh          # a real WordPress in containers: every mode, a layer removed, every page

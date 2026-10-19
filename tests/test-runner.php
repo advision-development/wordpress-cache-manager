@@ -74,8 +74,11 @@ class Fake_Adapter extends ADVCM_Adapter {
 		return true === $answer ? $this->present() : $this->absent( (string) $answer );
 	}
 
+	public $options = null;
+
 	public function clear( $scope, array $urls, array $options ) {
 		$this->calls++;
+		$this->options = $options;
 
 		if ( null !== $this->clear ) {
 			return call_user_func( $this->clear, $this );
@@ -462,5 +465,23 @@ $layers = ADVCM_Jobs::layers();
 
 check( 'a step a fatal killed is in the summary as failed', 'failed' === $layers['host']['status'], $layers['host']['status'] );
 check( 'and the last success before it is kept', 12345 === $layers['host']['ok_at'] );
+
+// ------------------------------------------------------------------ what came before
+
+// The warm-up must know whether NitroPack was invalidated in this job: requesting a page
+// NitroPack is rebuilding stores its old copy in the host cache in front of it.
+$last = new Fake_Adapter( 'last', ADVCM_Stages::WARM );
+
+ADVCM_Runner::use_adapters(
+	array(
+		new Fake_Adapter( 'first', ADVCM_Stages::OBJECT ),
+		new Fake_Adapter( 'gone', ADVCM_Stages::PAGE, array( 'not installed' ) ),
+		$last,
+	)
+);
+
+ADVCM_Runner::start( array( 'scope' => 'all' ) );
+
+check( 'a step is told how every step before it ended', array( 'first' => 'ok', 'gone' => 'skipped' ) === ( isset( $last->options['earlier'] ) ? $last->options['earlier'] : null ), json_encode( $last->options ) );
 
 finish();

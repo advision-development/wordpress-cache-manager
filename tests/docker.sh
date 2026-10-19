@@ -3,7 +3,7 @@
 # Run the suite, or build, inside PHP containers rather than a PHP installed on this machine.
 # The same versions CI runs: 7.4 is the floor the plugin header claims, 8.4 is what production runs.
 #
-#   ./tests/docker.sh            # the suite on 7.4 and 8.3
+#   ./tests/docker.sh            # the suite on 7.4, 8.3 and 8.4
 #   ./tests/docker.sh build      # ./build.sh, to see the zip the release would publish
 
 set -euo pipefail
