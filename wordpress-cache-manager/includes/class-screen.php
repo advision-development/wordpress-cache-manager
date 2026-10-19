@@ -159,6 +159,7 @@ final class ADVCM_Screen {
 			'status'  => function () {
 				self::render_last_error();
 				self::render_loopback();
+				self::render_backlog();
 				self::render_plan();
 			},
 			'clear'   => function () use ( $hard ) {
@@ -283,7 +284,11 @@ final class ADVCM_Screen {
 	 * @return void
 	 */
 	private static function render_tick( $reload ) {
-		if ( ! self::running_job() ) {
+		// Also for an auto-clear WP-Cron has left a window past due: the tick runs it
+		// (ADVCM_Auto::tick()), as it moves a background job.
+		$late_clear = ADVCM_Auto::next_flush() > 0 && ADVCM_Auto::next_flush() <= time() - ADVCM_Auto::WINDOW;
+
+		if ( ! self::running_job() && ! $late_clear ) {
 			return;
 		}
 
@@ -373,6 +378,31 @@ final class ADVCM_Screen {
 		}
 
 		echo '</tbody></table>';
+	}
+
+	/**
+	 * WP-Cron running behind, and what it means for auto-clears.
+	 *
+	 * On BMR another plugin's duplicated event kept cron hours behind and an auto-clear ran 8.5
+	 * hours late; nothing on this screen said so. Read-only: the cron option WordPress already holds.
+	 *
+	 * @return void
+	 */
+	private static function render_backlog() {
+		$backlog = ADVCM_Auto::cron_backlog( time() );
+
+		if ( 0 === $backlog['oldest'] || $backlog['oldest'] >= time() - ADVCM_Auto::BEHIND ) {
+			return;
+		}
+
+		echo '<div class="notice notice-warning inline"><p>' . esc_html(
+			sprintf(
+				/* translators: 1: how late, 2: how many events. */
+				__( 'WP-Cron is %1$s behind, with %2$d events waiting. Scheduled work on this site runs late, other plugins\' included. An auto-clear is put ahead of them, and this screen runs one that is still late while it is open.', 'advcm' ),
+				ADVCM_Probe::duration( time() - $backlog['oldest'] ),
+				$backlog['due']
+			)
+		) . '</p></div>';
 	}
 
 	/**
@@ -875,7 +905,30 @@ final class ADVCM_Screen {
 			echo '</div>';
 		}
 
-		echo '<p>' . esc_html( sprintf( __( 'A page that lists posts — a category page, a Page built from a query — is not refreshed by NitroPack when a new post appears on it, because it never rendered that post. A rule names those pages. When a matching post is published, updated while published, or unpublished, its pages are cleared about %d seconds later in the background, with every other post saved in between: one clear, never one per post. NitroPack is invalidated, so it keeps serving the old optimized copy while it rebuilds. The post\'s own page is NitroPack\'s to refresh, and it does.', 'advcm' ), ADVCM_Auto::WINDOW ) ) . '</p>';
+		echo '<p>' . esc_html( sprintf( __( 'A page that lists posts — a category page, a Page built from a query — is not refreshed by NitroPack when a new post appears on it, because it never rendered that post. A rule names those pages. When a matching post is published, updated while published, or unpublished, its pages are cleared about %d seconds later in the background, with every other post saved in between: one clear, never one per post. Each rule says whether NitroPack is purged, so the new list shows at once, or invalidated, so the old optimized copy serves while it rebuilds.', 'advcm' ), ADVCM_Auto::WINDOW ) ) . '</p>';
+
+		// The site setting, kept as a rule in the same row (ADVCM_Auto::OWN) and shown on its own:
+		// it names no page, so the table's columns would only half describe it.
+		$own = isset( $rules[ ADVCM_Auto::OWN ] ) ? $rules[ ADVCM_Auto::OWN ] : null;
+		unset( $rules[ ADVCM_Auto::OWN ] );
+
+		echo '<h3>' . esc_html__( 'Each post\'s own page', 'advcm' ) . '</h3>';
+		echo '<p>' . esc_html__( 'When content is published, updated or unpublished, also clear its own page in the same clear, purging NitroPack, so an edit shows without anybody clearing it by hand. NitroPack on its own invalidates the page and keeps serving the old copy while it rebuilds.', 'advcm' ) . '</p>';
+		echo '<p><strong>' . esc_html( null !== $own && $own['enabled'] ? __( 'On', 'advcm' ) : __( 'Off', 'advcm' ) ) . '</strong>';
+
+		if ( null !== $own ) {
+			echo ' — ' . self::last_clear( isset( $last[ ADVCM_Auto::OWN ] ) ? $last[ ADVCM_Auto::OWN ] : null ); // phpcs:ignore WordPress.Security.EscapeOutput -- escaped inside.
+		}
+
+		echo '</p>';
+
+		if ( $hard ) {
+			echo '<p>';
+			self::rule_button( '', null !== $own ? 'own_off' : 'own_on', null !== $own ? __( 'Switch off', 'advcm' ) : __( 'Switch on', 'advcm' ) );
+			echo '</p>';
+		}
+
+		echo '<h3>' . esc_html__( 'Listing pages', 'advcm' ) . '</h3>';
 
 		if ( ! empty( $waiting ) ) {
 			echo '<div class="notice notice-info inline"><p>' . esc_html(
@@ -924,7 +977,7 @@ final class ADVCM_Screen {
 
 		echo '</tbody></table>';
 
-		if ( $hard && ! $paused && ! empty( $rules ) ) {
+		if ( $hard && ! $paused && ( ! empty( $rules ) || null !== $own ) ) {
 			echo '<p style="margin-top:10px">';
 			self::rule_button( '', 'pause', __( 'Pause auto-clear', 'advcm' ) );
 			echo '<span class="description">' . esc_html__( 'Stops every rule at once, and keeps each one\'s own on or off for when it is resumed.', 'advcm' ) . '</span></p>';
@@ -967,8 +1020,10 @@ final class ADVCM_Screen {
 		echo '<p class="description">' . esc_html( sprintf( __( 'One URL or path per line, on this site only, up to %d.', 'advcm' ), ADVCM_Auto::MAX_URLS ) ) . '</p></td></tr>';
 
 		echo '<tr><th>' . esc_html__( 'NitroPack', 'advcm' ) . '</th><td>';
-		echo '<p style="margin:0 0 4px"><label><input type="radio" name="nitropack" value="invalidate" checked /> <strong>' . esc_html__( 'Invalidate', 'advcm' ) . '</strong> <em>(' . esc_html__( 'recommended', 'advcm' ) . ')</em> — ' . esc_html__( 'the old optimized copy serves while NitroPack rebuilds it.', 'advcm' ) . '</label></p>';
-		echo '<p style="margin:0"><label><input type="radio" name="nitropack" value="purge" /> <strong>' . esc_html__( 'Purge', 'advcm' ) . '</strong> — ' . esc_html__( 'the new list shows at once, un-optimized until NitroPack rebuilds it, after every publish.', 'advcm' ) . '</label></p>';
+		// Purge first and recommended: an invalidated listing kept serving the old list — measured on
+		// BMR, /analysis/ for 18 hours — and the old list is what a rule exists to replace.
+		echo '<p style="margin:0 0 4px"><label><input type="radio" name="nitropack" value="purge" checked /> <strong>' . esc_html__( 'Purge', 'advcm' ) . '</strong> <em>(' . esc_html__( 'recommended', 'advcm' ) . ')</em> — ' . esc_html__( 'the new list shows at once, un-optimized for a few minutes until NitroPack rebuilds it.', 'advcm' ) . '</label></p>';
+		echo '<p style="margin:0"><label><input type="radio" name="nitropack" value="invalidate" /> <strong>' . esc_html__( 'Invalidate', 'advcm' ) . '</strong> — ' . esc_html__( 'the old optimized copy, with the old list, serves until NitroPack rebuilds it, which can take hours.', 'advcm' ) . '</label></p>';
 		echo '</td></tr>';
 
 		echo '<tr><th>' . esc_html__( 'Switch on now', 'advcm' ) . '</th><td><label><input type="checkbox" name="enabled" value="1" /> ' . esc_html__( 'Leave unticked to add it switched off and test a post against it first.', 'advcm' ) . '</label></td></tr>';

@@ -779,6 +779,15 @@ final class ADVCM_Runner {
 			$options['carry'] = $step['carry'];
 		}
 
+		// How every earlier step ended, by layer id. The warm-up reads it: a page NitroPack was
+		// just invalidated in answers with the old copy it is rebuilding, and requesting it would
+		// have the host cache store that copy in front of it.
+		$options['earlier'] = array();
+
+		foreach ( array_slice( $job['steps'], 0, $index ) as $earlier ) {
+			$options['earlier'][ $earlier['id'] ] = $earlier['status'];
+		}
+
 		$result = self::guard(
 			function () use ( $adapter, $scope, $urls, $options ) {
 				return $adapter->clear( $scope, $urls, $options );

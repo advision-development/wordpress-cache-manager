@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.3.2 — unreleased
+
+- **A listing stayed old for hours after an auto-clear that reported ok.** On BMR a pick was
+  published on 2026-10-18, its rule cleared `/analysis/` a minute later, every step said ok, and the
+  page still showed the old list 18 hours on. The rule invalidated NitroPack, which keeps serving
+  the old copy while it rebuilds, and the warm-up then requested the page at once: the host cache
+  stored NitroPack's old copy in front of it. Now:
+  - A job that invalidated NitroPack skips its warm-up and says why. After a purge, or where
+    NitroPack did not run, the warm-up runs as before.
+  - A warm-up answered with `X-Nitro-Cache: STALE` is `partial`, naming the pages, not `ok`.
+  - A new rule offers **Purge** first and recommends it: the new list shows at once, un-optimized
+    for a few minutes. Existing rules keep what they were saved with.
+- **An auto-clear ran 8.5 hours late on a site whose WP-Cron was behind.** BMR's cron held 3,500
+  copies of another plugin's hourly event; cron runs due events oldest first, so a clear scheduled
+  a minute out waited behind every one. Now:
+  - When cron's oldest due event is more than 2 minutes late, the clear is scheduled just before
+    it, so the next cron run does it first. A burst of saves may then be two clears instead of one.
+  - *Status* says how far behind WP-Cron is and how many events wait.
+  - While the screen is open, its tick runs an auto-clear that is a full minute past due, as it
+    already moved background jobs. Only the request whose `delete_option` takes a rule's mark
+    clears it, so the tick and cron never clear the same mark twice.
+- **Editors no longer need to clear a post they just edited.** On BMR most manual clears were an
+  editor clearing the post they had saved a minute before: NitroPack invalidates it and serves the
+  old copy while it rebuilds. A new site setting on the *Auto-clear* tab, *Each post's own page*,
+  puts a published, updated or unpublished post's own URL into the auto-clear, purging NitroPack.
+  A post taken down clears the address it had, not its `__trashed` one; a burst clears at most 40
+  posts' pages; an address a filter moved off the site is never cleared. It is stored as the
+  reserved rule `own-page` in `advcm_rules`, so a save on a site using none of this still reads one
+  option. Off until an administrator switches it on.
+- Every step is told how the steps before it in the job ended (`earlier`), and whether NitroPack
+  invalidates or purges is decided in one place, `ADVCM_Adapter_Nitropack::invalidates()`.
+
 ## 0.3.1 — 2026-10-01
 
 - **An auto-clear says what triggered it.** History showed an auto-clear as *Auto-clear* and

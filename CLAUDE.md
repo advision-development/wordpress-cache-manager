@@ -80,7 +80,11 @@ These are requirements, not preferences. Each was either asked for explicitly or
 
 - **Auto-clear never runs in the save request.** `wp_after_insert_post` only marks a rule
   (`add_option`, so a burst is one mark) and schedules one event a minute out; the clear is a
-  per-URL job in WP-Cron. Not `transition_post_status`: REST — the block editor — sets terms after
+  per-URL job in WP-Cron. **When WP-Cron is more than 2 minutes behind** the event is timestamped
+  just before its oldest due event instead, because cron runs oldest first: measured on BMR, a
+  clear a minute out ran 8.5 hours late behind another plugin's 3,500 duplicated events. That
+  gives up the window (a burst may be two clears), never the save request. The screen's tick runs a
+  clear a full window past due; `delete_option`'s answer decides which request clears a mark. Not `transition_post_status`: REST — the block editor — sets terms after
   it, so a rule on a category would miss every Gutenberg post. A rule names this site's URLs only,
   re-checked when it runs, and never the whole site.
 - **Only the rules form writes `advcm_rules`.** Anything the cron learns about a rule — its last

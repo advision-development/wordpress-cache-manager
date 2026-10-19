@@ -20,16 +20,27 @@ $GLOBALS['requests'] = array();
 $GLOBALS['answer']   = function ( $url ) {
 	return 200;
 };
+$GLOBALS['nitro']    = function ( $url ) {
+	return '';
+};
 
 function wp_remote_get( $url, $args = array() ) {
 	$GLOBALS['requests'][] = array( $url, $args['user-agent'] );
 	$code                  = call_user_func( $GLOBALS['answer'], $url );
+	$nitro                 = call_user_func( $GLOBALS['nitro'], $url );
 
-	return 0 === $code ? new WP_Error() : array( 'response' => array( 'code' => $code ) );
+	return 0 === $code ? new WP_Error() : array(
+		'response' => array( 'code' => $code ),
+		'headers'  => '' === $nitro ? array() : array( 'x-nitro-cache' => $nitro ),
+	);
 }
 
 function wp_remote_retrieve_response_code( $response ) {
 	return $response['response']['code'];
+}
+
+function wp_remote_retrieve_header( $response, $header ) {
+	return isset( $response['headers'][ $header ] ) ? $response['headers'][ $header ] : '';
 }
 
 $GLOBALS['posts'] = array( 11 => 'https://example.test/newest/', 12 => 'https://attacker.test/filtered/', 13 => 'https://example.test/older/' );
@@ -45,7 +56,7 @@ function get_permalink( $id ) {
 require __DIR__ . '/store-stubs.php';
 require __DIR__ . '/bootstrap.php';
 
-foreach ( array( 'stages', 'adapter', 'urls', 'adapter-warm' ) as $class ) {
+foreach ( array( 'stages', 'adapter', 'urls', 'adapter-nitropack', 'adapter-warm' ) as $class ) {
 	load_class( $class );
 }
 
@@ -115,5 +126,47 @@ $started             = microtime( true );
 $warm->clear( 'urls', array( 'https://example.test/1/', 'https://example.test/2/' ), array( 'warm_batch' => 1, 'warm_delay' => 200 ) );
 
 check( 'batches are spaced by the mode\'s delay, so a rate limit in front does not see a burst', microtime( true ) - $started >= 0.55, sprintf( '%.2fs', microtime( true ) - $started ) );
+
+// ------------------------------------------------------------- after NitroPack in this job
+
+// Measured on BMR, 2026-10-18: an auto-clear invalidated /analysis/, the warm-up asked for it
+// at once, NitroPack answered with the copy it was rebuilding, and the host cache stored that
+// copy in front of it. The listing stayed old for 18 hours.
+$GLOBALS['requests'] = array();
+
+$result = $warm->clear( 'urls', array( 'https://example.test/list/' ), array( 'nitropack_mode' => 'invalidate', 'earlier' => array( 'nitropack' => 'ok' ) ) );
+
+check( 'pages NitroPack was just invalidated in are not requested', 0 === count( $GLOBALS['requests'] ), (string) count( $GLOBALS['requests'] ) );
+check( 'and the step says why', 'skipped' === $result['status'] && false !== strpos( $result['message'], 'NitroPack' ), json_encode( $result ) );
+
+$result = $warm->clear( 'all', array(), array( 'warm_site' => 0, 'earlier' => array( 'nitropack' => 'partial' ) ) );
+
+check( 'a whole-site clear invalidates by default, so its warm-up is left out too', 0 === count( $GLOBALS['requests'] ) && 'skipped' === $result['status'], json_encode( $result ) );
+
+$warm->clear( 'urls', array( 'https://example.test/list/' ), array( 'nitropack_mode' => 'purge', 'earlier' => array( 'nitropack' => 'ok' ) ) );
+
+check( 'after a purge there is no old copy to store, so the pages are requested', 2 === count( $GLOBALS['requests'] ), (string) count( $GLOBALS['requests'] ) );
+
+$GLOBALS['requests'] = array();
+
+$warm->clear( 'urls', array( 'https://example.test/list/' ), array( 'nitropack_mode' => 'invalidate', 'earlier' => array( 'nitropack' => 'skipped' ) ) );
+
+check( 'and where NitroPack did not run — absent, or left out on request — they are requested', 2 === count( $GLOBALS['requests'] ), (string) count( $GLOBALS['requests'] ) );
+
+// ---------------------------------------------------------------- an old copy answering
+
+$GLOBALS['requests'] = array();
+$GLOBALS['nitro']    = function ( $url ) {
+	return false !== strpos( $url, '/old/' ) ? 'STALE' : 'MISS';
+};
+
+$result = $warm->clear( 'urls', array( 'https://example.test/new/', 'https://example.test/old/' ), array() );
+
+check( 'a page NitroPack answers with its old copy makes the warm-up partial, not ok', 'partial' === $result['status'], json_encode( $result ) );
+check( 'and is named, so nobody reads the clear as done', false !== strpos( $result['message'], '/old/' ) && false !== strpos( $result['message'], 'STALE' ) && false === strpos( $result['message'], '/new/' ), $result['message'] );
+
+$GLOBALS['nitro'] = function ( $url ) {
+	return '';
+};
 
 finish();

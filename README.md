@@ -62,8 +62,20 @@ a post, and the listing never rendered the new one. Tools → CacheManager → *
 **a post type (or any content), optionally a term, and up to ten of this site's URLs**. When a
 matching post is published, updated while published, or taken down, its URLs are cleared about a
 minute later by WP-Cron, as one per-URL job with every post saved in between: object cache,
-NitroPack (invalidated by default), the host cache, a warm-up. Nothing runs in the save; with no
-rule switched on the hook costs one option read.
+NitroPack (purged, as a new rule recommends, or invalidated), the host cache, a warm-up. Nothing
+runs in the save; with no rule switched on the hook costs one option read.
+
+**A cron that is behind.** WP-Cron runs due events oldest first, so on a site where something
+else has flooded it a clear a minute out waits behind all of them (on BMR, 8.5 hours). When cron's
+oldest due event is more than 2 minutes late, the clear is scheduled just before it instead and
+runs first. *Status* says how far behind cron is, and while the screen is open it runs a clear that
+is still a minute past due.
+
+**No warm-up after an invalidate.** An invalidated NitroPack page keeps answering with its old
+copy while it rebuilds, so requesting it straight away has the host cache store that copy in front
+of NitroPack: on BMR, `/analysis/` stayed old for 18 hours that way. A job that invalidated
+NitroPack skips its warm-up and says why; a warm-up that NitroPack answers with `STALE` is
+`partial`, never `ok`.
 
 - **Any content** covers every post type a visitor can view, less media, menus, reusable blocks,
   theme and page-builder templates and form or snippet plugins' records; the
@@ -74,6 +86,10 @@ rule switched on the hook costs one option read.
   title, ID, type, and whether it was published, updated or unpublished — with a count of the
   rest. The rules table shows each rule's last clear.
 - **Pause** stops every rule at once and keeps each one's own on or off for the resume.
+- **Each post's own page** is a site setting on the same tab: when it is on, a published, updated
+  or unpublished post's own URL goes into the same clear, purging NitroPack, so an edit shows
+  without an editor clearing it by hand (on BMR, most manual clears were exactly that). It is kept
+  as the reserved rule `own-page` in the rules row, so a save still costs one option read.
 
 Administrators write rules and pause them; anyone who can clear can read them and test a post
 against them. History keeps the last three auto-clears, so a day of publishing does not push out
@@ -105,7 +121,7 @@ the exact shape of this repository's releases. The two controls left to the repo
 ## Build, test, release
 
 ```bash
-./tests/docker.sh         # the suite on PHP 7.4 and 8.3, in containers
+./tests/docker.sh         # the suite on PHP 7.4, 8.3 and 8.4, in containers
 ./tests/docker.sh build   # build.sh: lint, PHP 7.4 syntax gate, tests, dist/wordpress-cache-manager-<version>.zip
 ./tests/run.sh            # the suite on whatever php is on PATH, which is what CI calls
 ./tests/smoke.sh          # a real WordPress in containers: every mode, a layer removed, every page
