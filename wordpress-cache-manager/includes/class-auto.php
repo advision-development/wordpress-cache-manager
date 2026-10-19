@@ -96,6 +96,16 @@ final class ADVCM_Auto {
 	const MAX_POSTS = 10;
 
 	/**
+	 * The site setting "clear each post's own page", kept as a rule under this id in the rules row:
+	 * any content, its own address. In the same row so a save on a site using none of this still
+	 * costs one option read, and through the same marks, window, pause and History as any rule.
+	 */
+	const OWN = 'own-page';
+
+	/** How many saved posts' own pages one clear names. A job takes fifty URLs at most. */
+	const MAX_OWN = 40;
+
+	/**
 	 * How many post ids a waiting rule remembers, to count a post saved twice in the window once.
 	 *
 	 * Past this the count goes on rising for every save, a re-save included. Five hundred posts in
@@ -181,6 +191,7 @@ final class ADVCM_Auto {
 					'term_name' => isset( $rule['term_name'] ) ? (string) $rule['term_name'] : '',
 					'urls'      => array_values( array_map( 'strval', $rule['urls'] ) ),
 					'nitropack' => isset( $rule['nitropack'] ) && 'purge' === $rule['nitropack'] ? 'purge' : 'invalidate',
+					'own'       => ! empty( $rule['own'] ),
 				);
 			}
 		}
@@ -215,11 +226,12 @@ final class ADVCM_Auto {
 			return;
 		}
 
-		$entry  = self::post_entry( $post, self::change_kind( $post, $post_before ) );
+		$change = self::change_kind( $post, $post_before );
+		$entry  = self::post_entry( $post, $change );
 		$marked = 0;
 
 		foreach ( self::matching( $rules, $post ) as $rule ) {
-			self::mark( $rule['id'], $entry );
+			self::mark( $rule['id'], $rule['own'] ? $entry + array( 'url' => self::own_url( $post, $post_before, $change ) ) : $entry );
 			$marked++;
 		}
 
@@ -296,7 +308,11 @@ final class ADVCM_Auto {
 		$mark['total']++;
 
 		if ( count( $mark['posts'] ) < self::MAX_POSTS ) {
-			$mark['posts'][] = $entry;
+			$mark['posts'][] = array_diff_key( $entry, array( 'url' => true ) );
+		}
+
+		if ( ! empty( $entry['url'] ) && count( $mark['urls'] ) < self::MAX_OWN && ! in_array( $entry['url'], $mark['urls'], true ) ) {
+			$mark['urls'][] = $entry['url'];
 		}
 
 		return $mark;
@@ -307,12 +323,14 @@ final class ADVCM_Auto {
 	 * and says no posts.
 	 *
 	 * @param mixed $raw Stored value.
-	 * @return array at, posts, ids, total.
+	 * @return array at, posts, ids, total, urls (the own-page setting's addresses).
 	 */
 	public static function mark_from( $raw ) {
 		if ( ! is_array( $raw ) ) {
-			return array( 'at' => (int) $raw, 'posts' => array(), 'ids' => array(), 'total' => 0 );
+			return array( 'at' => (int) $raw, 'posts' => array(), 'ids' => array(), 'total' => 0, 'urls' => array() );
 		}
+
+		$urls = isset( $raw['urls'] ) && is_array( $raw['urls'] ) ? array_values( array_filter( $raw['urls'], 'is_string' ) ) : array();
 
 		$posts = array();
 
@@ -334,7 +352,27 @@ final class ADVCM_Auto {
 			'posts' => $posts,
 			'ids'   => array_slice( $ids, 0, self::MAX_IDS ),
 			'total' => max( isset( $raw['total'] ) ? (int) $raw['total'] : 0, count( $posts ) ),
+			'urls'  => array_slice( $urls, 0, self::MAX_OWN ),
 		);
+	}
+
+	/**
+	 * A saved post's own address, for the own-page setting: the one it had before when it was
+	 * taken down, because that is the address the caches hold, not the __trashed one it has now.
+	 *
+	 * @param object      $post        After.
+	 * @param object|null $post_before Before.
+	 * @param string      $change      published, updated or unpublished.
+	 * @return string
+	 */
+	private static function own_url( $post, $post_before, $change ) {
+		if ( ! function_exists( 'get_permalink' ) ) {
+			return '';
+		}
+
+		$link = get_permalink( 'unpublished' === $change && is_object( $post_before ) ? $post_before : $post );
+
+		return is_string( $link ) ? $link : '';
 	}
 
 	/**
@@ -566,6 +604,10 @@ final class ADVCM_Auto {
 	 * @return string
 	 */
 	public static function describe( array $rule ) {
+		if ( ! empty( $rule['own'] ) ) {
+			return __( 'any content is published, updated or unpublished: its own page', 'advcm' );
+		}
+
 		$line = self::ANY === $rule['post_type'] ? __( 'any content is published', 'advcm' ) : sprintf( __( 'a %s is published', 'advcm' ), $rule['post_type'] );
 
 		if ( '' !== $rule['taxonomy'] && $rule['term'] > 0 ) {
@@ -784,7 +826,9 @@ final class ADVCM_Auto {
 				'total' => $mark['total'],
 			);
 
-			foreach ( $rule['urls'] as $url ) {
+			// The own-page setting names no address of its own: the saved posts' addresses, taken at
+			// the save, are on its mark. They go through the same this-site filter below.
+			foreach ( $rule['own'] ? $mark['urls'] : $rule['urls'] as $url ) {
 				$urls[ $url ] = $url;
 			}
 		}
@@ -920,7 +964,23 @@ final class ADVCM_Auto {
 			return '';
 		}
 
-		if ( 'add' === $op ) {
+		if ( 'own_on' === $op ) {
+			// Purge: what an editor clearing the page they just edited did by hand, and what shows
+			// the edit at once. Invalidate would serve the old copy while NitroPack rebuilds it.
+			$rules[ self::OWN ] = array(
+				'enabled'   => true,
+				'post_type' => self::ANY,
+				'taxonomy'  => '',
+				'term'      => 0,
+				'term_name' => '',
+				'urls'      => array(),
+				'nitropack' => 'purge',
+				'own'       => true,
+			);
+		} elseif ( 'own_off' === $op ) {
+			unset( $rules[ self::OWN ] );
+			delete_option( self::MARK . self::OWN );
+		} elseif ( 'add' === $op ) {
 			if ( count( $rules ) >= self::MAX_RULES ) {
 				return sprintf( __( 'This site already has %d rules, the most it may have.', 'advcm' ), self::MAX_RULES );
 			}

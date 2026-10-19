@@ -34,6 +34,20 @@ $GLOBALS['term_children'] = array(
 	'post_tag' => array( 30 => array( 31 ) ),
 );
 
+// A post's address: /p/<id>/ while published, WordPress's __trashed form once it is not.
+// $GLOBALS['permalinks'] overrides one, for an address a filter moved.
+$GLOBALS['permalinks'] = array();
+
+function get_permalink( $post ) {
+	$id = is_object( $post ) ? $post->ID : (int) $post;
+
+	if ( isset( $GLOBALS['permalinks'][ $id ] ) ) {
+		return $GLOBALS['permalinks'][ $id ];
+	}
+
+	return is_object( $post ) && 'publish' !== $post->post_status ? 'https://example.test/p/' . $id . '__trashed/' : 'https://example.test/p/' . $id . '/';
+}
+
 // As WordPress's: false when there was no row to delete — when another request took it first.
 $GLOBALS['taken_elsewhere'] = array();
 
@@ -909,6 +923,69 @@ $GLOBALS['taken_elsewhere'] = array( ADVCM_Auto::MARK . 'a1' );
 check( 'a mark another request took first is not cleared again', null === ADVCM_Auto::flush() );
 
 $GLOBALS['taken_elsewhere'] = array();
+reset_waiting();
+
+// ---------------------------------------------------------------- the saved post's own page
+
+// Most manual clears on BMR were an editor clearing the post they had just edited: NitroPack
+// invalidates it and keeps serving the old copy while it rebuilds.
+rules( array( 'a1' => $analysis ) );
+ADVCM_Auto::change( array( 'op' => 'own_on' ) );
+$all = ADVCM_Auto::rules();
+
+check( 'the site setting is kept with the rules, so a save still reads one option', isset( $all[ ADVCM_Auto::OWN ], $all['a1'] ) && true === $all[ ADVCM_Auto::OWN ]['own'] && $all[ ADVCM_Auto::OWN ]['enabled'] );
+
+$GLOBALS['reads'] = array();
+ADVCM_Auto::saved( 40, post( 40, 'draft', 'post', array( 8 ) ), false, null );
+
+check( 'a draft saved still costs one read and marks nothing', array( ADVCM_Auto::RULES ) === $GLOBALS['reads'] && array() === marks(), implode( ',', $GLOBALS['reads'] ) );
+
+ADVCM_Auto::saved( 40, post( 40, 'publish', 'post', array( 8 ) ), true, post( 40, 'publish', 'post', array( 8 ) ) );
+$job = ADVCM_Auto::flush();
+
+check( 'a post updated while published clears its own page', is_array( $job ) && array( 'https://example.test/p/40/' ) === $job['urls'], is_array( $job ) ? implode( ', ', $job['urls'] ) : 'no job' );
+check( 'purging NitroPack, as the editor clearing it by hand did', 'purge' === $layer->asked[ count( $layer->asked ) - 1 ][2]['nitropack_mode'] );
+check( 'and History names the post and why', is_array( $job ) && false !== strpos( $job['options']['triggers'][0]['line'], 'own page' ) && 40 === $job['options']['triggers'][0]['posts'][0]['id'] );
+
+ADVCM_Auto::saved( 41, post( 41, 'trash', 'post', array( 8 ) ), true, post( 41, 'publish', 'post', array( 8 ) ) );
+$job = ADVCM_Auto::flush();
+
+check( 'a post taken down clears the address it had, the one the caches hold', is_array( $job ) && array( 'https://example.test/p/41/' ) === $job['urls'], is_array( $job ) ? implode( ', ', $job['urls'] ) : 'no job' );
+
+ADVCM_Auto::saved( 42, post( 42, 'publish', 'post', array( 7 ) ), false, null );
+$job = ADVCM_Auto::flush();
+
+check( 'with a listing rule too, one clear does both', is_array( $job ) && array( 'https://example.test/analysis/', 'https://example.test/p/42/' ) === $job['urls'], is_array( $job ) ? implode( ', ', $job['urls'] ) : 'no job' );
+
+$GLOBALS['permalinks'][43] = 'https://attacker.test/x/';
+ADVCM_Auto::saved( 43, post( 43, 'publish', 'post', array( 8 ) ), false, null );
+
+check( 'an address a filter moved off this site is never cleared', null === ADVCM_Auto::flush() );
+
+unset( $GLOBALS['permalinks'][43] );
+
+foreach ( range( 100, 160 ) as $many ) {
+	ADVCM_Auto::saved( $many, post( $many, 'publish', 'post', array( 8 ) ), false, null );
+}
+
+$job = ADVCM_Auto::flush();
+
+check( 'a burst clears at most the pages one job may name', is_array( $job ) && ADVCM_Auto::MAX_OWN === count( $job['urls'] ) && 61 === $job['options']['triggers'][0]['total'], is_array( $job ) ? (string) count( $job['urls'] ) : 'no job' );
+
+$full = array( 'at' => 1, 'urls' => array_map( function ( $n ) { return 'https://example.test/p/' . $n . '/'; }, range( 1, ADVCM_Auto::MAX_OWN ) ) );
+$more = ADVCM_Auto::appended( $full, array( 'id' => 999, 'title' => '', 'type' => 'post', 'change' => 'published', 'url' => 'https://example.test/p/999/' ) );
+
+check( 'a full mark takes no more addresses', ADVCM_Auto::MAX_OWN === count( $more['urls'] ) && ! in_array( 'https://example.test/p/999/', $more['urls'], true ) );
+
+$stored = array( 'at' => 1, 'urls' => array_map( function ( $n ) { return 'https://example.test/p/' . $n . '/'; }, range( 1, 90 ) ) );
+
+check( 'and a stored mark with more is read as at most that many', ADVCM_Auto::MAX_OWN === count( ADVCM_Auto::mark_from( $stored )['urls'] ) );
+
+ADVCM_Auto::change( array( 'op' => 'own_off' ) );
+ADVCM_Auto::saved( 44, post( 44, 'publish', 'post', array( 8 ) ), false, null );
+
+check( 'switched off, a save clears nothing of its own', ! isset( ADVCM_Auto::rules()[ ADVCM_Auto::OWN ] ) && array() === marks() && isset( ADVCM_Auto::rules()['a1'] ) );
+
 reset_waiting();
 
 // --------------------------------------------------------------- WP-CLI keeps the name

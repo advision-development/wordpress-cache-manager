@@ -905,7 +905,30 @@ final class ADVCM_Screen {
 			echo '</div>';
 		}
 
-		echo '<p>' . esc_html( sprintf( __( 'A page that lists posts — a category page, a Page built from a query — is not refreshed by NitroPack when a new post appears on it, because it never rendered that post. A rule names those pages. When a matching post is published, updated while published, or unpublished, its pages are cleared about %d seconds later in the background, with every other post saved in between: one clear, never one per post. Each rule says whether NitroPack is purged, so the new list shows at once, or invalidated, so the old optimized copy serves while it rebuilds. The post\'s own page is NitroPack\'s to refresh, and it does.', 'advcm' ), ADVCM_Auto::WINDOW ) ) . '</p>';
+		echo '<p>' . esc_html( sprintf( __( 'A page that lists posts — a category page, a Page built from a query — is not refreshed by NitroPack when a new post appears on it, because it never rendered that post. A rule names those pages. When a matching post is published, updated while published, or unpublished, its pages are cleared about %d seconds later in the background, with every other post saved in between: one clear, never one per post. Each rule says whether NitroPack is purged, so the new list shows at once, or invalidated, so the old optimized copy serves while it rebuilds.', 'advcm' ), ADVCM_Auto::WINDOW ) ) . '</p>';
+
+		// The site setting, kept as a rule in the same row (ADVCM_Auto::OWN) and shown on its own:
+		// it names no page, so the table's columns would only half describe it.
+		$own = isset( $rules[ ADVCM_Auto::OWN ] ) ? $rules[ ADVCM_Auto::OWN ] : null;
+		unset( $rules[ ADVCM_Auto::OWN ] );
+
+		echo '<h3>' . esc_html__( 'Each post\'s own page', 'advcm' ) . '</h3>';
+		echo '<p>' . esc_html__( 'When content is published, updated or unpublished, also clear its own page in the same clear, purging NitroPack, so an edit shows without anybody clearing it by hand. NitroPack on its own invalidates the page and keeps serving the old copy while it rebuilds.', 'advcm' ) . '</p>';
+		echo '<p><strong>' . esc_html( null !== $own && $own['enabled'] ? __( 'On', 'advcm' ) : __( 'Off', 'advcm' ) ) . '</strong>';
+
+		if ( null !== $own ) {
+			echo ' — ' . self::last_clear( isset( $last[ ADVCM_Auto::OWN ] ) ? $last[ ADVCM_Auto::OWN ] : null ); // phpcs:ignore WordPress.Security.EscapeOutput -- escaped inside.
+		}
+
+		echo '</p>';
+
+		if ( $hard ) {
+			echo '<p>';
+			self::rule_button( '', null !== $own ? 'own_off' : 'own_on', null !== $own ? __( 'Switch off', 'advcm' ) : __( 'Switch on', 'advcm' ) );
+			echo '</p>';
+		}
+
+		echo '<h3>' . esc_html__( 'Listing pages', 'advcm' ) . '</h3>';
 
 		if ( ! empty( $waiting ) ) {
 			echo '<div class="notice notice-info inline"><p>' . esc_html(
@@ -954,7 +977,7 @@ final class ADVCM_Screen {
 
 		echo '</tbody></table>';
 
-		if ( $hard && ! $paused && ! empty( $rules ) ) {
+		if ( $hard && ! $paused && ( ! empty( $rules ) || null !== $own ) ) {
 			echo '<p style="margin-top:10px">';
 			self::rule_button( '', 'pause', __( 'Pause auto-clear', 'advcm' ) );
 			echo '<span class="description">' . esc_html__( 'Stops every rule at once, and keeps each one\'s own on or off for when it is resumed.', 'advcm' ) . '</span></p>';

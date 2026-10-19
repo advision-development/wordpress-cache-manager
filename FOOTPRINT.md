@@ -27,8 +27,8 @@ and the code disagree.
 | Option | `advcm_lock_<job id>` | while a job runs; deleted when it stops |
 | Option | `advcm_last_error` | not autoloaded; the last fault the guards caught, shown on the screen for a day |
 | Option | `advcm_site_wide_at` | not autoloaded; when a whole-site clear last started |
-| Option | `advcm_rules` | not autoloaded; auto-clear rules, written by administrators |
-| Option | `advcm_auto_<rule id>` | while a rule waits for its clear, with the first 10 posts that triggered it and a count of the rest; deleted when the clear picks it up |
+| Option | `advcm_rules` | not autoloaded; auto-clear rules, and the "each post's own page" setting as the reserved rule `own-page`; written by administrators |
+| Option | `advcm_auto_<rule id>` | while a rule waits for its clear, with the first 10 posts that triggered it and a count of the rest (for `own-page`, also up to 40 of those posts' own URLs, taken at the save); deleted when the clear picks it up |
 | Option | `advcm_rules_last` | not autoloaded; per rule, when it last fired, how many posts and the job's state. Written by the clear, never by the rules form |
 | Option | `advcm_rules_paused` | not autoloaded; while an administrator has paused every auto-clear rule |
 | Site transient | `advcm_release` | updater's cached GitHub answer |

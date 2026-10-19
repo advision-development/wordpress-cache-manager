@@ -21,6 +21,14 @@
   - While the screen is open, its tick runs an auto-clear that is a full minute past due, as it
     already moved background jobs. Only the request whose `delete_option` takes a rule's mark
     clears it, so the tick and cron never clear the same mark twice.
+- **Editors no longer need to clear a post they just edited.** On BMR most manual clears were an
+  editor clearing the post they had saved a minute before: NitroPack invalidates it and serves the
+  old copy while it rebuilds. A new site setting on the *Auto-clear* tab, *Each post's own page*,
+  puts a published, updated or unpublished post's own URL into the auto-clear, purging NitroPack.
+  A post taken down clears the address it had, not its `__trashed` one; a burst clears at most 40
+  posts' pages; an address a filter moved off the site is never cleared. It is stored as the
+  reserved rule `own-page` in `advcm_rules`, so a save on a site using none of this still reads one
+  option. Off until an administrator switches it on.
 - Every step is told how the steps before it in the job ended (`earlier`), and whether NitroPack
   invalidates or purges is decided in one place, `ADVCM_Adapter_Nitropack::invalidates()`.
 

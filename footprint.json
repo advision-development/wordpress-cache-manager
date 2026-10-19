@@ -32,8 +32,8 @@
     { "name": "advcm_lock_<job id>", "autoload": false, "why": "one row while a job is running; deleted when it stops" },
     { "name": "advcm_last_error", "autoload": false, "why": "the last fault the plugin's guards caught, shown on its screen for a day" },
     { "name": "advcm_site_wide_at", "autoload": false, "why": "when a whole-site clear last started, for the two-minute gap between them" },
-    { "name": "advcm_rules", "autoload": false, "why": "auto-clear rules: a post type, optionally a term, and up to 10 of this site's own URLs to clear when such a post is published. Written by administrators only" },
-    { "name": "advcm_auto_<rule id>", "autoload": false, "why": "one row while a rule is waiting for its clear, with the first 10 posts that triggered it and a count of the rest; deleted when the clear picks it up" },
+    { "name": "advcm_rules", "autoload": false, "why": "auto-clear rules: a post type, optionally a term, and up to 10 of this site's own URLs to clear when such a post is published; and the reserved rule own-page, the setting that also clears each saved post's own URL. Written by administrators only" },
+    { "name": "advcm_auto_<rule id>", "autoload": false, "why": "one row while a rule is waiting for its clear, with the first 10 posts that triggered it and a count of the rest (for own-page, also up to 40 of their own URLs); deleted when the clear picks it up" },
     { "name": "advcm_rules_last", "autoload": false, "why": "per auto-clear rule, when it last fired, how many posts triggered it and the job's id and state. Written by the clear, never by the rules form; a rule's entry goes when the rule is deleted" },
     { "name": "advcm_rules_paused", "autoload": false, "why": "present while an administrator has paused every auto-clear rule; holds when. Read on a post save only when a rule is switched on" }
   ],
@@ -55,7 +55,7 @@
     { "type": "admin-post", "action": "advcm_purge", "auth": "logged in, advcm_purge, nonce" },
     { "type": "admin-post", "action": "advcm_resume", "auth": "logged in, advcm_purge, nonce" },
     { "type": "admin-post", "action": "advcm_check_release", "auth": "logged in, update_plugins, nonce" },
-    { "type": "admin-post", "action": "advcm_rules", "auth": "logged in, advcm_purge_hard, nonce", "why": "add, switch on or off, or delete an auto-clear rule; pause or resume them all" },
+    { "type": "admin-post", "action": "advcm_rules", "auth": "logged in, advcm_purge_hard, nonce", "why": "add, switch on or off, or delete an auto-clear rule; switch the own-page setting on or off; pause or resume them all" },
     { "type": "admin-ajax", "action": "advcm_tick", "auth": "logged in (wp_ajax_ only, no nopriv), advcm_purge, nonce", "why": "the status screen moves a due background clear where the site's cron cannot wake" },
     { "type": "admin-page", "slug": "advcm-cache", "parent": "tools.php" },
     { "type": "admin-bar", "nodes": ["advcm", "advcm-page", "advcm-site"] }

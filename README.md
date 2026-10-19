@@ -86,6 +86,10 @@ NitroPack skips its warm-up and says why; a warm-up that NitroPack answers with 
   title, ID, type, and whether it was published, updated or unpublished — with a count of the
   rest. The rules table shows each rule's last clear.
 - **Pause** stops every rule at once and keeps each one's own on or off for the resume.
+- **Each post's own page** is a site setting on the same tab: when it is on, a published, updated
+  or unpublished post's own URL goes into the same clear, purging NitroPack, so an edit shows
+  without an editor clearing it by hand (on BMR, most manual clears were exactly that). It is kept
+  as the reserved rule `own-page` in the rules row, so a save still costs one option read.
 
 Administrators write rules and pause them; anyone who can clear can read them and test a post
 against them. History keeps the last three auto-clears, so a day of publishing does not push out
