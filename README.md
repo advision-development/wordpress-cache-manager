@@ -8,7 +8,7 @@ The design spec lives in the team's internal workspace, not in this public repos
 
 ## Status
 
-**0.3.1.** Tools → CacheManager, in five tabs — Status, Clear, Cache age, History, Auto-clear — and the
+**0.3.2.** Tools → CacheManager, in five tabs — Status, Clear, Cache age, History, Auto-clear — and the
 CacheManager menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
 time the screen opens: install a cache plugin later and it appears on the next load. Talking to Hawkeye is a later phase.
 
