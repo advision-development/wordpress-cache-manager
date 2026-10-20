@@ -19,6 +19,8 @@
 #   - since 0.5.0, the Freshness tab: an editor starts a listings scan, the site's WP-Cron runs
 #     it, and a seeded Elementor widget whose tag has only a 60-day-old post is listed red; a
 #     per-URL clear records how old its page's cache was; History is a table
+#   - since 0.5.1, an auto-clear whose event was lost is put back when a screen opens; every tab
+#     carries its help; Freshness leads with its summary; the admin bar's clears are posted
 #   - WordPress Malware Quick Scan, installed from its public release, reports nothing about this
 #     plugin beyond the findings FOOTPRINT.md says to expect
 #
@@ -213,7 +215,7 @@ docker exec "${WP}" rm -f /var/www/html/wp-content/mu-plugins/advcm-smoke-pause.
 # The admin bar's whole-site clear asks first. It was an onclick the admin bar's esc_js() broke, so
 # it never asked; now a listener. The page is checked for the listener and for no onclick left.
 front="$(curl -s -b "${jar}" "${URL}/")"
-if grep -q 'wp-admin-bar-advcm-site' <<< "${front}" && grep -q 'querySelector("#wp-admin-bar-advcm-site > a")' <<< "${front}" && ! grep -q 'onclick="return confirm' <<< "${front}"; then
+if grep -q 'wp-admin-bar-advcm-site' <<< "${front}" && grep -q '"#wp-admin-bar-advcm-site > a",true' <<< "${front}" && ! grep -q 'onclick="return confirm' <<< "${front}"; then
 	pass "the admin bar's whole-site clear asks before it runs"
 else
 	fail "the admin bar's whole-site clear has no working confirmation"
@@ -221,12 +223,13 @@ fi
 
 # Since 0.5.1 the admin bar's clears are posted: no nonce in their links (it went to access logs
 # and browser history), a GET of one refused, and the listener's POST with its nonce clears.
-bar_links="$(grep -oE 'id="wp-admin-bar-advcm-(page|site)"[^>]*><a[^>]*href="[^"]*"' <<< "${front}")"
-page_link="$(grep -oE 'id="wp-admin-bar-advcm-page"[^>]*><a[^>]*href="[^"]*"' <<< "${front}" | sed 's/.*href="//; s/"$//; s/&#038;/\&/g; s/&amp;/\&/g')"
-bar_nonce="$(grep -oE 'var n="[a-f0-9]+"' <<< "${front}" | head -1 | sed 's/var n="//; s/"//')"
-get_code="$(curl -s -o /dev/null -w '%{http_code}' -b "${jar}" "${page_link}&_wpnonce=${bar_nonce}")"
+# The admin bar quotes its attributes with ' or ", depending on the WordPress version.
+bar_links="$(grep -oE "wp-admin-bar-advcm-(page|site)['\"][^>]*><a[^>]*href=['\"][^'\"]*" <<< "${front}" || true)"
+page_link="$(grep -oE "wp-admin-bar-advcm-page['\"][^>]*><a[^>]*href=['\"][^'\"]*" <<< "${front}" | sed -E "s/.*href=['\"]//; s/&#038;/\&/g; s/&amp;/\&/g" || true)"
+bar_nonce="$(grep -oE 'var n="[a-f0-9]+"' <<< "${front}" | head -1 | sed 's/var n="//; s/"//' || true)"
+get_code="$(curl -s -o /dev/null -w '%{http_code}' -b "${jar}" "${page_link}&_wpnonce=${bar_nonce}" || true)"
 before="$(wpcli wp option get advcm_jobs --format=json 2>/dev/null | grep -o '"id"' | wc -l | tr -d ' ')"
-curl -s -o /dev/null -b "${jar}" -d "_wpnonce=${bar_nonce}" "${page_link}"
+curl -s -o /dev/null -b "${jar}" -d "_wpnonce=${bar_nonce}" "${page_link}" || true
 after="$(wpcli wp option get advcm_jobs --format=json 2>/dev/null | grep -o '"id"' | wc -l | tr -d ' ')"
 if [[ -n "${page_link}" && -n "${bar_nonce}" ]] && ! grep -q '_wpnonce' <<< "${bar_links}" && [[ "${get_code}" == "405" && "${after}" -gt "${before}" ]]; then
 	pass "the admin bar's clears hold no nonce in their links, refuse a GET, and clear when posted"
@@ -354,7 +357,7 @@ else
 	fail "an editor adding a rule answered HTTP ${ed_code}, rule '${ed_rule}'"
 fi
 curl -s -b "${jar}" -o /dev/null -d "action=advcm_rules&op=delete&rule=${ed_rule}&_wpnonce=${ed_rules_nonce}" "${URL}/wp-admin/admin-post.php"
-ed_log="$(wpcli wp eval 'foreach ( ADVCM_Log::recent( "auto", 2 ) as $r ) { echo $r["login"], ":", $r["action"], " "; }' | tr -d '\r')"
+ed_log="$(wpcli wp eval 'foreach ( ADVCM_Log::recent( "auto", 2 ) as $r ) { echo $r["name"], ":", $r["action"], " "; }' | tr -d '\r')"
 [[ "${ed_log}" == "ed:rule_deleted ed:rule_added " ]] && pass "and the Auto-clear change log names the editor for both" || fail "the Auto-clear change log reads '${ed_log}'"
 
 cat > "${WORK}/auto-burst.php" <<'PHP'
@@ -604,7 +607,7 @@ echo ( $home && 200 === $home['code'] ? 'PASS  ' : 'FAIL  ' ), 'a per-URL clear 
 echo ( null === $home || empty( $home['nitro_copy'] ) ? 'PASS  ' : 'FAIL  ' ), "and on a site without NitroPack says nothing about NitroPack\n";
 PHP
 wpeval "${WORK}/measured.php"
-grep -q 'Cache age at clear' <<< "${fresh_tab}" && grep -q "<code>${URL}/</code>" <<< "${fresh_tab}" && pass "the Freshness tab lists that measurement" || fail "the Freshness tab does not list the measurement"
+grep -q '>Last measurements</h2>' <<< "${fresh_tab}" && grep -q "<code>${URL}/</code>" <<< "${fresh_tab}" && pass "the Freshness tab lists that measurement" || fail "the Freshness tab does not list the measurement"
 
 history="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=history")"
 if [[ "$(grep -o 'class="widefat striped advcm-history"' <<< "${history}" | wc -l | tr -d ' ')" == "2" ]] && grep -q '<th>Cache age</th>' <<< "${history}"; then
@@ -612,6 +615,39 @@ if [[ "$(grep -o 'class="widefat striped advcm-history"' <<< "${history}" | wc -
 else
 	fail "History is not the table"
 fi
+
+# ------------------------------------------------------------------------ 0.5.1
+
+# A clear whose WP-Cron event a plugin update took: the mark stays, the event is gone. Opening a
+# CacheManager screen puts it back.
+cat > "${WORK}/lost.php" <<'PHP'
+<?php
+$rules = ADVCM_Auto::rules();
+$id    = '';
+foreach ( $rules as $rid => $rule ) { if ( $rule['enabled'] && ! $rule['own'] ) { $id = $rid; break; } }
+add_option( ADVCM_Auto::MARK . $id, array( 'at' => time(), 'posts' => array(), 'ids' => array(), 'total' => 0, 'urls' => array() ), '', false );
+wp_clear_scheduled_hook( ADVCM_Auto::FLUSH_HOOK );
+echo ( '' !== $id && false === wp_next_scheduled( ADVCM_Auto::FLUSH_HOOK ) ? 'PASS  ' : 'FAIL  ' ), "a waiting rule with its event lost is set up\n";
+PHP
+wpeval "${WORK}/lost.php"
+curl -s -o /dev/null -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=status"
+rescued="$(wpcli wp cron event list --hook=advcm_auto_flush --format=count 2>/dev/null | tr -d '\r')"
+[[ "${rescued}" =~ ^[1-9] ]] && pass "opening a CacheManager screen puts back an auto-clear whose event was lost" || fail "the lost auto-clear was not put back (${rescued} events)"
+
+# Every tab explains itself, and Freshness leads with its summary.
+missing=""
+for tab in status clear check history freshness auto settings; do
+	page="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=${tab}")"
+	grep -q 'class="advcm-help"' <<< "${page}" && grep -q '<summary>How this tab works</summary>' <<< "${page}" || missing="${missing} ${tab}"
+done
+[[ -z "${missing}" ]] && pass "every tab says what it does and how it works" || fail "tabs without their help box:${missing}"
+fresh_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=freshness")"
+grep -q '>Last 30 days</h2>' <<< "${fresh_tab}" && grep -qE '[0-9]+ pages measured in' <<< "${fresh_tab}" && pass "Freshness leads with the last 30 days, added up" || fail "Freshness has no summary: $(grep -oE 'Last 30 days.{0,200}' <<< "${fresh_tab}" | head -1)"
+
+# The probe refuses WordPress's own machinery (security review, 2026-10-20).
+check_nonce="$(grep -oE 'name="_wpnonce" value="[a-f0-9]+"' <<< "$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=check")" | head -1 | sed 's/.*value="//; s/"//' || true)"
+refused="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=check&advcm_probe=%2Fwp-login.php&_wpnonce=${check_nonce}")"
+grep -q 'That is not a page on this site.' <<< "${refused}" && pass "the cache-age check refuses wp-login.php" || fail "the cache-age check requested wp-login.php"
 
 # --------------------------------------------------------------------- the security scanner
 

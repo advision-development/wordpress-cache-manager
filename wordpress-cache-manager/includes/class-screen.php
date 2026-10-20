@@ -352,7 +352,7 @@ final class ADVCM_Screen {
 							__( 'Before a clear, to see what it will touch. After one, to check that every layer was reached. When the site changes hosting or cache plugins, to see that the plugin found the new layer.', 'advcm' ),
 						),
 						__( 'How it works', 'advcm' )   => array(
-							__( 'Each time this page opens, the plugin looks for every cache layer it knows: the object cache, page-builder CSS, cache plugins, NitroPack, the host\'s page cache and the CDN. Only the ones it finds are listed; install or remove one and the list follows on the next load.', 'advcm' ),
+							__( 'Each time this page opens, the plugin looks for every cache layer it knows: the object cache, page-builder CSS, page-cache plugins and optimizers, the host\'s page cache and the CDN. Only the ones it finds are listed; install or remove one and the list follows on the next load.', 'advcm' ),
 							__( 'A clear always runs them in this order, the layer closest to the database first, so no layer can copy a stale page back from the one beneath it. Each layer is checked again right before its step, so one removed in between is skipped, not called.', 'advcm' ),
 						),
 						__( 'What it shows', 'advcm' )  => array(
@@ -360,7 +360,7 @@ final class ADVCM_Screen {
 							__( 'Last cleared', 'advcm' ) => __( 'when the last clear reached this layer, who started it and how it ended; when the latest attempt failed, also the last time it succeeded.', 'advcm' ),
 							__( 'Details', 'advcm' )      => __( 'what the plugin knows about the layer here: its version, how it is configured, what it can and cannot clear.', 'advcm' ),
 							'ok'                          => __( 'the layer was cleared.', 'advcm' ),
-							'skipped: …'                  => __( 'not run, with the reason (not installed, not needed for this clear, held back).', 'advcm' ),
+							'skipped: …'                  => __( 'not run, with the reason: gone from the site since the clear was planned, not needed for this clear, or held back.', 'advcm' ),
 							'failed: …'                   => __( 'the layer answered with an error, quoted; the steps after it still ran.', 'advcm' ),
 							'partial: n of m'             => __( 'only some of its pages were cleared.', 'advcm' ),
 						),

@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.5.1 — 2026-10-20
+
+- **An auto-clear lost in a plugin update is put back.** On BMR, updating to 0.5.0 switched the
+  plugin off for about ten seconds, and a WP-Cron run in that window took an auto-clear's event
+  with nothing listening: the clear waited 10 min 40 s for the next save. A waiting rule with no
+  event — and a listings scan whose event is gone — is now scheduled again when a CacheManager
+  screen opens, from its tick, and when a plugin update ends. Never in a save.
+- **Freshness adds up a month.** Measurements were the last 100 clears of each kind, which
+  auto-clear fills in hours. They now also add up per page (200 pages) and per day (30 days) in
+  `advcm_freshness_stats`, and an automatic clear's row names the rules that set it off.
+- **The Freshness tab says what to do**: the last 30 days against a cache target (a new setting,
+  3 hours by default), pages kept past it and whether a rule clears them ("add one"), pages
+  cleared while fresh and the rules that do it, pages cleared by hand often, then the listings —
+  labelled "over 30 days", "7–30 days", "no posts", "broken filter", "cannot match", "not
+  checked", the same list in one template shown once with ×N — and the raw measurements folded.
+- **Every tab explains itself**: what it is for, and a folded "How this tab works" — when to use
+  it, how it works underneath, what each column, badge and word means, and its limits.
+- **Security** (review of 2026-10-20; no backdoor or injection found):
+  - whole-site clears are limited to 4 an hour, and page clears to 30 a minute site-wide, beside
+    the per-person limits;
+  - the change log shows display names, not logins;
+  - WordPress's own machinery (wp-admin, wp-login.php, the REST API, xmlrpc.php, wp-cron.php,
+    core and plugin code) is refused as a page to clear or check; the probe uses
+    `wp_safe_remote_get`;
+  - the admin bar's clears are posted, with no nonce in their links, and a GET is refused;
+  - other plugins' errors lose the server's paths before History shows them;
+  - footprint.json and FOOTPRINT.md corrected; the release workflow says what really protects
+    a release.
+  - Still to set in GitHub, outside the plugin: a ruleset on `v*` tags, a protected `main`,
+    immutable releases, a reviewed `release` environment, SHA-pinned actions, 2FA. Signing the
+    zip is the step after.
+
 ## 0.5.0 — 2026-10-20
 
 On BMR the state pages' news carousels (`/usa/alabama/`) showed the same posts for months and were
