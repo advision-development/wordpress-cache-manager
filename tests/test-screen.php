@@ -387,4 +387,30 @@ check( 'the same listing four times in one template is one row, ×4', 1 === subs
 
 unset( $GLOBALS['options']['advcm_rules'] );
 
+// ------------------------------------------------------- every tab explains itself
+
+foreach ( ADVCM_Screen::TABS as $tab ) {
+	$help = screen_part( 'render_help', array( $tab ) );
+
+	check( 'the ' . $tab . ' tab says what it does, and how it works in detail', false !== strpos( $help, 'class="advcm-help"' ) && 1 === preg_match( '~<p><strong>[^<]{20,}~', $help ) && 1 === preg_match( '~<summary>How this tab works</summary>~', $help ) && substr_count( $help, '<h4' ) >= 3, $tab . ': ' . strlen( $help ) . ' bytes, ' . substr_count( $help, '<h4' ) . ' parts' );
+}
+
+$help = screen_part( 'render_help', array( 'history' ) );
+
+check( 'History\'s legend shows the state badges as they look', false !== strpos( $help, '#008a20' ) && false !== strpos( $help, '#d63638' ) && false !== strpos( $help, '#2271b1' ) && false !== strpos( $help, 'advcm-wait-red' ) );
+
+$help = screen_part( 'render_help', array( 'freshness' ) );
+
+check( 'Freshness explains each label and the target from Settings', false !== strpos( $help, 'over 30 days' ) && false !== strpos( $help, '7–30 days' ) && false !== strpos( $help, 'broken filter' ) && false !== strpos( $help, '×N' ) && false !== strpos( $help, '3 hours' ) );
+
+$help = screen_part( 'render_help', array( 'check' ) );
+
+check( 'a site without NitroPack is not told about NitroPack', false === strpos( $help, 'NitroPack' ) );
+
+$help = screen_part( 'render_help', array( 'clear' ) );
+
+check( 'Clear explains every mode this site offers, from the modes themselves', false !== strpos( $help, ADVCM_Modes::get( 'fast' )['label'] ) && false !== strpos( $help, ADVCM_Modes::get( 'fast' )['summary'] ) );
+check( 'the help box is drawn on its own guard, so it never takes a tab with it', false !== strpos( file_get_contents( ADVCM_DIR . 'includes/class-screen.php' ), "'screen:help'" ) );
+check( 'the change-log box says what it is', false !== strpos( screen_part( 'render_log', array( 'auto' ) ), 'Who changed what on this tab' ) );
+
 finish();
