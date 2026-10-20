@@ -156,6 +156,88 @@ final class ADVCM_Freshness {
 	}
 
 	/**
+	 * Pages people cleared by hand more than once, from the measurements kept: how many times,
+	 * the latest, the median cache age at those clears, and whether a rule already names the page.
+	 * A page here with no rule is one a rule could clear instead; one whose copies were young when
+	 * cleared had old content, not an old cache.
+	 *
+	 * @param int $min Clears at least.
+	 * @return array[] url, times, last, median_age (int|null), has_rule.
+	 */
+	public static function often_by_hand( $min = 2 ) {
+		$pages = array();
+
+		foreach ( self::rows() as $row ) {
+			if ( empty( $row['url'] ) ) {
+				continue;
+			}
+
+			$url = (string) $row['url'];
+
+			if ( ! isset( $pages[ $url ] ) ) {
+				$pages[ $url ] = array( 'url' => $url, 'times' => 0, 'last' => 0, 'ages' => array() );
+			}
+
+			$pages[ $url ]['times']++;
+			$pages[ $url ]['last'] = max( $pages[ $url ]['last'], isset( $row['at'] ) ? (int) $row['at'] : 0 );
+
+			if ( isset( $row['age'] ) && null !== $row['age'] ) {
+				$pages[ $url ]['ages'][] = (int) $row['age'];
+			}
+		}
+
+		$ruled = array();
+
+		foreach ( ADVCM_Auto::rules() as $rule ) {
+			if ( $rule['enabled'] && ! $rule['own'] ) {
+				foreach ( $rule['urls'] as $rule_url ) {
+					$ruled[ self::path( $rule_url ) ] = true;
+				}
+			}
+		}
+
+		$out = array();
+
+		foreach ( $pages as $page ) {
+			if ( $page['times'] < $min ) {
+				continue;
+			}
+
+			sort( $page['ages'] );
+			$n = count( $page['ages'] );
+
+			$out[] = array(
+				'url'        => $page['url'],
+				'times'      => $page['times'],
+				'last'       => $page['last'],
+				'median_age' => 0 === $n ? null : ( 1 === $n % 2 ? $page['ages'][ ( $n - 1 ) / 2 ] : (int) round( ( $page['ages'][ $n / 2 - 1 ] + $page['ages'][ $n / 2 ] ) / 2 ) ),
+				'has_rule'   => isset( $ruled[ self::path( $page['url'] ) ] ),
+			);
+		}
+
+		usort(
+			$out,
+			function ( $a, $b ) {
+				return $a['times'] !== $b['times'] ? $b['times'] - $a['times'] : $b['last'] - $a['last'];
+			}
+		);
+
+		return $out;
+	}
+
+	/**
+	 * A URL's path, trailing slash and all, for comparing a rule's URL with a measured one.
+	 *
+	 * @param string $url URL.
+	 * @return string
+	 */
+	private static function path( $url ) {
+		$path = (string) wp_parse_url( (string) $url, PHP_URL_PATH );
+
+		return '/' . trim( $path, '/' );
+	}
+
+	/**
 	 * Ask one page. A failure is a row with no answer.
 	 *
 	 * @param array  $job The job.

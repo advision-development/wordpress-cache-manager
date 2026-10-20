@@ -15,6 +15,10 @@ function update_option( $name, $value, $autoload = null ) {
 	return true;
 }
 
+function wp_parse_url( $url, $component = -1 ) {
+	return parse_url( $url, $component );
+}
+
 require __DIR__ . '/store-stubs.php';
 require __DIR__ . '/bootstrap.php';
 
@@ -217,5 +221,27 @@ ADVCM_Freshness::use_prober( $answer );
 ADVCM_Freshness::measure( job( 'b1', pages( 1 ) ) );
 
 check( 'a broken row is started again', 1 === count( ADVCM_Freshness::rows() ) );
+
+// ------------------------------------------------------------ cleared by hand, often
+
+$GLOBALS['options']                       = array();
+$GLOBALS['options'][ ADVCM_Freshness::OPTION ] = array(
+	array( 'at' => 500, 'url' => 'https://example.test/analysis/', 'job' => 'h4', 'source' => 'wp-admin', 'by' => 7, 'code' => 200, 'age' => 900, 'how' => 'exact', 'ages' => array(), 'nitro_state' => null, 'nitro_copy' => null, 'nitro_age' => null ),
+	array( 'at' => 400, 'url' => 'https://example.test/usa/alabama/', 'job' => 'h3', 'source' => 'admin-bar', 'by' => 7, 'code' => 200, 'age' => 60, 'how' => 'exact', 'ages' => array(), 'nitro_state' => null, 'nitro_copy' => null, 'nitro_age' => null ),
+	array( 'at' => 300, 'url' => 'https://example.test/analysis/', 'job' => 'h2', 'source' => 'wp-admin', 'by' => 9, 'code' => 200, 'age' => 100, 'how' => 'exact', 'ages' => array(), 'nitro_state' => null, 'nitro_copy' => null, 'nitro_age' => null ),
+	array( 'at' => 200, 'url' => 'https://example.test/analysis/', 'job' => 'h1', 'source' => 'wp-admin', 'by' => 7, 'code' => 200, 'age' => null, 'how' => 'unknown', 'ages' => array(), 'nitro_state' => null, 'nitro_copy' => null, 'nitro_age' => null ),
+	array( 'at' => 100, 'url' => 'https://example.test/usa/alabama/', 'job' => 'h0', 'source' => 'wp-admin', 'by' => 7, 'code' => 200, 'age' => 20, 'how' => 'exact', 'ages' => array(), 'nitro_state' => null, 'nitro_copy' => null, 'nitro_age' => null ),
+	array( 'at' => 50, 'url' => 'https://example.test/once/', 'job' => 'h9', 'source' => 'wp-admin', 'by' => 7, 'code' => 200, 'age' => 5, 'how' => 'exact', 'ages' => array(), 'nitro_state' => null, 'nitro_copy' => null, 'nitro_age' => null ),
+);
+$GLOBALS['options']['advcm_rules'] = array( 'r1' => array( 'post_type' => 'post', 'enabled' => true, 'urls' => array( 'https://example.test/analysis/' ) ) );
+
+load_class( 'auto' );
+
+$often = ADVCM_Freshness::often_by_hand();
+
+check( 'pages cleared by hand twice or more, most often first', 2 === count( $often ) && 'https://example.test/analysis/' === $often[0]['url'] && 3 === $often[0]['times'] && 2 === $often[1]['times'] );
+check( 'with the latest clear', 500 === $often[0]['last'] && 400 === $often[1]['last'] );
+check( 'and the median cache age of those that said one', 500 === $often[0]['median_age'] && 40 === $often[1]['median_age'], $often[0]['median_age'] . ' / ' . $often[1]['median_age'] );
+check( 'and whether a rule already clears it', true === $often[0]['has_rule'] && false === $often[1]['has_rule'] );
 
 finish();

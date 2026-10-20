@@ -85,6 +85,10 @@ function sanitize_key( $key ) {
 	return preg_replace( '~[^a-z0-9_\-]~', '', strtolower( (string) $key ) );
 }
 
+function wp_create_nonce( $action = -1 ) {
+	return 'nonce-' . $action;
+}
+
 function wp_parse_url( $url, $component = -1 ) {
 	return parse_url( $url, $component );
 }
@@ -114,7 +118,8 @@ function screen_part( $method, array $args = array() ) {
 
 // ---------------------------------------------------------------------- the tabs
 
-check( 'Settings is the sixth tab', array( 'status', 'clear', 'check', 'history', 'auto', 'settings' ) === ADVCM_Screen::TABS );
+check( 'Freshness comes after History, Settings stays last', array( 'status', 'clear', 'check', 'history', 'freshness', 'auto', 'settings' ) === ADVCM_Screen::TABS );
+check( 'and Freshness is shown as a tab', false !== strpos( screen_part( 'render_tabs', array( 'status' ) ), '>Freshness</a>' ) );
 check( 'and is shown as one', false !== strpos( screen_part( 'render_tabs', array( 'status' ) ), '>Settings</a>' ) );
 
 $source = file_get_contents( ADVCM_DIR . 'includes/class-screen.php' );
@@ -207,5 +212,69 @@ check( 'a record shows who, what, and before → after', false !== strpos( $out,
 $source = file_get_contents( ADVCM_DIR . 'includes/class-screen.php' ) . file_get_contents( ADVCM_DIR . 'includes/class-auto.php' );
 
 check( 'no screen text still says administrators only', false === stripos( $source, 'administrators only' ) && false === strpos( $source, 'Only administrators can' ) );
+
+// -------------------------------------------------------------------- Freshness
+
+load_class( 'freshness' );
+load_class( 'listings' );
+
+$GLOBALS['options'] = array();
+
+$out = screen_part( 'render_freshness', array( true ) );
+
+check( 'with no scan yet the tab says so, and offers one', false !== strpos( $out, 'No scan yet' ) && false !== strpos( $out, 'name="action" value="' . ADVCM_Listings::ACTION . '"' ) && false !== strpos( $out, 'nonce-' . ADVCM_Listings::ACTION ) );
+check( 'with no measurement yet, that too', false !== strpos( $out, 'No clear has been measured yet' ) );
+
+$GLOBALS['options'][ ADVCM_Listings::OPTION ] = array(
+	'started'  => time() - 600,
+	'by'       => 7,
+	'cursor'   => 400,
+	'done'     => time() - 300,
+	'scanned'  => 196,
+	'total'    => 196,
+	'listings' => 137,
+	'green'    => 120,
+	'findings' => array(
+		array( 'verdict' => 'amber', 'days' => 9, 'doc' => 2, 'pos' => 0, 'title' => 'Texas', 'doc_type' => 'states', 'url' => 'https://example.test/usa/texas/', 'widget' => 'a1', 'type' => 'loop-grid', 'post_type' => 'post', 'per_page' => 6, 'filter' => 'tag texas', 'broken' => false, 'cannot_match' => false, 'custom' => false, 'newest' => array( 'id' => 5, 'title' => 'Texas news', 'date' => time() - 9 * 86400 ) ),
+		array( 'verdict' => 'red', 'days' => 293, 'doc' => 1, 'pos' => 0, 'title' => 'Alabama <script>x</script>', 'doc_type' => 'states', 'url' => 'https://example.test/usa/alabama/', 'widget' => 'b2', 'type' => 'posts', 'post_type' => 'post', 'per_page' => 6, 'filter' => 'tag alabama', 'broken' => false, 'cannot_match' => false, 'custom' => false, 'newest' => array( 'id' => 6, 'title' => 'Alabama news', 'date' => time() - 293 * 86400 ) ),
+		array( 'verdict' => 'red', 'days' => null, 'doc' => 3, 'pos' => 0, 'title' => 'Template', 'doc_type' => 'elementor_library', 'url' => '', 'widget' => 'c3', 'type' => 'posts', 'post_type' => 'post', 'per_page' => null, 'filter' => 'missing term #99', 'broken' => true, 'cannot_match' => false, 'custom' => false, 'newest' => null ),
+	),
+);
+
+$out = screen_part( 'render_freshness', array( true ) );
+
+check( 'a finished scan says when, by whom, and what it read', false !== strpos( $out, '196 documents' ) && false !== strpos( $out, '137 listings' ) && false !== strpos( $out, '120 up to date' ) );
+check( 'findings are listed red first', strpos( $out, 'tag alabama' ) < strpos( $out, 'tag texas' ) && strpos( $out, 'missing term #99' ) < strpos( $out, 'tag texas' ) );
+check( 'with the filter in words and the days since its newest post', false !== strpos( $out, '293' ) && false !== strpos( $out, 'Alabama news' ) );
+check( 'a broken filter says so', false !== strpos( $out, 'broken filter' ) );
+check( 'everything shown is escaped', false === strpos( $out, '<script>x' ) && false !== strpos( $out, '&lt;script&gt;' ) );
+
+$GLOBALS['options'][ ADVCM_Listings::OPTION ]['done']     = 0;
+$GLOBALS['options'][ ADVCM_Listings::OPTION ]['scanned']  = 40;
+$GLOBALS['options'][ ADVCM_Listings::OPTION ]['next_at']  = time();
+
+$out = screen_part( 'render_freshness', array( true ) );
+
+check( 'a running scan shows its progress', false !== strpos( $out, '40 of 196' ) );
+
+$tick = screen_part( 'render_tick', array( true, true ) );
+
+check( 'and the tab moves it along, saying it is the Freshness tab', false !== strpos( $tick, 'd.append("listings","1")' ) );
+$GLOBALS['options'][ ADVCM_Jobs::OPTION ] = array( 'jr' => array( 'id' => 'jr', 'state' => 'running', 'scope' => 'all', 'urls' => array(), 'created' => time(), 'finished' => 0, 'steps' => array(), 'source' => 'wp-admin', 'by' => 7 ) );
+$other = screen_part( 'render_tick', array( false ) );
+
+check( 'other tabs never ask for a listings batch, even while they tick', false !== strpos( $other, 'fetch(' ) && false === strpos( $other, 'listings' ) );
+
+unset( $GLOBALS['options'][ ADVCM_Jobs::OPTION ] );
+
+$GLOBALS['options'][ ADVCM_Freshness::OPTION ] = array(
+	array( 'at' => time() - 60, 'url' => 'https://example.test/analysis/', 'job' => 'h2', 'source' => 'wp-admin', 'by' => 7, 'code' => 200, 'age' => 5000, 'how' => 'exact', 'ages' => array( 'host cache' => 5000 ), 'nitro_state' => 'STALE', 'nitro_copy' => 'stale', 'nitro_age' => 7200 ),
+	array( 'at' => time() - 120, 'url' => 'https://example.test/analysis/', 'job' => 'h1', 'source' => 'wp-admin', 'by' => 7, 'code' => 200, 'age' => 30, 'how' => 'exact', 'ages' => array(), 'nitro_state' => null, 'nitro_copy' => null, 'nitro_age' => null ),
+);
+
+$out = screen_part( 'render_freshness', array( true ) );
+
+check( 'the cache age at each clear is listed, layer by layer', false !== strpos( $out, 'host cache 83 min 20 s' ) && false !== strpos( $out, 'NitroPack: stale' ) );
+check( 'pages cleared by hand often are listed, with no rule clearing them', false !== strpos( $out, 'no rule clears this page' ) && false !== strpos( $out, '2 times' ) );
 
 finish();
