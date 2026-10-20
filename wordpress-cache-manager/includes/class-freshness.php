@@ -47,6 +47,20 @@ final class ADVCM_Freshness {
 	const MEASURE_TIMEOUT = 5;
 	const MEASURE_BUDGET  = 20;
 
+	/**
+	 * What the measurements add up to: per page and per day, in one row of known size. The rows
+	 * above keep the last clears; on BMR auto-clear fills them in hours, so a week of data lives
+	 * only here.
+	 */
+	const STATS = 'advcm_freshness_stats';
+
+	/** Pages and days summed. Past them, the page cleared longest ago and the oldest day go. */
+	const STATS_PAGES = 200;
+	const STATS_DAYS  = 30;
+
+	/** A copy younger than this, in seconds, was fresh when cleared. */
+	const YOUNG = 600;
+
 	/** Characters kept of a URL and of a sentence. */
 	const URL_CHARS  = 2048;
 	const TEXT_CHARS = 150;
@@ -164,76 +178,6 @@ final class ADVCM_Freshness {
 	}
 
 	/**
-	 * Pages people cleared by hand more than once, from the measurements kept: how many times,
-	 * the latest, the median cache age at those clears, and whether a rule already names the page.
-	 * A page here with no rule is one a rule could clear instead; one whose copies were young when
-	 * cleared had old content, not an old cache.
-	 *
-	 * @param int $min Clears at least.
-	 * @return array[] url, times, last, median_age (int|null), has_rule.
-	 */
-	public static function often_by_hand( $min = 2 ) {
-		$pages = array();
-
-		foreach ( self::rows() as $row ) {
-			if ( empty( $row['url'] ) ) {
-				continue;
-			}
-
-			$url = (string) $row['url'];
-
-			if ( ! isset( $pages[ $url ] ) ) {
-				$pages[ $url ] = array( 'url' => $url, 'times' => 0, 'last' => 0, 'ages' => array() );
-			}
-
-			$pages[ $url ]['times']++;
-			$pages[ $url ]['last'] = max( $pages[ $url ]['last'], isset( $row['at'] ) ? (int) $row['at'] : 0 );
-
-			if ( isset( $row['age'] ) && null !== $row['age'] ) {
-				$pages[ $url ]['ages'][] = (int) $row['age'];
-			}
-		}
-
-		$ruled = array();
-
-		foreach ( ADVCM_Auto::rules() as $rule ) {
-			if ( $rule['enabled'] && ! $rule['own'] ) {
-				foreach ( $rule['urls'] as $rule_url ) {
-					$ruled[ self::path( $rule_url ) ] = true;
-				}
-			}
-		}
-
-		$out = array();
-
-		foreach ( $pages as $page ) {
-			if ( $page['times'] < $min ) {
-				continue;
-			}
-
-			sort( $page['ages'] );
-			$n = count( $page['ages'] );
-
-			$out[] = array(
-				'url'        => $page['url'],
-				'times'      => $page['times'],
-				'last'       => $page['last'],
-				'median_age' => 0 === $n ? null : ( 1 === $n % 2 ? $page['ages'][ ( $n - 1 ) / 2 ] : (int) round( ( $page['ages'][ $n / 2 - 1 ] + $page['ages'][ $n / 2 ] ) / 2 ) ),
-				'has_rule'   => isset( $ruled[ self::path( $page['url'] ) ] ),
-			);
-		}
-
-		usort(
-			$out,
-			function ( $a, $b ) {
-				return $a['times'] !== $b['times'] ? $b['times'] - $a['times'] : $b['last'] - $a['last'];
-			}
-		);
-
-		return $out;
-	}
-
-	/**
 	 * A URL's path, trailing slash and all, for comparing a rule's URL with a measured one.
 	 *
 	 * @param string $url URL.
@@ -264,8 +208,17 @@ final class ADVCM_Freshness {
 			$reading = null;
 		}
 
-		$ok  = is_array( $reading );
-		$now = time();
+		$ok    = is_array( $reading );
+		$now   = time();
+		$rules = array();
+
+		// The rules that set an automatic clear off, so a rule that keeps clearing fresh pages
+		// can be named.
+		foreach ( isset( $job['options']['triggers'] ) && is_array( $job['options']['triggers'] ) ? $job['options']['triggers'] : array() as $trigger ) {
+			if ( is_array( $trigger ) && isset( $trigger['rule'] ) && count( $rules ) < 10 ) {
+				$rules[] = substr( (string) $trigger['rule'], 0, 40 );
+			}
+		}
 
 		// An age only for a page: a redirect or an error page has its own cached copy, and its age
 		// says nothing about the page the clear was for.
@@ -284,6 +237,7 @@ final class ADVCM_Freshness {
 			'nitro_state' => $page && isset( $reading['nitropack_state'] ) ? (string) $reading['nitropack_state'] : null,
 			'nitro_copy'  => null === $copy ? null : $copy['state'],
 			'nitro_age'   => null === $copy ? null : max( 0, $now - (int) $copy['at'] ),
+			'rules'       => array_values( array_unique( $rules ) ),
 		);
 	}
 
@@ -303,6 +257,181 @@ final class ADVCM_Freshness {
 		$all  = array_slice( array_merge( $rows, self::rows( $auto ) ), 0, $auto ? self::AUTO_KEEP : self::KEEP );
 
 		update_option( $name, $all, false );
+
+		self::add_up( $rows, $auto );
+	}
+
+	/**
+	 * Add measurements to the per-page and per-day sums.
+	 *
+	 * Not atomic: two clears writing at once can each miss the other's rows. The sums are then
+	 * a little low, never wrong in kind.
+	 *
+	 * @param array[] $rows Rows just measured.
+	 * @param bool    $auto Automatic.
+	 * @return void
+	 */
+	private static function add_up( array $rows, $auto ) {
+		$stats  = self::stats();
+		$target = (int) ADVCM_Settings::get()['cache_target'] * HOUR_IN_SECONDS;
+
+		foreach ( $rows as $row ) {
+			$url = (string) $row['url'];
+			$age = $row['age'];
+			$day = gmdate( 'Y-m-d', (int) $row['at'] );
+
+			if ( ! isset( $stats['pages'][ $url ] ) ) {
+				$stats['pages'][ $url ] = array( 'n' => 0, 'hand' => 0, 'auto' => 0, 'unk' => 0, 'young' => 0, 'over' => 0, 'max' => 0, 'sum' => 0, 'hsum' => 0, 'hk' => 0, 'last' => 0, 'rules' => array() );
+			}
+
+			if ( ! isset( $stats['days'][ $day ] ) ) {
+				$stats['days'][ $day ] = array( 'n' => 0, 'unk' => 0, 'young' => 0, 'over' => 0, 'max' => 0 );
+			}
+
+			$page = &$stats['pages'][ $url ];
+			$page['n']++;
+			$page[ $auto ? 'auto' : 'hand' ]++;
+			$page['last'] = max( $page['last'], (int) $row['at'] );
+			$page['rules'] = array_slice( array_values( array_unique( array_merge( $page['rules'], (array) $row['rules'] ) ) ), 0, 10 );
+
+			$stats['days'][ $day ]['n']++;
+
+			if ( null === $age ) {
+				$page['unk']++;
+				$stats['days'][ $day ]['unk']++;
+			} else {
+				$page['sum'] += $age;
+				$page['max']  = max( $page['max'], $age );
+
+				if ( ! $auto ) {
+					$page['hsum'] += $age;
+					$page['hk']++;
+				}
+
+				foreach ( array( 'young' => $age < self::YOUNG, 'over' => $age > $target ) as $key => $hit ) {
+					if ( $hit ) {
+						$page[ $key ]++;
+						$stats['days'][ $day ][ $key ]++;
+					}
+				}
+
+				$stats['days'][ $day ]['max'] = max( $stats['days'][ $day ]['max'], $age );
+			}
+
+			unset( $page );
+
+			// Over the cap, the page cleared longest ago goes — never the one just written.
+			if ( count( $stats['pages'] ) > self::STATS_PAGES ) {
+				$oldest = null;
+
+				foreach ( $stats['pages'] as $known => $sums ) {
+					if ( $known !== $url && ( null === $oldest || $sums['last'] < $stats['pages'][ $oldest ]['last'] ) ) {
+						$oldest = $known;
+					}
+				}
+
+				unset( $stats['pages'][ $oldest ] );
+			}
+		}
+
+		ksort( $stats['days'] );
+		$stats['days'] = array_slice( $stats['days'], -self::STATS_DAYS, null, true );
+
+		update_option( self::STATS, $stats, false );
+	}
+
+	/**
+	 * The sums, every key present.
+	 *
+	 * @return array pages (url => sums), days (Y-m-d => sums).
+	 */
+	public static function stats() {
+		$stats = get_option( self::STATS, array() );
+
+		return array(
+			'pages' => isset( $stats['pages'] ) && is_array( $stats['pages'] ) ? $stats['pages'] : array(),
+			'days'  => isset( $stats['days'] ) && is_array( $stats['days'] ) ? $stats['days'] : array(),
+		);
+	}
+
+	/**
+	 * What the sums ask for.
+	 *
+	 * - over: pages a cache kept past the target, with whether a rule clears them — without one,
+	 *   a rule is the fix.
+	 * - young: pages whose clears keep finding a fresh copy (2 or more, three in four under 10
+	 *   minutes) — the page looked old for another reason, or a rule clears it more than needed.
+	 * - hand: pages cleared by hand twice or more, with the average age those clears found.
+	 * - summary: the days kept, added up.
+	 *
+	 * @return array
+	 */
+	public static function insights() {
+		$stats = self::stats();
+		$ruled = self::ruled();
+		$out   = array(
+			'summary' => array( 'n' => 0, 'over' => 0, 'young' => 0, 'unk' => 0, 'days' => count( $stats['days'] ) ),
+			'over'    => array(),
+			'young'   => array(),
+			'hand'    => array(),
+		);
+
+		foreach ( $stats['days'] as $day ) {
+			foreach ( array( 'n', 'over', 'young', 'unk' ) as $key ) {
+				$out['summary'][ $key ] += isset( $day[ $key ] ) ? (int) $day[ $key ] : 0;
+			}
+		}
+
+		foreach ( $stats['pages'] as $url => $page ) {
+			$has_rule = isset( $ruled[ self::path( $url ) ] );
+
+			if ( $page['over'] > 0 ) {
+				$out['over'][] = array( 'url' => $url, 'over' => $page['over'], 'n' => $page['n'], 'max' => $page['max'], 'has_rule' => $has_rule );
+			}
+
+			if ( $page['n'] >= 2 && $page['young'] * 4 >= $page['n'] * 3 ) {
+				$out['young'][] = array( 'url' => $url, 'n' => $page['n'], 'young' => $page['young'], 'rules' => $page['rules'] );
+			}
+
+			if ( $page['hand'] >= 2 ) {
+				$out['hand'][] = array( 'url' => $url, 'times' => $page['hand'], 'last' => $page['last'], 'avg_age' => $page['hk'] ? (int) round( $page['hsum'] / $page['hk'] ) : null, 'has_rule' => $has_rule );
+			}
+		}
+
+		$sort = function ( $first, $second ) {
+			return function ( $a, $b ) use ( $first, $second ) {
+				if ( $a[ $first ] !== $b[ $first ] ) {
+					return $b[ $first ] - $a[ $first ];
+				}
+
+				return $b[ $second ] - $a[ $second ];
+			};
+		};
+
+		usort( $out['over'], $sort( 'over', 'max' ) );
+		usort( $out['young'], $sort( 'n', 'young' ) );
+		usort( $out['hand'], $sort( 'times', 'last' ) );
+
+		return $out;
+	}
+
+	/**
+	 * The paths enabled rules name, as keys.
+	 *
+	 * @return array
+	 */
+	private static function ruled() {
+		$ruled = array();
+
+		foreach ( ADVCM_Auto::rules() as $rule ) {
+			if ( $rule['enabled'] && ! $rule['own'] ) {
+				foreach ( $rule['urls'] as $rule_url ) {
+					$ruled[ self::path( $rule_url ) ] = true;
+				}
+			}
+		}
+
+		return $ruled;
 	}
 
 	/**

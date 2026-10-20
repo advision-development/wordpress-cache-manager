@@ -1442,6 +1442,16 @@ final class ADVCM_Screen {
 			echo '<p style="margin:0 0 4px"><label><input type="radio" name="nitropack_default" value="' . esc_attr( $value ) . '"' . ( $value === $settings['nitropack_default'] ? ' checked' : '' ) . ' /> ' . esc_html( $label ) . '</label></p>';
 		}
 
+		echo '<h3>' . esc_html__( 'Longest a page should stay cached', 'advcm' ) . '</h3>';
+		echo '<p><select name="cache_target">';
+
+		foreach ( ADVCM_Settings::TARGETS as $hours ) {
+			/* translators: %d: hours. */
+			echo '<option value="' . esc_attr( $hours ) . '"' . ( $hours === $settings['cache_target'] ? ' selected' : '' ) . '>' . esc_html( sprintf( _n( '%d hour', '%d hours', $hours, 'advcm' ), $hours ) ) . '</option>';
+		}
+
+		echo '</select></p><p class="description">' . esc_html__( 'Changes no cache. The Freshness tab counts a clear that found a copy older than this as past the target, and lists those pages.', 'advcm' ) . '</p>';
+
 		echo '<h3>' . esc_html__( 'Cache age before a clear', 'advcm' ) . '</h3>';
 		echo '<p><label><input type="checkbox" name="measure_before_clear" value="1"' . ( $settings['measure_before_clear'] ? ' checked' : '' ) . ' /> ';
 		echo esc_html__( 'Before clearing some pages, ask each one how old its cached copy is, and keep the answer for the Freshness tab.', 'advcm' ) . '</label></p>';
@@ -1750,7 +1760,7 @@ final class ADVCM_Screen {
 		echo '<h2>' . esc_html__( 'Cleared by hand, often', 'advcm' ) . '</h2>';
 		echo '<p class="description">' . esc_html__( 'Pages somebody cleared twice or more, among the last 100 measured. With no rule, an auto-clear rule could do it on publish. With a young cache age, the clear was not what the page needed.', 'advcm' ) . '</p>';
 
-		$often = ADVCM_Freshness::often_by_hand();
+		$often = ADVCM_Freshness::insights()['hand'];
 
 		if ( empty( $often ) ) {
 			echo '<p>' . esc_html__( 'None.', 'advcm' ) . '</p>';
@@ -1771,7 +1781,7 @@ final class ADVCM_Screen {
 			/* translators: %d: clears. */
 			echo '<td>' . esc_html( sprintf( _n( '%d time', '%d times', $page['times'], 'advcm' ), $page['times'] ) ) . '</td>';
 			echo '<td>' . esc_html( gmdate( 'Y-m-d H:i', $page['last'] ) ) . '</td>';
-			echo '<td>' . esc_html( null === $page['median_age'] ? __( 'unknown', 'advcm' ) : ADVCM_Probe::duration( $page['median_age'] ) ) . '</td>';
+			echo '<td>' . esc_html( null === $page['avg_age'] ? __( 'unknown', 'advcm' ) : ADVCM_Probe::duration( $page['avg_age'] ) ) . '</td>';
 			echo '<td>' . esc_html( $page['has_rule'] ? __( 'a rule clears it', 'advcm' ) : __( 'no rule clears this page', 'advcm' ) ) . '</td></tr>';
 		}
 

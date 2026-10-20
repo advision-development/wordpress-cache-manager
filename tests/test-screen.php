@@ -141,6 +141,7 @@ $out = screen_part( 'render_settings', array( true ) );
 check( 'the Settings form posts to its own action', false !== strpos( $out, 'name="action" value="' . ADVCM_Settings::ACTION . '"' ) );
 check( 'with the markers that tell an unticked box from a missing one', false !== strpos( $out, 'name="excluded_present"' ) && false !== strpos( $out, 'name="own_present"' ) );
 check( 'own-page ignoring unchanged saves is shown ticked by default', 1 === preg_match( '~name="own_skip_unchanged"[^>]*checked~', $out ) );
+check( 'the cache target is offered, 3 hours selected', 1 === preg_match( '~<option value="3" selected>3 hours</option>~', $out ) );
 check( 'measuring before a clear is shown ticked by default, with its marker', 1 === preg_match( '~name="measure_before_clear"[^>]*checked~', $out ) && false !== strpos( $out, 'name="measure_present"' ) );
 check( 'the post types to leave out are boxes, the shipped ones ticked', 1 === preg_match( '~value="elementor_library"[^>]*checked~', $out ) && 1 === preg_match( '~value="review_profile"(?![^>]*checked)~', $out ) );
 check( 'never a box for the always-excluded three', false === strpos( $out, 'value="revision"' ) );
@@ -339,6 +340,11 @@ unset( $GLOBALS['options'][ ADVCM_Jobs::OPTION ] );
 $GLOBALS['options'][ ADVCM_Freshness::OPTION ] = array(
 	array( 'at' => time() - 60, 'url' => 'https://example.test/analysis/', 'job' => 'h2', 'source' => 'wp-admin', 'by' => 7, 'code' => 200, 'age' => 5000, 'how' => 'exact', 'ages' => array( 'host cache' => 5000 ), 'nitro_state' => 'STALE', 'nitro_copy' => 'stale', 'nitro_age' => 7200 ),
 	array( 'at' => time() - 120, 'url' => 'https://example.test/analysis/', 'job' => 'h1', 'source' => 'wp-admin', 'by' => 7, 'code' => 200, 'age' => 30, 'how' => 'exact', 'ages' => array(), 'nitro_state' => null, 'nitro_copy' => null, 'nitro_age' => null ),
+);
+
+$GLOBALS['options'][ ADVCM_Freshness::STATS ] = array(
+	'pages' => array( 'https://example.test/analysis/' => array( 'n' => 2, 'hand' => 2, 'auto' => 0, 'unk' => 0, 'young' => 1, 'over' => 0, 'max' => 5000, 'sum' => 5030, 'hsum' => 5030, 'hk' => 2, 'last' => time() - 60, 'rules' => array() ) ),
+	'days'  => array( gmdate( 'Y-m-d' ) => array( 'n' => 2, 'unk' => 0, 'young' => 1, 'over' => 0, 'max' => 5000 ) ),
 );
 
 $out = screen_part( 'render_freshness', array( true ) );

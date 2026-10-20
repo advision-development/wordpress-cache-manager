@@ -145,6 +145,18 @@ ADVCM_Settings::save_form( array( 'op' => 'save', 'nitropack_default' => 'invali
 
 check( 'and ticked, on again', true === ADVCM_Settings::get()['measure_before_clear'] && 2 === count( settings_log() ) );
 
+$GLOBALS['options'][ ADVCM_Log::OPTION ] = array();
+
+check( 'the cache target is 3 hours by default', 3 === ADVCM_Settings::get()['cache_target'] );
+
+ADVCM_Settings::save_form( array( 'op' => 'save', 'cache_target' => '6' ) );
+
+check( 'it changes to one of the offered hours, recorded', 6 === ADVCM_Settings::get()['cache_target'] && array( 'cache_target:3 h>6 h' ) === settings_log(), implode( ' | ', settings_log() ) );
+
+ADVCM_Settings::save_form( array( 'op' => 'save', 'cache_target' => '5' ) );
+
+check( 'and to nothing else', 6 === ADVCM_Settings::get()['cache_target'] );
+
 // ------------------------------------------------- pause and own-page, from here
 
 $GLOBALS['options'][ ADVCM_Log::OPTION ] = array();

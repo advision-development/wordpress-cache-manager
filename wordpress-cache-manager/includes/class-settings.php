@@ -38,6 +38,9 @@ final class ADVCM_Settings {
 	/** The admin-post action and nonce. */
 	const ACTION = 'advcm_settings';
 
+	/** The longest, in hours, a page should stay cached: what Freshness counts as past it. */
+	const TARGETS = array( 1, 2, 3, 6, 12, 24 );
+
 	/**
 	 * Hook in.
 	 *
@@ -70,6 +73,7 @@ final class ADVCM_Settings {
 			'excluded_types'     => $excluded,
 			'nitropack_default'  => isset( $stored['nitropack_default'] ) && 'invalidate' === $stored['nitropack_default'] ? 'invalidate' : 'purge',
 			'measure_before_clear' => ! array_key_exists( 'measure_before_clear', $stored ) || ! empty( $stored['measure_before_clear'] ),
+			'cache_target'         => isset( $stored['cache_target'] ) && in_array( (int) $stored['cache_target'], self::TARGETS, true ) ? (int) $stored['cache_target'] : 3,
 			'version_seen'       => isset( $stored['version_seen'] ) ? (string) $stored['version_seen'] : '',
 		);
 	}
@@ -204,6 +208,11 @@ final class ADVCM_Settings {
 				$changes['own_skip_unchanged'] = $skip;
 				ADVCM_Log::add( 'settings', 'own_skip_unchanged', __( 'Own page ignores saves that change nothing', 'advcm' ), $now['own_skip_unchanged'] ? 'on' : 'off', $skip ? 'on' : 'off' );
 			}
+		}
+
+		if ( isset( $input['cache_target'] ) && in_array( (int) $input['cache_target'], self::TARGETS, true ) && (int) $input['cache_target'] !== $now['cache_target'] ) {
+			$changes['cache_target'] = (int) $input['cache_target'];
+			ADVCM_Log::add( 'settings', 'cache_target', __( 'Longest a page should stay cached', 'advcm' ), $now['cache_target'] . ' h', (int) $input['cache_target'] . ' h' );
 		}
 
 		if ( ! empty( $input['measure_present'] ) ) {
