@@ -23,7 +23,7 @@ build.sh                   lint, PHP 7.4 gate, tests, zip
 ## Commands
 
 ```bash
-./tests/docker.sh          # the suite on PHP 7.4 and 8.3
+./tests/docker.sh          # the suite on PHP 7.4, 8.3 and 8.4
 ./tests/docker.sh build    # build.sh inside a container, to see the zip
 ```
 
@@ -87,13 +87,20 @@ These are requirements, not preferences. Each was either asked for explicitly or
   clear a full window past due; `delete_option`'s answer decides which request clears a mark. Not `transition_post_status`: REST — the block editor — sets terms after
   it, so a rule on a category would miss every Gutenberg post. A rule names this site's URLs only,
   re-checked when it runs, and never the whole site.
-- **Only the rules form writes `advcm_rules`.** Anything the cron learns about a rule — its last
-  clear — goes to `advcm_rules_last`, and the pause to `advcm_rules_paused`. A cron writing the
+- **Only the rules form and the settings form write `advcm_rules`.** Anything the cron learns about
+  a rule — its last clear — goes to `advcm_rules_last`, and the pause to `advcm_rules_paused`. A cron writing the
   rules row while an administrator edits it would put back a rule they had just deleted. Both are
   tests.
 - **The save hook's cost is an assertion**: with no rule on, exactly one option read
   (`advcm_rules`); the pause is read only after a rule is on and the save is a visible one. A new
-  check goes after those two, not before.
+  check goes after those two, not before — `advcm_settings` is read only after the pause.
+- **Everything stored has a cap**, and each cap is a test: History 20 clears people started
+  (`advcm_jobs`) and 20 automatic ones (`advcm_jobs_auto`), a running job never evicted; change log
+  20 per section (`advcm_log`), 10 shown, values 200 characters. No retention for Hawkeye until
+  Hawkeye exists.
+- **The change log is written only by requests a person made**: admin-post actions, the Cache age
+  probe, the Status tab (a version change, as nobody's). Never WP-Cron, never the tick. Recording
+  never throws into the action it records.
 - **"Any content" never covers revisions, auto-drafts or menu items**, whatever
   `advcm_auto_excluded_post_types` returns, and a filter answer that is not a list of post type
   names is ignored — a lone `*` would otherwise switch every such rule off silently.
@@ -111,16 +118,19 @@ From the adversarial review of 2026-10-01; each has a test or a workflow check.
   same tag as the release). A literal `..` check was bypassed by `%2e%2e`.
 - **Nothing reachable logged out.** admin-post and `wp_ajax_` only, each with capability and nonce.
 - **Editors cannot choose layers.** Builder CSS alone would leave every page cache pointing at
-  deleted CSS. Administrators can, and a builder layer always brings the page-storing layers.
+  deleted CSS. Administrators (`manage_options`, its own gate since 0.4.0) can, and a builder layer
+  always brings the page-storing layers.
 - **Rate limits do not live in the job history**, which a burst of small clears can empty:
   `advcm_site_wide_at` claimed with `add_option`, and 10 page clears a minute per person.
 - **No file in the plugin directory may identify the fleet.** It is served from every site;
   `footprint.json` lives in the repository and the build excludes it.
 - **Admin-bar JavaScript is a listener, never `meta.onclick`**: the admin bar runs `onclick`
   through `esc_js()`, which broke the confirmation into a syntax error.
-- **Auto-clear rules are written by administrators only** (`advcm_purge_hard`), through an
-  admin-post action with a nonce. A rule is an instruction the site carries out on every publish,
-  so it is held to the same bar as the costly options.
+- **Since 0.4.0 editors can do everything administrators can**, except choose layers: rules,
+  settings, the pause, a full NitroPack purge, overriding a hold (`advcm_purge_hard`, granted from
+  `edit_others_posts`). The owner's decision of 2026-10-20: the change log names whoever acted,
+  instead of the restriction. Every such action is an admin-post action with the capability and a
+  nonce, and is recorded; `advcm_purge_hard_base_capability` lets a site restrict it again.
 - **HTTP goes through WordPress's API** (`wp_remote_*`), never `Requests` directly, so a site's
   HTTP policy applies.
 

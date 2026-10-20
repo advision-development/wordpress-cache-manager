@@ -71,11 +71,11 @@ check( 'and so is an empty one', is_string( $r ) );
 
 // ---------------------------------------------------------------------------- layers
 
-$r = ADVCM_Controller::request( array( 'layers' => array( 'wp-engine', 'nitropack' ) ), false );
+$r = ADVCM_Controller::request( array( 'layers' => array( 'wp-engine', 'nitropack' ) ), true, false );
 
-check( 'an editor cannot choose layers: the screen never sends them, and builder CSS alone would leave pages unstyled', array() === $r['layers'], implode( ',', $r['layers'] ) );
+check( 'an editor cannot choose layers, though since 0.4.0 they hold every costly option: the screen never sends layers, and builder CSS alone would leave pages unstyled', array() === $r['layers'], implode( ',', $r['layers'] ) );
 
-$r = ADVCM_Controller::request( array( 'layers' => array( 'wp-engine', 'rm -rf', 'nitropack' ) ), true );
+$r = ADVCM_Controller::request( array( 'layers' => array( 'wp-engine', 'rm -rf', 'nitropack' ) ), true, true );
 
 check( 'an administrator can, and only layers the registry knows are kept', array( 'wp-engine', 'nitropack' ) === $r['layers'], implode( ',', $r['layers'] ) );
 

@@ -27,7 +27,8 @@
     }
   ],
   "options": [
-    { "name": "advcm_jobs", "autoload": false, "why": "the last 10 clears (up to 30 while waiting for Hawkeye)" },
+    { "name": "advcm_jobs", "autoload": false, "why": "the last 20 clears people started (automatic ones are in advcm_jobs_auto since 0.4.0)" },
+    { "name": "advcm_jobs_auto", "autoload": false, "why": "since 0.4.0, the last 20 automatic clears (auto-clear rules and each post's own page), kept apart so they never push out a clear somebody pressed. A running job is never evicted" },
     { "name": "advcm_layers", "autoload": false, "why": "per layer, when it was last cleared and how" },
     { "name": "advcm_lock_<job id>", "autoload": false, "why": "one row while a job is running; deleted when it stops" },
     { "name": "advcm_last_error", "autoload": false, "why": "the last fault the plugin's guards caught, shown on its screen for a day" },
@@ -35,6 +36,8 @@
     { "name": "advcm_rules", "autoload": false, "why": "auto-clear rules: a post type, optionally a term, and up to 10 of this site's own URLs to clear when such a post is published; and the reserved rule own-page, the setting that also clears each saved post's own URL. Written by administrators only" },
     { "name": "advcm_auto_<rule id>", "autoload": false, "why": "one row while a rule is waiting for its clear, with the first 10 posts that triggered it and a count of the rest (for own-page, also up to 40 of their own URLs); deleted when the clear picks it up" },
     { "name": "advcm_rules_last", "autoload": false, "why": "per auto-clear rule, when it last fired, how many posts triggered it and the job's id and state. Written by the clear, never by the rules form; a rule's entry goes when the rule is deleted" },
+    { "name": "advcm_settings", "autoload": false, "why": "since 0.4.0, the Settings tab: whether own-page ignores saves that change nothing, the post types auto-clear leaves out, the NitroPack choice a new rule starts with, and the plugin version last seen (for the change log). Read in a post save only after a rule is on, the save is visible and auto-clear is not paused" },
+    { "name": "advcm_log", "autoload": false, "why": "since 0.4.0, who changed what: per tab section, the last 20 changes a person made (time, user and login, action, one-line summary, value before and after, each cut to 200 characters). Written only by requests a person made, never by WP-Cron" },
     { "name": "advcm_rules_paused", "autoload": false, "why": "present while an administrator has paused every auto-clear rule; holds when. Read on a post save only when a rule is switched on" }
   ],
   "wordpress_own_names_touched": [
@@ -55,6 +58,7 @@
     { "type": "admin-post", "action": "advcm_purge", "auth": "logged in, advcm_purge, nonce" },
     { "type": "admin-post", "action": "advcm_resume", "auth": "logged in, advcm_purge, nonce" },
     { "type": "admin-post", "action": "advcm_check_release", "auth": "logged in, update_plugins, nonce" },
+    { "type": "admin-post", "action": "advcm_settings", "auth": "logged in, advcm_purge_hard, nonce", "why": "since 0.4.0, the Settings tab: saves its settings, pauses or resumes auto-clear, switches each post's own page on or off" },
     { "type": "admin-post", "action": "advcm_rules", "auth": "logged in, advcm_purge_hard, nonce", "why": "add, switch on or off, or delete an auto-clear rule; switch the own-page setting on or off; pause or resume them all" },
     { "type": "admin-ajax", "action": "advcm_tick", "auth": "logged in (wp_ajax_ only, no nopriv), advcm_purge, nonce", "why": "the status screen moves a due background clear where the site's cron cannot wake" },
     { "type": "admin-page", "slug": "advcm-cache", "parent": "tools.php" },

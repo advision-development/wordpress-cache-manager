@@ -2,19 +2,22 @@
 /**
  * Where jobs are kept, and how little.
  *
- * WordPress is a short buffer, not the history. Two options, neither autoloaded:
+ * WordPress is a short buffer, not the history. Three options, none autoloaded:
  *
- * - `advcm_jobs` — the last KEEP jobs, each written after every step, so a request that dies
- *   part-way leaves a record of how far it got (the shutdown handler in the runner reads it).
+ * - `advcm_jobs` — the last KEEP clears people started (and WP-CLI), each written after every
+ *   step, so a request that dies part-way leaves a record of how far it got (the shutdown handler
+ *   in the runner reads it).
+ * - `advcm_jobs_auto` — since 0.4.0, the last AUTO_KEEP automatic clears, in a row of their own.
+ *   With "each post's own page" on, BMR filled the three automatic places 0.3.2 kept within hours,
+ *   and the clears before were gone before anybody looked. Kept apart, an automatic clear never
+ *   pushes out a clear somebody pressed, and each of its steps rewrites only its own row.
  * - `advcm_layers` — per layer, the last time it was cleared, by whom and how it went. A few
  *   hundred bytes that answer "when was NitroPack last cleared" after that job has left the
  *   buffer.
  *
- * The full history is Hawkeye's, once sites report to it: every job goes there and expires on a
- * Firestore TTL. So each job carries `sent`, and a job Hawkeye has not confirmed stays in the
- * buffer past KEEP — up to UNSENT_CAP, so a Hawkeye that is down for a week cannot grow this row
- * without bound either. Until the reporting exists nothing marks a job sent, and the cap is what
- * holds the size.
+ * The full history will be Hawkeye's, once sites report to it, and each job carries `sent` for
+ * that. Until 0.4.0 an unsent job stayed past KEEP, up to 30; nothing marks a job sent yet, so
+ * that only made the row heavier. The cap is the cap until Hawkeye exists.
  *
  * @package ADVCM
  */
@@ -28,62 +31,81 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 final class ADVCM_Jobs {
 
-	/** The jobs option. */
+	/** The row of clears people started. */
 	const OPTION = 'advcm_jobs';
+
+	/** The row of automatic clears. */
+	const OPTION_AUTO = 'advcm_jobs_auto';
 
 	/** The per-layer summary option. */
 	const LAYERS = 'advcm_layers';
 
-	/** How many jobs are kept. */
-	const KEEP = 10;
+	/** How many clears people started are kept. A job is about 5 KB on BMR. */
+	const KEEP = 20;
+
+	/** How many automatic clears are kept. */
+	const AUTO_KEEP = 20;
 
 	/**
-	 * How many jobs the buffer may hold while some are waiting to reach Hawkeye.
+	 * Every stored job, both rows, newest first.
 	 *
-	 * A job is ~2–3 KB, so this bounds the row at well under 100 KB whatever Hawkeye is doing.
-	 */
-	const UNSENT_CAP = 30;
-
-	/**
-	 * How many auto-clears the buffer keeps.
-	 *
-	 * An auto-clear runs whenever the editorial team publishes, which on a busy site is dozens a
-	 * day; without its own cap the history would be nothing but auto-clears within a morning and a
-	 * clear somebody pressed would be pushed out of it. The per-layer summary still records each.
-	 */
-	const AUTO_KEEP = 3;
-
-	/**
-	 * Every stored job, newest first.
-	 *
-	 * @return array
+	 * @return array id => job
 	 */
 	public static function all() {
-		$jobs = get_option( self::OPTION, array() );
+		$jobs  = self::row( self::OPTION ) + self::row( self::OPTION_AUTO );
+		$order = array();
+		$i     = 0;
 
-		return is_array( $jobs ) ? $jobs : array();
+		// Newest first by when they started; equal times keep each row's own order, so PHP 7.4's
+		// unstable sort cannot shuffle them.
+		foreach ( $jobs as $id => $job ) {
+			$order[ $id ] = array( isset( $job['created'] ) ? (int) $job['created'] : 0, $i++ );
+		}
+
+		uksort(
+			$jobs,
+			function ( $a, $b ) use ( $order ) {
+				if ( $order[ $a ][0] !== $order[ $b ][0] ) {
+					return $order[ $b ][0] - $order[ $a ][0];
+				}
+
+				return $order[ $a ][1] - $order[ $b ][1];
+			}
+		);
+
+		return $jobs;
 	}
 
 	/**
-	 * One job.
+	 * One job, from either row.
 	 *
 	 * @param string $id Job id.
 	 * @return array|null
 	 */
 	public static function get( $id ) {
-		$jobs = self::all();
+		foreach ( array( self::OPTION, self::OPTION_AUTO ) as $option ) {
+			$row = self::row( $option );
 
-		return isset( $jobs[ $id ] ) ? $jobs[ $id ] : null;
+			if ( isset( $row[ $id ] ) ) {
+				return $row[ $id ];
+			}
+		}
+
+		return null;
 	}
 
 	/**
-	 * Store a job, then trim the buffer.
+	 * Store a job in the row of its source, then trim that row.
 	 *
 	 * @param array $job Job.
 	 * @return void
 	 */
 	public static function save( array $job ) {
-		$jobs = self::all();
+		$option = self::is_auto( $job ) ? self::OPTION_AUTO : self::OPTION;
+
+		self::migrate();
+
+		$jobs = self::row( $option );
 
 		if ( ! isset( $job['sent'] ) ) {
 			$job['sent'] = isset( $jobs[ $job['id'] ]['sent'] ) ? (bool) $jobs[ $job['id'] ]['sent'] : false;
@@ -92,25 +114,51 @@ final class ADVCM_Jobs {
 		unset( $jobs[ $job['id'] ] );
 		$jobs = array( $job['id'] => $job ) + $jobs;
 
-		update_option( self::OPTION, self::trim( $jobs ), false );
+		update_option( $option, self::trim( $jobs, self::OPTION_AUTO === $option ? self::AUTO_KEEP : self::KEEP ), false );
 	}
 
 	/**
-	 * Record that Hawkeye has a job, so the buffer may let it go.
+	 * Move automatic clears 0.3.2 kept in the main row to their own. Each once: it leaves the
+	 * main row as it lands in the other. A running one moves too, and is never evicted there.
+	 *
+	 * @return void
+	 */
+	private static function migrate() {
+		$main  = self::row( self::OPTION );
+		$moved = array();
+
+		foreach ( $main as $id => $job ) {
+			if ( self::is_auto( $job ) ) {
+				$moved[ $id ] = $job;
+				unset( $main[ $id ] );
+			}
+		}
+
+		if ( empty( $moved ) ) {
+			return;
+		}
+
+		$auto = self::row( self::OPTION_AUTO );
+
+		update_option( self::OPTION_AUTO, self::trim( $auto + $moved, self::AUTO_KEEP ), false );
+		update_option( self::OPTION, $main, false );
+	}
+
+	/**
+	 * Record that Hawkeye has a job.
 	 *
 	 * @param string $id Job id.
 	 * @return void
 	 */
 	public static function mark_sent( $id ) {
-		$jobs = self::all();
+		$job = self::get( $id );
 
-		if ( ! isset( $jobs[ $id ] ) ) {
+		if ( ! is_array( $job ) ) {
 			return;
 		}
 
-		$jobs[ $id ]['sent'] = true;
-
-		update_option( self::OPTION, self::trim( $jobs ), false );
+		$job['sent'] = true;
+		self::save( $job );
 	}
 
 	/**
@@ -133,36 +181,49 @@ final class ADVCM_Jobs {
 	}
 
 	/**
-	 * The newest KEEP jobs, plus unsent ones after them, up to UNSENT_CAP in all.
+	 * The newest $keep jobs of a row. A running job is never evicted: its next run would find
+	 * nothing and stop silently half-way, which a burst of small clears could otherwise cause on
+	 * purpose.
 	 *
 	 * @param array $jobs Jobs, newest first.
+	 * @param int   $keep How many.
 	 * @return array
 	 */
-	public static function trim( array $jobs ) {
+	public static function trim( array $jobs, $keep = self::KEEP ) {
 		$kept  = array();
 		$count = 0;
-		$auto  = 0;
 
 		foreach ( $jobs as $id => $job ) {
 			$running = isset( $job['state'] ) && 'running' === $job['state'];
 
-			if ( isset( $job['source'] ) && 'auto' === $job['source'] && ! $running && ++$auto > self::AUTO_KEEP ) {
-				continue;
-			}
-
-			$count++;
-
-			// The second half is the cap. There was also a `break` at the cap after this, and
-			// deleting it failed no assertion: KEEP is below UNSENT_CAP, so nothing past the cap
-			// could be kept anyway. It is gone rather than left looking like a second guard.
-			// A running job is never evicted: its next run would find nothing and stop silently
-			// half-way, which a burst of small clears could otherwise cause on purpose.
-			if ( $count <= self::KEEP || $running || ( empty( $job['sent'] ) && count( $kept ) < self::UNSENT_CAP ) ) {
+			if ( ++$count <= $keep || $running ) {
 				$kept[ $id ] = $job;
 			}
 		}
 
 		return $kept;
+	}
+
+	/**
+	 * Whether a job is an automatic clear.
+	 *
+	 * @param array $job Job.
+	 * @return bool
+	 */
+	private static function is_auto( array $job ) {
+		return isset( $job['source'] ) && 'auto' === $job['source'];
+	}
+
+	/**
+	 * A row, as a list of jobs by id.
+	 *
+	 * @param string $option Option name.
+	 * @return array
+	 */
+	private static function row( $option ) {
+		$jobs = get_option( $option, array() );
+
+		return is_array( $jobs ) ? $jobs : array();
 	}
 
 	/**

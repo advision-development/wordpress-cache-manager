@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.4.0 — unreleased
+
+After a day of 0.3.2 on BMR nobody could tell who had changed a rule, the editors using the plugin
+could not change rules, settings were spread across tabs, and History kept the last three automatic
+clears and lost them within hours.
+
+- **Editors can do everything.** Everyone who can clear may add, switch and delete rules, pause
+  auto-clear, change settings, purge NitroPack in full and override a builder hold. The owner chose
+  a record over a restriction (2026-10-20). `advcm_purge_hard_base_capability` still lets a site
+  take it back. Choosing layers, which no screen offers, stays with administrators.
+- **A change log on every tab**: who, when, what, before → after, for clears people started, rule
+  and setting changes, the pause, stuck jobs finished by hand, release checks, Cache age probes and
+  plugin updates. 20 per tab, 10 shown, values cut to 200 characters; refusals and WP-Cron record
+  nothing. `advcm_log`.
+- **A Settings tab** with every setting: pause, each post's own page, own page ignoring saves that
+  change nothing (new, on by default), the post types auto-clear leaves out (was a code filter
+  only), and the NitroPack choice new rules start with. `advcm_settings`.
+- **Own page ignores saves that change nothing.** On BMR something saved seven review pages every
+  hour without changing them, and own-page cleared them every hour. A save that leaves title,
+  content, excerpt, slug, status, password, date, parent and order as they were no longer clears the post's page; listing rules
+  still fire.
+- **History in two lists, 20 each**: clears people started, and automatic clears in their own row
+  (`advcm_jobs_auto`), so automatic clears never push out a clear somebody pressed. The retention
+  of unsent jobs for Hawkeye is off until Hawkeye exists. Automatic clears saved by 0.3.2 move on
+  the next save.
+- **History says how long**: each clear shows how long it took, and an automatic one how long it
+  waited after the first save that set it off — the number that showed BMR's clears 8.5 hours late.
+
 ## 0.3.2 — 2026-10-19
 
 - **A listing stayed old for hours after an auto-clear that reported ok.** On BMR a pick was

@@ -15,7 +15,7 @@ $author = ADVCM_Capabilities::grant( array( 'edit_posts' => true ) );
 $admin  = ADVCM_Capabilities::grant( array( 'edit_others_posts' => true, 'manage_options' => true ) );
 
 check( 'an editor can purge', ! empty( $editor[ ADVCM_Capabilities::PURGE ] ) );
-check( 'but not the costly parts', empty( $editor[ ADVCM_Capabilities::HARD ] ) );
+check( 'an editor can do the costly parts too, since 0.4.0: the change log names who', ! empty( $editor[ ADVCM_Capabilities::HARD ] ) );
 check( 'an author cannot purge', empty( $author[ ADVCM_Capabilities::PURGE ] ) );
 check( 'an administrator can do both', ! empty( $admin[ ADVCM_Capabilities::PURGE ] ) && ! empty( $admin[ ADVCM_Capabilities::HARD ] ) );
 check( 'a capability that is present but false grants nothing', empty( ADVCM_Capabilities::grant( array( 'edit_others_posts' => false ) )[ ADVCM_Capabilities::PURGE ] ) );
@@ -26,5 +26,11 @@ $GLOBALS['filter_values']['advcm_purge_base_capability'] = 'edit_posts';
 $author = ADVCM_Capabilities::grant( array( 'edit_posts' => true ) );
 
 check( 'the base capability is filterable, so a site can hand it to authors', ! empty( $author[ ADVCM_Capabilities::PURGE ] ) );
+
+$GLOBALS['filter_values']['advcm_purge_hard_base_capability'] = 'manage_options';
+
+$editor = ADVCM_Capabilities::grant( array( 'edit_posts' => true, 'edit_others_posts' => true ) );
+
+check( 'and a site can take the costly parts back from editors', ! empty( $editor[ ADVCM_Capabilities::PURGE ] ) && empty( $editor[ ADVCM_Capabilities::HARD ] ) );
 
 finish();

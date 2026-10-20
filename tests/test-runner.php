@@ -427,12 +427,13 @@ check( 'a shutdown after a job finished cleanly changes nothing', 'done with fai
 
 ADVCM_Runner::use_adapters( array( new Fake_Adapter( 'x', ADVCM_Stages::PAGE ) ) );
 
-for ( $i = 0; $i < ADVCM_Jobs::UNSENT_CAP + 5; $i++ ) {
+for ( $i = 0; $i < ADVCM_Jobs::KEEP + 5; $i++ ) {
 	ADVCM_Runner::start( array( 'scope' => 'all' ) );
 }
 
-// Nothing marks a job sent until sites report to Hawkeye, so the buffer holds to its cap.
-check( 'the buffer never grows past its cap', ADVCM_Jobs::UNSENT_CAP === count( ADVCM_Jobs::all() ), (string) count( ADVCM_Jobs::all() ) );
+// Nothing marks a job sent until sites report to Hawkeye, and since 0.4.0 that is no reason to
+// keep more: the buffer holds to its cap.
+check( 'the buffer never grows past its cap', ADVCM_Jobs::KEEP === count( ADVCM_Jobs::all() ), (string) count( ADVCM_Jobs::all() ) );
 
 // ------------------------------------------------------------------- the layer summary
 

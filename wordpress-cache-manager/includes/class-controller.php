@@ -149,7 +149,7 @@ final class ADVCM_Controller {
 		check_admin_referer( self::ACTION );
 
 		// phpcs:ignore WordPress.Security.NonceVerification -- verified above.
-		$request = self::request( wp_unslash( $_REQUEST ), current_user_can( ADVCM_Capabilities::HARD ) );
+		$request = self::request( wp_unslash( $_REQUEST ), current_user_can( ADVCM_Capabilities::HARD ), current_user_can( 'manage_options' ) );
 
 		if ( is_string( $request ) ) {
 			self::back( '', $request );
@@ -164,19 +164,52 @@ final class ADVCM_Controller {
 			self::back( '', $busy );
 		}
 
+		self::record_start( $request );
+
 		$job = ADVCM_Runner::start( $request );
 
 		self::back( $job['id'], '' );
 	}
 
 	/**
+	 * Record a clear somebody started, in words: what, how, and the choices with a cost.
+	 *
+	 * @param array $request The request.
+	 * @return void
+	 */
+	private static function record_start( array $request ) {
+		$what = 'urls' === $request['scope']
+			/* translators: %d: how many pages. */
+			? sprintf( _n( '%d page', '%d pages', count( $request['urls'] ), 'advcm' ), count( $request['urls'] ) )
+			: __( 'the whole site', 'advcm' );
+
+		$how = array( ADVCM_Modes::get( $request['mode'] )['label'] );
+
+		if ( ! empty( $request['options']['except'] ) ) {
+			$how[] = __( 'NitroPack left as it is', 'advcm' );
+		} elseif ( isset( $request['options']['nitropack_mode'] ) && 'purge' === $request['options']['nitropack_mode'] && 'all' === $request['scope'] ) {
+			$how[] = __( 'NitroPack purged in full', 'advcm' );
+		}
+
+		if ( ! empty( $request['options']['override_hold'] ) ) {
+			$how[] = __( 'builder hold overridden', 'advcm' );
+		}
+
+		$urls = 'urls' === $request['scope'] ? ': ' . implode( ' ', array_map( function ( $url ) { return (string) wp_parse_url( $url, PHP_URL_PATH ); }, array_slice( $request['urls'], 0, 5 ) ) ) : '';
+
+		ADVCM_Log::add( 'clear', 'started', sprintf( '%s (%s)%s', $what, implode( ', ', $how ), $urls ) );
+	}
+
+	/**
 	 * Build a request from form input, or say why not.
 	 *
-	 * @param array $input Unslashed request input.
-	 * @param bool  $hard  Whether the user holds the stronger capability.
+	 * @param array $input  Unslashed request input.
+	 * @param bool  $hard   Whether the user holds the stronger capability.
+	 * @param bool  $layers Whether the user may choose layers: administrators only, whoever holds
+	 *                      the stronger capability (see below).
 	 * @return array|string The request, or a sentence explaining the refusal.
 	 */
-	public static function request( array $input, $hard ) {
+	public static function request( array $input, $hard, $layers = false ) {
 		$scope = isset( $input['scope'] ) && 'urls' === $input['scope'] ? 'urls' : 'all';
 
 		$mode = isset( $input['mode'] ) ? (string) $input['mode'] : '';
@@ -217,8 +250,10 @@ final class ADVCM_Controller {
 		// Choosing layers is for administrators only, and never sent by the screen. An editor who
 		// could ask for builder CSS alone would delete the CSS files and leave every page cache
 		// serving pages that link to them — the failure this plugin exists to prevent. Found by a
-		// security review; the runner also adds back every layer that stores pages (plan()).
-		if ( $hard && isset( $input['layers'] ) && is_array( $input['layers'] ) ) {
+		// security review; the runner also adds back every layer that stores pages (plan()). Its
+		// own gate since 0.4.0, when editors were given the stronger capability: no control on any
+		// screen sends layers, so opening every tab to editors never needed it.
+		if ( $layers && isset( $input['layers'] ) && is_array( $input['layers'] ) ) {
 			$known = array();
 
 			foreach ( ADVCM_Runner::adapters() as $adapter ) {
@@ -238,7 +273,7 @@ final class ADVCM_Controller {
 		//   one layer that may be left out: it serves pages with CSS it combined and hosts itself,
 		//   so it is not left pointing at Elementor files a clear just deleted — which is why the
 		//   page caches cannot be left out the same way.
-		// - purge: administrators only; anyone else asking gets the default.
+		// - purge: whoever holds the stronger capability; anyone else asking gets the default.
 		if ( 'all' === $scope && isset( $input['nitropack'] ) ) {
 			// A string or nothing: an array (two answers at once) is no answer, and casting one
 			// would also raise a warning on PHP 8.
@@ -344,6 +379,9 @@ final class ADVCM_Controller {
 		}
 
 		ADVCM_Runner::resume_now( $id );
+
+		/* translators: %s: job id. */
+		ADVCM_Log::add( 'history', 'resumed', sprintf( __( 'Finished job %s by hand, without its remaining pauses', 'advcm' ), $id ) );
 
 		self::back( $id, '' );
 	}
