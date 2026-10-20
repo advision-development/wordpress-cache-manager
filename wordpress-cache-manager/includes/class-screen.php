@@ -208,6 +208,9 @@ final class ADVCM_Screen {
 		echo '</div>';
 	}
 
+	/** How long a clear somebody asked for must wait before History says so, in seconds. */
+	const WAIT_SHOWN = 5;
+
 	/** The tabs, in order, by id. */
 	const TABS = array( 'status', 'clear', 'check', 'history', 'auto', 'settings' );
 
@@ -864,8 +867,9 @@ final class ADVCM_Screen {
 	}
 
 	/**
-	 * How long a clear took, and for an automatic one how long it waited after the first save that
-	 * set it off — the number that showed BMR's clears running hours late. Empty while running.
+	 * How long a clear took, and how long it waited: an automatic one from the first save that set
+	 * it off, one somebody asked for from the request to its first step — the number that showed
+	 * BMR's clears running hours late. "took" is empty while running.
 	 *
 	 * @param array $job Job.
 	 * @return string " — took …", " — waited …", or both, or empty.
@@ -885,6 +889,22 @@ final class ADVCM_Screen {
 		if ( $first > 0 && $created > $first ) {
 			/* translators: %s: a duration. */
 			$out .= ' — ' . sprintf( __( 'waited %s', 'advcm' ), ADVCM_Probe::duration( $created - $first ) );
+		} else {
+			// A clear somebody asked for: from the request to its first step that ran. A Fast clear
+			// runs in that request, so it shows nothing; a background one WP-Cron ran late shows how
+			// late — the number that would have shown BMR's 8.5 hours.
+			$ran = 0.0;
+
+			foreach ( isset( $job['steps'] ) && is_array( $job['steps'] ) ? $job['steps'] : array() as $step ) {
+				if ( is_array( $step ) && ! empty( $step['started'] ) ) {
+					$ran = 0.0 === $ran ? (float) $step['started'] : min( $ran, (float) $step['started'] );
+				}
+			}
+
+			if ( $ran > 0 && $created > 0 && $ran - $created >= self::WAIT_SHOWN ) {
+				/* translators: %s: a duration. */
+				$out .= ' — ' . sprintf( __( 'waited %s', 'advcm' ), ADVCM_Probe::duration( (int) ( $ran - $created ) ) );
+			}
 		}
 
 		if ( ! empty( $job['finished'] ) && (int) $job['finished'] >= $created && $created > 0 ) {

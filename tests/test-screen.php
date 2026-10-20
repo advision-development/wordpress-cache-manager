@@ -172,9 +172,21 @@ ADVCM_Jobs::save( array( 'id' => 'took', 'created' => $t - 90, 'finished' => $t,
 ADVCM_Jobs::save( array( 'id' => 'waited', 'created' => $t - 10, 'finished' => $t, 'by' => 0, 'source' => 'auto', 'scope' => 'urls', 'urls' => array( 'https://example.test/analysis/' ), 'mode' => 'fast', 'state' => 'done', 'steps' => array(), 'options' => array( 'triggers' => array( array( 'rule' => 'a1', 'line' => 'a post is published', 'posts' => array(), 'total' => 1, 'at' => $t - 10 - 30600 ) ) ) ) );
 ADVCM_Jobs::save( array( 'id' => 'still', 'created' => $t - 5, 'finished' => 0, 'by' => 0, 'source' => 'wp-cli', 'scope' => 'all', 'urls' => array(), 'mode' => 'balanced', 'state' => 'running', 'steps' => array() ) );
 
+// A background clear WP-Cron ran late: its first step started 8.5 hours after it was asked for.
+ADVCM_Jobs::save( array( 'id' => 'late', 'created' => $t - 30700, 'finished' => $t - 100, 'by' => 0, 'source' => 'wp-cli', 'scope' => 'all', 'urls' => array(), 'mode' => 'balanced', 'state' => 'done', 'steps' => array(
+	array( 'id' => 'object-cache', 'label' => 'Object cache', 'stage' => 1, 'action' => 'skip', 'status' => 'skipped', 'message' => '', 'ms' => 0, 'started' => 0 ),
+	array( 'id' => 'wp-engine', 'label' => 'Host', 'stage' => 6, 'action' => 'run', 'status' => 'ok', 'message' => '', 'ms' => 12, 'started' => $t - 30700 + 30600 + 0.4 ),
+) ) );
+// A Fast clear runs in the request that asked for it.
+ADVCM_Jobs::save( array( 'id' => 'quick', 'created' => $t - 20, 'finished' => $t - 17, 'by' => 0, 'source' => 'wp-cli', 'scope' => 'all', 'urls' => array(), 'mode' => 'fast', 'state' => 'done', 'steps' => array(
+	array( 'id' => 'wp-engine', 'label' => 'Host', 'stage' => 6, 'action' => 'run', 'status' => 'ok', 'message' => '', 'ms' => 12, 'started' => $t - 20 + 0.3 ),
+) ) );
+
 $out = screen_part( 'render_jobs', array( '' ) );
 
 check( 'History says how long a clear took', false !== strpos( $out, 'took 90 s' ) );
+check( 'and how long a clear somebody asked for waited before it ran, when WP-Cron was late', 1 === preg_match( '~Balanced — done — waited 8 h 30 min — took~', $out ) );
+check( 'a Fast clear, which runs in the request, shows no wait', 1 === preg_match( '~Fast — done — took 3 s~', $out ) && 0 === preg_match( '~whole site — Fast — done — waited~', $out ) );
 check( 'and how long an automatic clear waited after the first save that set it off', false !== strpos( $out, 'waited 8 h 30 min' ) );
 check( 'a clear still running has no time yet', 1 === preg_match( '~balanced — running(?! — took)~i', $out ) );
 
