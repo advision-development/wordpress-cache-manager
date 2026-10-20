@@ -80,6 +80,9 @@ try {
 	// Off until an administrator writes a rule; with none, a post save costs one option read.
 	ADVCM_Auto::register();
 
+	// The Settings tab's form. The settings themselves are read where they are used.
+	ADVCM_Settings::register();
+
 	// The admin bar menu is drawn on the front end too, where "clear this page" has a page to name.
 	ADVCM_Screen::register();
 

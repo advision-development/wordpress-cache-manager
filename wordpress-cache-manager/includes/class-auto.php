@@ -231,6 +231,14 @@ final class ADVCM_Auto {
 		$marked = 0;
 
 		foreach ( self::matching( $rules, $post ) as $rule ) {
+			// A save that changes nothing a visitor sees does not clear the post's own page.
+			// Measured on BMR: something saved seven review pages every hour, unchanged, and
+			// own-page cleared them every hour. Listing rules still fire: a listing shows the post
+			// whatever changed. The settings are read only here, after the pause.
+			if ( $rule['own'] && self::unchanged( $post, $post_before ) && ADVCM_Settings::get()['own_skip_unchanged'] ) {
+				continue;
+			}
+
 			self::mark( $rule['id'], $rule['own'] ? $entry + array( 'url' => self::own_url( $post, $post_before, $change ) ) : $entry );
 			$marked++;
 		}
@@ -419,6 +427,34 @@ final class ADVCM_Auto {
 	}
 
 	/**
+	 * Whether a save changed nothing a visitor sees: title, content, excerpt, slug and status all
+	 * as they were. A save with no post before it (a new post) is a change.
+	 *
+	 * Custom fields and a page builder's own data are not compared: a change only there reads as
+	 * unchanged. The Settings tab says so; clearing the page by hand still works.
+	 *
+	 * @param object      $post        After.
+	 * @param object|null $post_before Before.
+	 * @return bool
+	 */
+	public static function unchanged( $post, $post_before ) {
+		if ( ! is_object( $post ) || ! is_object( $post_before ) ) {
+			return false;
+		}
+
+		foreach ( array( 'post_title', 'post_content', 'post_excerpt', 'post_name', 'post_status' ) as $field ) {
+			$after  = isset( $post->$field ) ? (string) $post->$field : '';
+			$before = isset( $post_before->$field ) ? (string) $post_before->$field : '';
+
+			if ( $after !== $before ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
 	 * Whether every rule is paused.
 	 *
 	 * @return bool
@@ -546,6 +582,24 @@ final class ADVCM_Auto {
 	 */
 	public static function excluded_types() {
 		$list = self::EXCLUDED;
+
+		// The Settings tab's list, once somebody has saved one. Its boxes are the public, viewable
+		// types; the shipped prefix entries (`acf-*`, …) have no box and stay.
+		$chosen = ADVCM_Settings::get()['excluded_types'];
+
+		if ( null !== $chosen ) {
+			$list = array_merge(
+				$chosen,
+				array_values(
+					array_filter(
+						self::EXCLUDED,
+						function ( $entry ) {
+							return '*' === substr( $entry, -1 );
+						}
+					)
+				)
+			);
+		}
 
 		try {
 			/**

@@ -30,6 +30,7 @@ and the code disagree.
 | Option | `advcm_rules` | not autoloaded; auto-clear rules, and the "each post's own page" setting as the reserved rule `own-page`; written by administrators |
 | Option | `advcm_auto_<rule id>` | while a rule waits for its clear, with the first 10 posts that triggered it and a count of the rest (for `own-page`, also up to 40 of those posts' own URLs, taken at the save); deleted when the clear picks it up |
 | Option | `advcm_rules_last` | not autoloaded; per rule, when it last fired, how many posts and the job's state. Written by the clear, never by the rules form |
+| Option | `advcm_settings` | not autoloaded; since 0.4.0, the Settings tab: own-page ignores unchanged saves, the post types auto-clear leaves out, the NitroPack choice for new rules, the version last seen. Read in a post save only after a rule is on, the save is visible and auto-clear is not paused |
 | Option | `advcm_log` | not autoloaded; since 0.4.0, who changed what: the last 20 changes per tab section, each with the person, the time and the value before and after (cut to 200 characters). Written only by requests a person made |
 | Option | `advcm_rules_paused` | not autoloaded; while an administrator has paused every auto-clear rule |
 | Site transient | `advcm_release` | updater's cached GitHub answer |
@@ -38,6 +39,7 @@ and the code disagree.
 | Transient | `advcm_rate_<user id>` | per-URL clears in the last minute, at most 10 |
 | Capability | `advcm_purge`, `advcm_purge_hard` | granted by a `user_has_cap` filter from `edit_others_posts` / `manage_options`; never stored |
 | admin-post | `advcm_purge`, `advcm_resume`, `advcm_check_release` | logged in, capability and nonce |
+| admin-post | `advcm_settings` | logged in, `advcm_purge_hard` and nonce; since 0.4.0, saves the Settings tab, pauses and resumes auto-clear, switches each post's own page |
 | admin-post | `advcm_rules` | logged in, `advcm_purge_hard` and nonce; changes auto-clear rules, or pauses and resumes them all |
 | Hook | `wp_after_insert_post` | marks the auto-clear rules a saved post triggers. One option read when no rule is on; never clears in the save request |
 | Filter (offered) | `advcm_auto_excluded_post_types` | the post types an "any content" rule leaves out; validated, and `revision`, `auto-draft`, `nav_menu_item` stay out whatever it returns |

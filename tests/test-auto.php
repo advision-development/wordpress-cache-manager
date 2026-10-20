@@ -221,7 +221,7 @@ function has_term( $term, $taxonomy, $post ) {
 require __DIR__ . '/store-stubs.php';
 require __DIR__ . '/bootstrap.php';
 
-foreach ( array( 'safe', 'stages', 'modes', 'adapter', 'urls', 'jobs', 'runner', 'capabilities', 'auto', 'screen' ) as $class ) {
+foreach ( array( 'safe', 'stages', 'modes', 'adapter', 'urls', 'jobs', 'runner', 'capabilities', 'log', 'auto', 'settings', 'screen' ) as $class ) {
 	load_class( $class );
 }
 
@@ -940,7 +940,7 @@ ADVCM_Auto::saved( 40, post( 40, 'draft', 'post', array( 8 ) ), false, null );
 
 check( 'a draft saved still costs one read and marks nothing', array( ADVCM_Auto::RULES ) === $GLOBALS['reads'] && array() === marks(), implode( ',', $GLOBALS['reads'] ) );
 
-ADVCM_Auto::saved( 40, post( 40, 'publish', 'post', array( 8 ) ), true, post( 40, 'publish', 'post', array( 8 ) ) );
+ADVCM_Auto::saved( 40, post( 40, 'publish', 'post', array( 8 ) ), true, post( 40, 'publish', 'post', array( 8 ), 'Its title before' ) );
 $job = ADVCM_Auto::flush();
 
 check( 'a post updated while published clears its own page', is_array( $job ) && array( 'https://example.test/p/40/' ) === $job['urls'], is_array( $job ) ? implode( ', ', $job['urls'] ) : 'no job' );
@@ -980,6 +980,46 @@ check( 'a full mark takes no more addresses', ADVCM_Auto::MAX_OWN === count( $mo
 $stored = array( 'at' => 1, 'urls' => array_map( function ( $n ) { return 'https://example.test/p/' . $n . '/'; }, range( 1, 90 ) ) );
 
 check( 'and a stored mark with more is read as at most that many', ADVCM_Auto::MAX_OWN === count( ADVCM_Auto::mark_from( $stored )['urls'] ) );
+
+// Since 0.4.0: a save that changes nothing a visitor sees is not a reason to clear the page.
+// Measured on BMR: something saved seven review pages every hour, unchanged, and own-page
+// cleared them every hour.
+reset_waiting();
+$same = post( 45, 'publish', 'post', array( 8 ) );
+$was  = post( 45, 'publish', 'post', array( 8 ) );
+$same->post_modified = '2026-10-20 13:00:29';
+$was->post_modified  = '2026-10-20 12:00:29';
+
+ADVCM_Auto::saved( 45, $same, true, $was );
+
+check( 'an update that changes nothing a visitor sees does not clear the post\'s page', array() === marks() );
+
+foreach ( array( 'post_title', 'post_content', 'post_excerpt', 'post_name' ) as $field ) {
+	reset_waiting();
+	$after          = post( 45, 'publish', 'post', array( 8 ) );
+	$before         = post( 45, 'publish', 'post', array( 8 ) );
+	$after->$field  = 'new';
+	$before->$field = 'old';
+
+	ADVCM_Auto::saved( 45, $after, true, $before );
+
+	check( 'a change to ' . $field . ' does', array( ADVCM_Auto::OWN ) === marks(), implode( ',', marks() ) );
+}
+
+reset_waiting();
+ADVCM_Auto::saved( 45, post( 45, 'publish', 'post', array( 7 ) ), true, post( 45, 'publish', 'post', array( 7 ) ) );
+
+check( 'a listing rule still fires on the same unchanged save: its page lists the post, whatever changed', array( 'a1' ) === marks(), implode( ',', marks() ) );
+
+reset_waiting();
+$GLOBALS['options'][ ADVCM_Settings::OPTION ] = array( 'own_skip_unchanged' => false );
+// post() files the post under its terms; back to the term no listing rule names.
+ADVCM_Auto::saved( 45, post( 45, 'publish', 'post', array( 8 ) ), true, $was );
+
+check( 'with the setting off, the unchanged update clears the page as in 0.3.2', array( ADVCM_Auto::OWN ) === marks() );
+
+unset( $GLOBALS['options'][ ADVCM_Settings::OPTION ] );
+reset_waiting();
 
 ADVCM_Auto::change( array( 'op' => 'own_off' ) );
 ADVCM_Auto::saved( 44, post( 44, 'publish', 'post', array( 8 ) ), false, null );
