@@ -96,8 +96,22 @@ These are requirements, not preferences. Each was either asked for explicitly or
   check goes after those two, not before — `advcm_settings` is read only after the pause.
 - **Everything stored has a cap**, and each cap is a test: History 20 clears people started
   (`advcm_jobs`) and 20 automatic ones (`advcm_jobs_auto`), a running job never evicted; change log
-  20 per section (`advcm_log`), 10 shown, values 200 characters. No retention for Hawkeye until
-  Hawkeye exists.
+  20 per section (`advcm_log`), 10 shown, values 200 characters; measurements 100 pages for people
+  (`advcm_freshness`) and 100 for automatic clears (`advcm_freshness_auto`), URLs 2048 characters;
+  the listings scan 300 findings (`advcm_listings`), green ones counted only, titles 150 and filters
+  200 characters, its state a cursor and counters, never a list that grows with the site. Each
+  option's worst case is asserted in bytes. No retention for Hawkeye until Hawkeye exists.
+- **The plugin is generic: no layer is assumed.** NitroPack, WP Engine, Cloudflare, Elementor may
+  each be missing; every reading detects its layer at run time and says nothing, or "unknown", where
+  it is absent. Each suite covers the site with none of them. BMR numbers belong in docs.
+- **Measuring is not a stage.** `ADVCM_Freshness::measure()` runs once per job, before its first
+  stage, only for a per-URL clear: 10 pages, 5 s each, no probe started past 20 s. It never throws
+  and never stops the clear. NitroPack's copy is read with `file_exists`/`filemtime` on the paths
+  its SDK names, never `hasCache()`, which renames files when invalidated copies are on.
+- **The listings scan never runs in a page view, a save, or a person's request** — except one
+  bounded batch (5 documents, 3 s) from the Freshness tab's tick when WP-Cron is over 2 minutes
+  late. Otherwise WP-Cron batches of 20 documents within 8 s, one scan at a time, each document's
+  meta let go after reading. Elementor stores term filters as **term_taxonomy_ids**.
 - **The change log is written only by requests a person made**: admin-post actions, the Cache age
   probe, the Status tab (a version change, as nobody's). Never WP-Cron, never the tick. Recording
   never throws into the action it records.

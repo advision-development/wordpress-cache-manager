@@ -8,8 +8,8 @@ The design spec lives in the team's internal workspace, not in this public repos
 
 ## Status
 
-**0.4.1.** Tools → CacheManager, in six tabs — Status, Clear, Cache age, History, Auto-clear,
-Settings — each with a box of its last changes, and the CacheManager menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
+**0.5.0.** Tools → CacheManager, in seven tabs — Status, Clear, Cache age, History, Freshness,
+Auto-clear, Settings — each with a box of its last changes, and the CacheManager menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
 time the screen opens: install a cache plugin later and it appears on the next load. Talking to Hawkeye is a later phase.
 
 ## The order
@@ -53,6 +53,33 @@ Tools → CacheManager → *Cache age*: the site requests the page once and read
 each layer says — Cloudflare, the host cache, NitroPack. The age is exact where a layer sends
 `Age`, 0 on a `MISS`, "at most N" since this plugin last cleared it when a layer only says `HIT`
 (WP Engine sends no `Age`), and otherwise "unknown" with the most it can be. It never guesses.
+
+Since 0.5.0 it also reads WP Engine's `x-cache-ctime` (the time the host cache stored the copy,
+so the age is exact there), the `NITROPACK_STATE` NitroPack writes into the page (`FRESH` or
+`STALE`), and the time of NitroPack's own copy of the page, from the file its SDK names. Each only
+where the site has that layer: no row is shown for a layer a site does not have.
+
+## Freshness
+
+A page can look old because a cache kept an old copy, or because the page has nothing new to show.
+A clear fixes the first and does nothing for the second. The *Freshness* tab tells them apart.
+
+- **Listings with nothing new.** Elementor `posts`, `loop-grid` and `loop-carousel` widgets that
+  filter by category or tag, on every published page and template. For each, the newest post the
+  filter matches, queried as Elementor does (the filter is stored as term_taxonomy_ids; IN within a
+  taxonomy, AND across). Red over 30 days, or a filter that can match nothing (a deleted term, a
+  taxonomy the post type lacks); amber from 7 days. A custom query id is listed, not checked. Found
+  on BMR: the Alabama news carousel showed the same posts for ten months because no post had been
+  tagged `alabama` since 2025-12-31 — no clear could fix that.
+  A person starts the scan; it runs in WP-Cron, 20 documents within 8 seconds per run, and changes
+  nothing. One scan at a time. Where WP-Cron cannot wake, the open tab moves it 5 documents at a
+  time once it is 2 minutes late. A site without Elementor finishes at once with nothing to check.
+- **Cache age at clear.** Before a clear of some pages, each page is asked once how old its cached
+  copy is, and the answer kept: the age a visitor would have got, each layer's own, and NitroPack's
+  state. At most 10 pages per clear, 5 seconds each, 20 seconds in all; never for a whole-site
+  clear. It is not a stage, and nothing it does can stop the clear. Switch it off in Settings.
+- **Cleared by hand, often.** Pages somebody cleared twice or more among the last 100 measured,
+  with the median cache age at those clears and whether a rule already clears them.
 
 ## Auto-clear: listing pages refresh themselves
 
@@ -101,6 +128,7 @@ Every setting a person may change is on the *Settings* tab:
 | Own page ignores saves that change nothing | on | A save that leaves title, content, excerpt, slug, status, password, date, parent and order as they were does not clear the post's page (on BMR, something saved seven review pages every hour unchanged). A change only to custom fields or a page builder's own data reads as unchanged; clearing by hand still works. Listing rules always fire. |
 | Post types auto-clear leaves out | media, page-builder templates | For each post's own page and for rules on "any content". Revisions, auto-drafts, menu items and form, snippet and field-group records are always left out. |
 | NitroPack for new rules | purge | The choice the add-rule form starts with. |
+| Cache age before a clear | on | Before clearing some pages, ask each how old its cached copy is (at most 10 pages, 20 seconds), for the Freshness tab. |
 
 Not settings, on purpose: the plugin's auto-update, the mode timings, who may use the plugin, rate
 limits and storage caps. They are filters and constants; a checkbox for them is a way to break a
@@ -127,10 +155,18 @@ cut to 200 characters.
 
 ## History
 
-Two lists: **Clears** (started by somebody, or WP-CLI) and **Automatic clears** (auto-clear rules
+Two tables: **Clears** (started by somebody, or WP-CLI) and **Automatic clears** (auto-clear rules
 and each post's own page), the last 20 of each, in separate rows so a busy day of publishing never
-pushes out a clear somebody pressed. A running clear is never dropped. Nothing grows past its cap:
-about 100 KB per list and 30 KB of change log at most, none of it autoloaded.
+pushes out a clear somebody pressed. A running clear is never dropped. Columns: when (UTC and how
+long ago), who, what (the whole site, or the first two pages and how many more), mode, state,
+how long it waited (amber over ten minutes, red over an hour), how long it took, and the oldest
+cache age its pages had. Each row opens to its steps, every page with its cache age, and what set
+it off.
+
+Nothing grows past its cap, none of it autoloaded: about 100 KB per History list, 30 KB of change
+log, and at most about 250 KB for each of the two measurement rows (`advcm_freshness`,
+`advcm_freshness_auto`, 100 pages each) and 300 KB for the listings scan (`advcm_listings`, 300
+findings) — typically a tenth of that.
 
 ## Nothing it does can break a page
 
