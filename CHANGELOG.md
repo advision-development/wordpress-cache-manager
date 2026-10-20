@@ -19,7 +19,7 @@ clears and lost them within hours.
   only), and the NitroPack choice new rules start with. `advcm_settings`.
 - **Own page ignores saves that change nothing.** On BMR something saved seven review pages every
   hour without changing them, and own-page cleared them every hour. A save that leaves title,
-  content, excerpt, slug and status as they were no longer clears the post's page; listing rules
+  content, excerpt, slug, status, password, date, parent and order as they were no longer clears the post's page; listing rules
   still fire.
 - **History in two lists, 20 each**: clears people started, and automatic clears in their own row
   (`advcm_jobs_auto`), so automatic clears never push out a clear somebody pressed. The retention

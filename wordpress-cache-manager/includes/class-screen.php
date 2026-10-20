@@ -1218,7 +1218,7 @@ final class ADVCM_Screen {
 		echo '<input type="hidden" name="excluded_present" value="1" />';
 
 		echo '<p><label><input type="checkbox" name="own_skip_unchanged" value="1"' . ( $settings['own_skip_unchanged'] ? ' checked' : '' ) . ' /> ';
-		echo esc_html__( 'Ignore saves that change nothing a visitor sees: title, content, excerpt, slug and status all as they were.', 'advcm' ) . '</label></p>';
+		echo esc_html__( 'Ignore saves that change nothing a visitor sees: title, content, excerpt, slug, status, password, date, parent and order all as they were.', 'advcm' ) . '</label></p>';
 		echo '<p class="description">' . esc_html__( 'A change only to custom fields or to a page builder\'s own data reads as unchanged, so that page is not cleared on its own; clearing it by hand still works. Listing rules always fire.', 'advcm' ) . '</p>';
 
 		echo '<h3>' . esc_html__( 'Post types auto-clear leaves out', 'advcm' ) . '</h3>';

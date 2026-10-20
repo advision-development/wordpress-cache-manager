@@ -995,7 +995,9 @@ ADVCM_Auto::saved( 45, $same, true, $was );
 
 check( 'an update that changes nothing a visitor sees does not clear the post\'s page', array() === marks() );
 
-foreach ( array( 'post_title', 'post_content', 'post_excerpt', 'post_name' ) as $field ) {
+// post_password: protecting a published post must reach the caches, or they keep serving the
+// unprotected page to everyone. post_date, post_parent and menu_order change what a visitor sees.
+foreach ( array( 'post_title', 'post_content', 'post_excerpt', 'post_name', 'post_password', 'post_date', 'post_parent', 'menu_order' ) as $field ) {
 	reset_waiting();
 	$after          = post( 45, 'publish', 'post', array( 8 ) );
 	$before         = post( 45, 'publish', 'post', array( 8 ) );

@@ -96,7 +96,7 @@ Every setting a person may change is on the *Settings* tab:
 |---|---|---|
 | Pause auto-clear | off | Stops every rule and each post's own page at once; each rule keeps its own on or off for the resume. |
 | Each post's own page | off | A published, updated or unpublished post's own URL goes into the same clear, purging NitroPack, so an edit shows without anybody clearing it by hand (on BMR, most manual clears were exactly that). Kept as the reserved rule `own-page` in the rules row, so a save still costs one option read. |
-| Own page ignores saves that change nothing | on | A save that leaves title, content, excerpt, slug and status as they were does not clear the post's page (on BMR, something saved seven review pages every hour unchanged). A change only to custom fields or a page builder's own data reads as unchanged; clearing by hand still works. Listing rules always fire. |
+| Own page ignores saves that change nothing | on | A save that leaves title, content, excerpt, slug, status, password, date, parent and order as they were does not clear the post's page (on BMR, something saved seven review pages every hour unchanged). A change only to custom fields or a page builder's own data reads as unchanged; clearing by hand still works. Listing rules always fire. |
 | Post types auto-clear leaves out | media, page-builder templates | For each post's own page and for rules on "any content". Revisions, auto-drafts, menu items and form, snippet and field-group records are always left out. |
 | NitroPack for new rules | purge | The choice the add-rule form starts with. |
 
