@@ -430,6 +430,7 @@ check( 'recorded as an auto-clear, by nobody', 'auto' === $job['source'] && 0 ==
 check( 'run in the cron request itself, which is already the background', 'fast' === $job['mode'] && 'done' === $job['state'], $job['state'] );
 check( 'with NitroPack invalidated, not purged', 'invalidate' === $layer->asked[0][2]['nitropack_mode'] );
 check( 'and the marks are taken off', array() === marks() );
+check( 'each trigger keeps when its first save was, so History can say how long the clear waited', isset( $job['options']['triggers'][0]['at'] ) && abs( time() - $job['options']['triggers'][0]['at'] ) < 5 );
 check( 'and nothing is left to clear the next time', null === ADVCM_Auto::flush() );
 
 add_option( ADVCM_Auto::MARK . 'a1', time() );

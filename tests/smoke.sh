@@ -10,7 +10,8 @@
 #     200 with no fatal, no "critical error", and nothing from this plugin in the PHP error log
 #   - a background mode finishes through WP-Cron, in order
 #   - deactivating a layer's plugin between two clears makes that step "skipped", nothing else
-#   - auto-clear: a rule written through the screen by an administrator (and refused to an editor),
+#   - auto-clear: a rule written through the screen by an administrator and, since 0.4.0, by an
+#     editor, with the change log naming them; the pause switched from the Settings tab;
 #     posts published through the block editor's REST path and wp_insert_post, a burst coalesced
 #     into one clear run by the site's real WP-Cron, and a fault in the hook that never fails a save;
 #     a post only in a subcategory firing its parent's rule, an "any content" rule firing on a page
@@ -129,7 +130,7 @@ check_pages() {
 	curl -s -c "${jar}" -b "${jar}" -o /dev/null "${URL}/wp-login.php"
 	curl -s -c "${jar}" -b "${jar}" -o /dev/null --data-urlencode "log=ed" --data-urlencode "pwd=ed" -d "wp-submit=Log+In&testcookie=1" --data-urlencode "redirect_to=${URL}/wp-admin/" "${URL}/wp-login.php"
 
-	for path in "/" "/?p=1" "/wp-admin/" "/wp-admin/plugins.php" "/wp-admin/tools.php?page=advcm-cache" "/wp-admin/tools.php?page=advcm-cache&tab=clear" "/wp-admin/tools.php?page=advcm-cache&tab=check" "/wp-admin/tools.php?page=advcm-cache&tab=history" "/wp-admin/tools.php?page=advcm-cache&tab=auto" "/wp-admin/tools.php?page=advcm-cache&tab=nonsense"; do
+	for path in "/" "/?p=1" "/wp-admin/" "/wp-admin/plugins.php" "/wp-admin/tools.php?page=advcm-cache" "/wp-admin/tools.php?page=advcm-cache&tab=clear" "/wp-admin/tools.php?page=advcm-cache&tab=check" "/wp-admin/tools.php?page=advcm-cache&tab=history" "/wp-admin/tools.php?page=advcm-cache&tab=auto" "/wp-admin/tools.php?page=advcm-cache&tab=settings" "/wp-admin/tools.php?page=advcm-cache&tab=nonsense"; do
 		local code body
 		body="$(curl -s -L -b "${jar}" -w '\n%{http_code}' "${URL}${path}")"
 		code="$(echo "${body}" | tail -1)"
@@ -249,6 +250,11 @@ if grep -q "HTTP 200 in" <<< "${reading}" && grep -q "Age</th><td>" <<< "${readi
 else
 	fail "the screen did not read a page's cache age (nonce '${probe_nonce}'): $(echo "${reading}" | grep -oE 'notice-error inline"><p>[^<]{0,200}|notice-warning inline"><p>[^<]{0,160}|Answer</th><td>[^<]*|Age</th><td>[^<]*' | head -5 | tr '\n' ' ')"
 fi
+if grep -q "Last changes" <<< "${reading}" && grep -qE '<td>ed</td><td>/</td>' <<< "${reading}"; then
+	pass "the Cache age tab's change log names the editor who probed"
+else
+	fail "the Cache age change log does not name the probe: $(grep -oE 'Last changes.{0,300}' <<< "${reading}" | head -1)"
+fi
 
 # WP-Cron, by hand, until the job finishes.
 cat > "${WORK}/drain.php" <<'PHP'
@@ -318,8 +324,20 @@ if grep -q '"term_name":"Analysis"' <<< "${rules}" && grep -q 'analysis' <<< "${
 else
 	fail "the rule was not added (nonce '${rules_nonce}'): ${rules}"
 fi
-ed_code="$(curl -s -b "${jar}" -o /dev/null -w '%{http_code}' -d "action=advcm_rules&op=add&_wpnonce=${rules_nonce}&post_type=post&urls=/x/" "${URL}/wp-admin/admin-post.php")"
-[[ "${ed_code}" == "403" ]] && pass "an editor cannot write a rule (HTTP ${ed_code})" || fail "an editor writing a rule answered HTTP ${ed_code}"
+# Since 0.4.0 an editor can, with their own nonce, and the change log names them. The rule is
+# deleted again so the counts below see only the administrator's.
+ed_auto="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=auto")"
+ed_rules_nonce="$(grep -oE 'name="_wpnonce" value="[a-f0-9]+" /><input type="hidden" name="_wp_http_referer" value="[^"]*" /><input type="hidden" name="action" value="advcm_rules"' <<< "${ed_auto}" | head -1 | sed 's/.*name="_wpnonce" value="//; s/".*//')"
+ed_code="$(curl -s -b "${jar}" -o /dev/null -w '%{http_code}' -d "action=advcm_rules&op=add&_wpnonce=${ed_rules_nonce}&post_type=page&enabled=1" --data-urlencode "urls=/editors-page/" "${URL}/wp-admin/admin-post.php")"
+ed_rule="$(wpcli wp eval 'foreach ( ADVCM_Auto::rules() as $id => $r ) { if ( in_array( home_url( "/editors-page/" ), $r["urls"], true ) ) { echo $id; } }' | tr -d '\r')"
+if [[ "${ed_code}" == "302" && -n "${ed_rule}" ]]; then
+	pass "an editor adds a rule through the screen (HTTP ${ed_code})"
+else
+	fail "an editor adding a rule answered HTTP ${ed_code}, rule '${ed_rule}'"
+fi
+curl -s -b "${jar}" -o /dev/null -d "action=advcm_rules&op=delete&rule=${ed_rule}&_wpnonce=${ed_rules_nonce}" "${URL}/wp-admin/admin-post.php"
+ed_log="$(wpcli wp eval 'foreach ( ADVCM_Log::recent( "auto", 2 ) as $r ) { echo $r["login"], ":", $r["action"], " "; }' | tr -d '\r')"
+[[ "${ed_log}" == "ed:rule_deleted ed:rule_added " ]] && pass "and the Auto-clear change log names the editor for both" || fail "the Auto-clear change log reads '${ed_log}'"
 
 cat > "${WORK}/auto-burst.php" <<'PHP'
 <?php
@@ -391,10 +409,12 @@ grep -q "UTC — Auto-clear — ${URL}/analysis/" <<< "${history}" && pass "Hist
 
 # The Auto-clear tab for an editor: the rule is there, the forms are not; the test form answers.
 auto_ed="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=auto")"
-test_nonce="$(grep -oE 'name="_wpnonce" value="[a-f0-9]+"' <<< "${auto_ed}" | head -1 | sed 's/.*value="//; s/"//')"
+# The rule-test form's own nonce: since 0.4.0 the editor's tab also has the rule forms, each
+# with a nonce of its own, before it.
+test_nonce="$(grep -oE 'name="_wpnonce" value="[a-f0-9]+" /><p><input type="text" name="advcm_test"' <<< "${auto_ed}" | head -1 | sed 's/.*name="_wpnonce" value="//; s/".*//')"
 tested="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=auto&advcm_test=$(wpcli wp post list --post_type=post --name=timed --field=ID | tr -d '\r')&_wpnonce=${test_nonce}")"
-if grep -q 'in category &quot;Analysis&quot;' <<< "${auto_ed}" && ! grep -q 'value="add"' <<< "${auto_ed}" && grep -q "/analysis/</li>" <<< "${tested}"; then
-	pass "an editor sees the rule and can test a post, and has no form to change it"
+if grep -q 'in category &quot;Analysis&quot;' <<< "${auto_ed}" && grep -q 'value="add"' <<< "${auto_ed}" && grep -q "/analysis/</li>" <<< "${tested}"; then
+	pass "an editor sees the rule, can test a post, and has the form to change it"
 else
 	fail "the Auto-clear tab for an editor is wrong: $(grep -oE 'notice[^>]*><p>[^<]*' <<< "${tested}" | head -2)"
 fi
@@ -449,11 +469,21 @@ else
 	fail "the rules table has no last clear: $(grep -oE 'Last clear.{0,200}' <<< "${auto_tab}" | head -1)"
 fi
 
-# The pause, through the same form: an editor is refused, an administrator pauses, a publish
-# schedules nothing, and the tab says so.
-ed_code="$(curl -s -b "${jar}" -o /dev/null -w '%{http_code}' -d "action=advcm_rules&op=pause&_wpnonce=${rules_nonce}" "${URL}/wp-admin/admin-post.php")"
+# The pause, from the Settings tab since 0.4.0: an editor pauses and resumes, and the Settings
+# change log names them; then an administrator pauses, a publish schedules nothing, and the
+# Auto-clear tab says so.
+ed_settings="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=settings")"
+settings_nonce="$(grep -oE 'name="_wpnonce" value="[a-f0-9]+" /><input type="hidden" name="_wp_http_referer" value="[^"]*" /><input type="hidden" name="action" value="advcm_settings"' <<< "${ed_settings}" | head -1 | sed 's/.*name="_wpnonce" value="//; s/".*//')"
+curl -s -b "${jar}" -o /dev/null -d "action=advcm_settings&op=pause&_wpnonce=${settings_nonce}" "${URL}/wp-admin/admin-post.php"
 paused="$(wpcli wp option get advcm_rules_paused 2>/dev/null || true)"
-[[ "${ed_code}" == "403" && ! "${paused}" =~ ^[0-9]+$ ]] && pass "an editor cannot pause auto-clear (HTTP ${ed_code})" || fail "an editor pausing answered HTTP ${ed_code}, paused '${paused}'"
+curl -s -b "${jar}" -o /dev/null -d "action=advcm_settings&op=resume&_wpnonce=${settings_nonce}" "${URL}/wp-admin/admin-post.php"
+resumed="$(wpcli wp option get advcm_rules_paused 2>/dev/null || true)"
+settings_log="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=settings" | grep -oE '<td>ed</td><td>Auto-clear (paused|resumed)</td>' | wc -l | tr -d ' ')"
+if [[ "${paused}" =~ ^[0-9]+$ && ! "${resumed}" =~ ^[0-9]+$ && "${settings_log}" == "2" ]]; then
+	pass "an editor pauses and resumes auto-clear from Settings, and its change log names them"
+else
+	fail "an editor's pause from Settings: paused '${paused}', resumed '${resumed}', log rows ${settings_log}"
+fi
 curl -s -b "${admin_jar}" -o /dev/null -d "action=advcm_rules&op=pause&_wpnonce=${rules_nonce}" "${URL}/wp-admin/admin-post.php"
 cat > "${WORK}/auto-paused.php" <<'PHP'
 <?php
@@ -472,8 +502,8 @@ printf( "PASS  while paused the hook costs %.4f ms a save\n", ( microtime( true 
 PHP
 wpeval "${WORK}/auto-paused.php"
 auto_tab="$(curl -s -b "${admin_jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=auto")"
-if grep -q "Auto-clear is paused — no rule runs." <<< "${auto_tab}" && grep -q 'value="Resume auto-clear"' <<< "${auto_tab}"; then
-	pass "the tab says auto-clear is paused, with the button to resume it"
+if grep -q "Auto-clear is paused — no rule runs." <<< "${auto_tab}" && grep -q 'tab=settings' <<< "${auto_tab}"; then
+	pass "the tab says auto-clear is paused, with the way to Settings to resume it"
 else
 	fail "the tab does not say auto-clear is paused"
 fi

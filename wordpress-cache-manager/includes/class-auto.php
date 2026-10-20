@@ -878,6 +878,9 @@ final class ADVCM_Auto {
 				'line'  => self::describe( $rule ),
 				'posts' => $mark['posts'],
 				'total' => $mark['total'],
+				// The first save that set the rule off: History shows how long the clear waited
+				// after it. On BMR one waited 8.5 hours behind a flooded WP-Cron.
+				'at'    => $mark['at'],
 			);
 
 			// The own-page setting names no address of its own: the saved posts' addresses, taken at

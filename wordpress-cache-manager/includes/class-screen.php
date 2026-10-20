@@ -175,6 +175,9 @@ final class ADVCM_Screen {
 			'auto'    => function () use ( $hard ) {
 				self::render_auto( $hard );
 			},
+			'settings' => function () use ( $hard ) {
+				self::render_settings( $hard );
+			},
 		);
 
 		// The tab on its own: if it throws it prints a notice, and the tabs above still lead to
@@ -185,6 +188,15 @@ final class ADVCM_Screen {
 			ADVCM_Safe::report( 'screen:' . $tab, $e );
 			echo '<div class="notice notice-error inline"><p>' . esc_html( sprintf( __( 'This tab could not be shown (%s). The error is in the PHP error log.', 'advcm' ), $tab ) ) . '</p></div>';
 		}
+
+		// Who changed what in this tab's section, below its content and on its own guard: a fault
+		// in the log never takes the tab with it.
+		ADVCM_Safe::run(
+			'screen:log',
+			function () use ( $tab ) {
+				self::render_log( $tab );
+			}
+		);
 
 		ADVCM_Safe::run(
 			'screen:tick',
@@ -197,7 +209,7 @@ final class ADVCM_Screen {
 	}
 
 	/** The tabs, in order, by id. */
-	const TABS = array( 'status', 'clear', 'check', 'history', 'auto' );
+	const TABS = array( 'status', 'clear', 'check', 'history', 'auto', 'settings' );
 
 	/**
 	 * The tab to show: the one asked for, or History when a press has just landed with its job,
@@ -243,7 +255,8 @@ final class ADVCM_Screen {
 			'clear'   => __( 'Clear', 'advcm' ),
 			'check'   => __( 'Cache age', 'advcm' ),
 			'history' => __( 'History', 'advcm' ),
-			'auto'    => __( 'Auto-clear', 'advcm' ),
+			'auto'     => __( 'Auto-clear', 'advcm' ),
+			'settings' => __( 'Settings', 'advcm' ),
 		);
 
 		echo '<nav class="nav-tab-wrapper" style="margin-bottom:12px">';
@@ -762,12 +775,38 @@ final class ADVCM_Screen {
 	 * @return void
 	 */
 	private static function render_jobs( $open ) {
-		$jobs = ADVCM_Jobs::all();
+		$people = array();
+		$auto   = array();
 
-		echo '<h2>' . esc_html__( 'Recent clears', 'advcm' ) . '</h2>';
+		foreach ( ADVCM_Jobs::all() as $id => $job ) {
+			if ( isset( $job['source'] ) && ADVCM_Auto::SOURCE === $job['source'] ) {
+				$auto[ $id ] = $job;
+			} else {
+				$people[ $id ] = $job;
+			}
+		}
+
+		/* translators: %d: how many are kept. */
+		self::render_job_list( __( 'Clears', 'advcm' ), sprintf( __( 'Started by somebody, or from WP-CLI. The last %d are kept.', 'advcm' ), ADVCM_Jobs::KEEP ), $people, $open );
+		/* translators: %d: how many are kept. */
+		self::render_job_list( __( 'Automatic clears', 'advcm' ), sprintf( __( 'Auto-clear rules and each post\'s own page. The last %d are kept, apart, so they never push out a clear somebody started.', 'advcm' ), ADVCM_Jobs::AUTO_KEEP ), $auto, $open );
+	}
+
+	/**
+	 * One list of History.
+	 *
+	 * @param string $title Heading.
+	 * @param string $about What the list holds.
+	 * @param array  $jobs  Jobs, newest first.
+	 * @param string $open  The job to open.
+	 * @return void
+	 */
+	private static function render_job_list( $title, $about, array $jobs, $open ) {
+		echo '<h2>' . esc_html( $title ) . '</h2>';
+		echo '<p class="description">' . esc_html( $about ) . '</p>';
 
 		if ( empty( $jobs ) ) {
-			echo '<p>' . esc_html__( 'Nothing has been cleared through this plugin yet.', 'advcm' ) . '</p>';
+			echo '<p>' . esc_html__( 'None yet.', 'advcm' ) . '</p>';
 
 			return;
 		}
@@ -776,7 +815,7 @@ final class ADVCM_Screen {
 			$who     = self::who( (int) $job['by'], isset( $job['source'] ) ? $job['source'] : '' );
 			$what    = 'all' === $job['scope'] ? __( 'whole site', 'advcm' ) : implode( ', ', $job['urls'] );
 			$mode    = ADVCM_Modes::get( isset( $job['mode'] ) ? $job['mode'] : ADVCM_Modes::FAST );
-			$summary = sprintf( '%s — %s — %s — %s — %s', gmdate( 'Y-m-d H:i', (int) $job['created'] ) . ' UTC', $who, $what, $mode['label'], $job['state'] );
+			$summary = sprintf( '%s — %s — %s — %s — %s', gmdate( 'Y-m-d H:i', (int) $job['created'] ) . ' UTC', $who, $what, $mode['label'], $job['state'] ) . self::timings( $job );
 			$running = 'running' === $job['state'];
 
 			echo '<details' . ( ( $open === $job['id'] || $running ) ? ' open' : '' ) . ' style="margin:0 0 8px">';
@@ -822,6 +861,38 @@ final class ADVCM_Screen {
 			echo '</tbody></table></details>';
 		}
 
+	}
+
+	/**
+	 * How long a clear took, and for an automatic one how long it waited after the first save that
+	 * set it off — the number that showed BMR's clears running hours late. Empty while running.
+	 *
+	 * @param array $job Job.
+	 * @return string " — took …", " — waited …", or both, or empty.
+	 */
+	private static function timings( array $job ) {
+		$out     = '';
+		$created = isset( $job['created'] ) ? (int) $job['created'] : 0;
+
+		$first = 0;
+
+		foreach ( isset( $job['options']['triggers'] ) && is_array( $job['options']['triggers'] ) ? $job['options']['triggers'] : array() as $trigger ) {
+			if ( is_array( $trigger ) && ! empty( $trigger['at'] ) ) {
+				$first = 0 === $first ? (int) $trigger['at'] : min( $first, (int) $trigger['at'] );
+			}
+		}
+
+		if ( $first > 0 && $created > $first ) {
+			/* translators: %s: a duration. */
+			$out .= ' — ' . sprintf( __( 'waited %s', 'advcm' ), ADVCM_Probe::duration( $created - $first ) );
+		}
+
+		if ( ! empty( $job['finished'] ) && (int) $job['finished'] >= $created && $created > 0 ) {
+			/* translators: %s: a duration. */
+			$out .= ' — ' . sprintf( __( 'took %s', 'advcm' ), ADVCM_Probe::duration( (int) $job['finished'] - $created ) );
+		}
+
+		return $out;
 	}
 
 	/**
@@ -925,37 +996,15 @@ final class ADVCM_Screen {
 			echo '<div class="notice notice-warning inline"><p><strong>' . esc_html__( 'Auto-clear is paused — no rule runs.', 'advcm' ) . '</strong> ';
 			echo esc_html( sprintf( __( 'Paused at %s UTC. Publishing clears nothing until it is resumed; the rules are kept as they are, each with its own on or off.', 'advcm' ), gmdate( 'Y-m-d H:i', (int) get_option( ADVCM_Auto::PAUSED, 0 ) ) ) ) . '</p>';
 
-			if ( $hard ) {
-				echo '<p>';
-				self::rule_button( '', 'resume', __( 'Resume auto-clear', 'advcm' ), 'primary' );
-				echo '</p>';
-			}
-
+			echo '<p><a class="button button-primary" href="' . esc_url( self::tab_url( 'settings' ) ) . '">' . esc_html__( 'Resume it in Settings', 'advcm' ) . '</a></p>';
 			echo '</div>';
 		}
 
 		echo '<p>' . esc_html( sprintf( __( 'A page that lists posts — a category page, a Page built from a query — is not refreshed by NitroPack when a new post appears on it, because it never rendered that post. A rule names those pages. When a matching post is published, updated while published, or unpublished, its pages are cleared about %d seconds later in the background, with every other post saved in between: one clear, never one per post. Each rule says whether NitroPack is purged, so the new list shows at once, or invalidated, so the old optimized copy serves while it rebuilds.', 'advcm' ), ADVCM_Auto::WINDOW ) ) . '</p>';
 
-		// The site setting, kept as a rule in the same row (ADVCM_Auto::OWN) and shown on its own:
-		// it names no page, so the table's columns would only half describe it.
-		$own = isset( $rules[ ADVCM_Auto::OWN ] ) ? $rules[ ADVCM_Auto::OWN ] : null;
+		// Each post's own page is a setting since 0.4.0, kept as a rule in the same row
+		// (ADVCM_Auto::OWN) and switched on the Settings tab; this table is the listing rules.
 		unset( $rules[ ADVCM_Auto::OWN ] );
-
-		echo '<h3>' . esc_html__( 'Each post\'s own page', 'advcm' ) . '</h3>';
-		echo '<p>' . esc_html__( 'When content is published, updated or unpublished, also clear its own page in the same clear, purging NitroPack, so an edit shows without anybody clearing it by hand. NitroPack on its own invalidates the page and keeps serving the old copy while it rebuilds.', 'advcm' ) . '</p>';
-		echo '<p><strong>' . esc_html( null !== $own && $own['enabled'] ? __( 'On', 'advcm' ) : __( 'Off', 'advcm' ) ) . '</strong>';
-
-		if ( null !== $own ) {
-			echo ' — ' . self::last_clear( isset( $last[ ADVCM_Auto::OWN ] ) ? $last[ ADVCM_Auto::OWN ] : null ); // phpcs:ignore WordPress.Security.EscapeOutput -- escaped inside.
-		}
-
-		echo '</p>';
-
-		if ( $hard ) {
-			echo '<p>';
-			self::rule_button( '', null !== $own ? 'own_off' : 'own_on', null !== $own ? __( 'Switch off', 'advcm' ) : __( 'Switch on', 'advcm' ) );
-			echo '</p>';
-		}
 
 		echo '<h3>' . esc_html__( 'Listing pages', 'advcm' ) . '</h3>';
 
@@ -1006,19 +1055,15 @@ final class ADVCM_Screen {
 
 		echo '</tbody></table>';
 
-		if ( $hard && ! $paused && ( ! empty( $rules ) || null !== $own ) ) {
-			echo '<p style="margin-top:10px">';
-			self::rule_button( '', 'pause', __( 'Pause auto-clear', 'advcm' ) );
-			echo '<span class="description">' . esc_html__( 'Stops every rule at once, and keeps each one\'s own on or off for when it is resumed.', 'advcm' ) . '</span></p>';
-		}
-
 		self::render_rule_test( $rules );
 
 		if ( ! $hard ) {
-			echo '<p class="description">' . esc_html__( 'Only administrators can add or change rules.', 'advcm' ) . '</p>';
+			echo '<p class="description">' . esc_html__( 'Changing rules has been restricted on this site.', 'advcm' ) . '</p>';
 
 			return;
 		}
+
+		$nitropack = ADVCM_Settings::get()['nitropack_default'];
 
 		echo '<h2>' . esc_html__( 'Add a rule', 'advcm' ) . '</h2>';
 		echo '<form method="post" action="' . esc_url( ADVCM_Controller::url() ) . '">';
@@ -1051,8 +1096,8 @@ final class ADVCM_Screen {
 		echo '<tr><th>' . esc_html__( 'NitroPack', 'advcm' ) . '</th><td>';
 		// Purge first and recommended: an invalidated listing kept serving the old list — measured on
 		// BMR, /analysis/ for 18 hours — and the old list is what a rule exists to replace.
-		echo '<p style="margin:0 0 4px"><label><input type="radio" name="nitropack" value="purge" checked /> <strong>' . esc_html__( 'Purge', 'advcm' ) . '</strong> <em>(' . esc_html__( 'recommended', 'advcm' ) . ')</em> — ' . esc_html__( 'the new list shows at once, un-optimized for a few minutes until NitroPack rebuilds it.', 'advcm' ) . '</label></p>';
-		echo '<p style="margin:0"><label><input type="radio" name="nitropack" value="invalidate" /> <strong>' . esc_html__( 'Invalidate', 'advcm' ) . '</strong> — ' . esc_html__( 'the old optimized copy, with the old list, serves until NitroPack rebuilds it, which can take hours.', 'advcm' ) . '</label></p>';
+		echo '<p style="margin:0 0 4px"><label><input type="radio" name="nitropack" value="purge"' . ( 'purge' === $nitropack ? ' checked' : '' ) . ' /> <strong>' . esc_html__( 'Purge', 'advcm' ) . '</strong> <em>(' . esc_html__( 'recommended', 'advcm' ) . ')</em> — ' . esc_html__( 'the new list shows at once, un-optimized for a few minutes until NitroPack rebuilds it.', 'advcm' ) . '</label></p>';
+		echo '<p style="margin:0"><label><input type="radio" name="nitropack" value="invalidate"' . ( 'invalidate' === $nitropack ? ' checked' : '' ) . ' /> <strong>' . esc_html__( 'Invalidate', 'advcm' ) . '</strong> — ' . esc_html__( 'the old optimized copy, with the old list, serves until NitroPack rebuilds it, which can take hours.', 'advcm' ) . '</label></p>';
 		echo '</td></tr>';
 
 		echo '<tr><th>' . esc_html__( 'Switch on now', 'advcm' ) . '</th><td><label><input type="checkbox" name="enabled" value="1" /> ' . esc_html__( 'Leave unticked to add it switched off and test a post against it first.', 'advcm' ) . '</label></td></tr>';
@@ -1113,6 +1158,148 @@ final class ADVCM_Screen {
 
 		submit_button( $label, $class, 'submit', false );
 		echo '</form> ';
+	}
+
+	/**
+	 * The Settings tab: every setting a person may change, and nothing that could break the site
+	 * or the release path (those stay filters and constants; see class-settings.php).
+	 *
+	 * @param bool $hard Whether the person may change settings.
+	 * @return void
+	 */
+	private static function render_settings( $hard ) {
+		$settings = ADVCM_Settings::get();
+		$rules    = ADVCM_Auto::rules();
+		$own      = isset( $rules[ ADVCM_Auto::OWN ] ) ? $rules[ ADVCM_Auto::OWN ] : null;
+		$paused   = ADVCM_Auto::paused();
+		$last     = ADVCM_Auto::last();
+
+		echo '<h2>' . esc_html__( 'Settings', 'advcm' ) . '</h2>';
+
+		if ( ! $hard ) {
+			echo '<p class="description">' . esc_html__( 'Changing settings has been restricted on this site.', 'advcm' ) . '</p>';
+		}
+
+		// The pause first: a paused auto-clear read as a working one is the failure it can cause.
+		echo '<h3>' . esc_html__( 'Auto-clear', 'advcm' ) . '</h3>';
+		echo '<p><strong>' . esc_html( $paused ? __( 'Paused — no rule runs.', 'advcm' ) : __( 'Running.', 'advcm' ) ) . '</strong> ';
+		echo esc_html__( 'Pausing stops every rule, and each post\'s own page, at once; each rule keeps its own on or off for when it is resumed.', 'advcm' ) . '</p>';
+
+		if ( $hard ) {
+			echo '<p>';
+			self::settings_button( $paused ? 'resume' : 'pause', $paused ? __( 'Resume auto-clear', 'advcm' ) : __( 'Pause auto-clear', 'advcm' ), $paused ? 'primary' : 'secondary' );
+			echo '</p>';
+		}
+
+		echo '<h3>' . esc_html__( 'Each post\'s own page', 'advcm' ) . '</h3>';
+		echo '<p>' . esc_html__( 'When content is published, updated or unpublished, also clear its own page in the same clear, purging NitroPack, so an edit shows without anybody clearing it by hand.', 'advcm' ) . '</p>';
+		echo '<p><strong>' . esc_html( null !== $own && $own['enabled'] ? __( 'On', 'advcm' ) : __( 'Off', 'advcm' ) ) . '</strong>';
+
+		if ( null !== $own ) {
+			echo ' — ' . self::last_clear( isset( $last[ ADVCM_Auto::OWN ] ) ? $last[ ADVCM_Auto::OWN ] : null ); // phpcs:ignore WordPress.Security.EscapeOutput -- escaped inside.
+		}
+
+		echo '</p>';
+
+		if ( $hard ) {
+			echo '<p>';
+			self::settings_button( null !== $own ? 'own_off' : 'own_on', null !== $own ? __( 'Switch off', 'advcm' ) : __( 'Switch on', 'advcm' ) );
+			echo '</p>';
+		}
+
+		$offered  = ADVCM_Settings::viewable_types();
+		$excluded = null === $settings['excluded_types'] ? array_values( array_intersect( ADVCM_Auto::EXCLUDED, $offered ) ) : $settings['excluded_types'];
+
+		echo '<form method="post" action="' . esc_url( ADVCM_Controller::url() ) . '">';
+		wp_nonce_field( ADVCM_Settings::ACTION );
+		echo '<input type="hidden" name="action" value="' . esc_attr( ADVCM_Settings::ACTION ) . '" />';
+		echo '<input type="hidden" name="op" value="save" />';
+		echo '<input type="hidden" name="own_present" value="1" />';
+		echo '<input type="hidden" name="excluded_present" value="1" />';
+
+		echo '<p><label><input type="checkbox" name="own_skip_unchanged" value="1"' . ( $settings['own_skip_unchanged'] ? ' checked' : '' ) . ' /> ';
+		echo esc_html__( 'Ignore saves that change nothing a visitor sees: title, content, excerpt, slug and status all as they were.', 'advcm' ) . '</label></p>';
+		echo '<p class="description">' . esc_html__( 'A change only to custom fields or to a page builder\'s own data reads as unchanged, so that page is not cleared on its own; clearing it by hand still works. Listing rules always fire.', 'advcm' ) . '</p>';
+
+		echo '<h3>' . esc_html__( 'Post types auto-clear leaves out', 'advcm' ) . '</h3>';
+		echo '<p class="description">' . esc_html__( 'For each post\'s own page and for rules on "any content". Revisions, auto-drafts and menu items are always left out, and so are form, snippet and field-group records.', 'advcm' ) . '</p><p>';
+
+		foreach ( $offered as $type ) {
+			echo '<label style="display:inline-block;margin:0 16px 6px 0"><input type="checkbox" name="excluded[]" value="' . esc_attr( $type ) . '"' . ( in_array( $type, $excluded, true ) ? ' checked' : '' ) . ' /> ' . esc_html( $type ) . '</label>';
+		}
+
+		echo '</p>';
+
+		echo '<h3>' . esc_html__( 'NitroPack for new rules', 'advcm' ) . '</h3>';
+
+		foreach ( array(
+			'purge'      => __( 'Purge — the new list shows at once, un-optimized for a few minutes.', 'advcm' ),
+			'invalidate' => __( 'Invalidate — the old optimized copy, with the old list, serves until NitroPack rebuilds it.', 'advcm' ),
+		) as $value => $label ) {
+			echo '<p style="margin:0 0 4px"><label><input type="radio" name="nitropack_default" value="' . esc_attr( $value ) . '"' . ( $value === $settings['nitropack_default'] ? ' checked' : '' ) . ' /> ' . esc_html( $label ) . '</label></p>';
+		}
+
+		if ( $hard ) {
+			submit_button( __( 'Save settings', 'advcm' ) );
+		}
+
+		echo '</form>';
+	}
+
+	/**
+	 * A button that posts one operation to the Settings form.
+	 *
+	 * @param string $op    pause, resume, own_on, own_off.
+	 * @param string $label Label.
+	 * @param string $class Button class.
+	 * @return void
+	 */
+	private static function settings_button( $op, $label, $class = 'secondary' ) {
+		$confirm = array(
+			'pause' => __( 'Pause every auto-clear rule? Publishing will clear no page until it is resumed.', 'advcm' ),
+		);
+
+		echo '<form method="post" action="' . esc_url( ADVCM_Controller::url() ) . '" style="display:inline"' . ( isset( $confirm[ $op ] ) ? ' onsubmit="return confirm(' . esc_attr( wp_json_encode( $confirm[ $op ] ) ) . ');"' : '' ) . '>';
+		wp_nonce_field( ADVCM_Settings::ACTION );
+		echo '<input type="hidden" name="action" value="' . esc_attr( ADVCM_Settings::ACTION ) . '" />';
+		echo '<input type="hidden" name="op" value="' . esc_attr( $op ) . '" />';
+		submit_button( $label, $class, 'submit', false );
+		echo '</form> ';
+	}
+
+	/**
+	 * Who changed what in a tab's section: its last few records.
+	 *
+	 * @param string $section The tab, which is the section.
+	 * @return void
+	 */
+	private static function render_log( $section ) {
+		if ( ! in_array( $section, ADVCM_Log::SECTIONS, true ) ) {
+			return;
+		}
+
+		$records = ADVCM_Log::recent( $section );
+
+		echo '<h3 style="margin-top:24px">' . esc_html__( 'Last changes', 'advcm' ) . '</h3>';
+
+		if ( empty( $records ) ) {
+			echo '<p class="description">' . esc_html__( 'No changes yet.', 'advcm' ) . '</p>';
+
+			return;
+		}
+
+		echo '<table class="widefat striped"><thead><tr>';
+		echo '<th>' . esc_html__( 'When (UTC)', 'advcm' ) . '</th><th>' . esc_html__( 'Who', 'advcm' ) . '</th><th>' . esc_html__( 'What', 'advcm' ) . '</th><th>' . esc_html__( 'Before → after', 'advcm' ) . '</th>';
+		echo '</tr></thead><tbody>';
+
+		foreach ( $records as $record ) {
+			$who    = '' !== $record['login'] ? $record['login'] : __( 'WordPress', 'advcm' );
+			$change = '' === $record['before'] && '' === $record['after'] ? '' : $record['before'] . ' → ' . $record['after'];
+
+			echo '<tr><td>' . esc_html( gmdate( 'Y-m-d H:i', (int) $record['at'] ) ) . '</td><td>' . esc_html( $who ) . '</td><td>' . esc_html( $record['summary'] ) . '</td><td>' . esc_html( $change ) . '</td></tr>';
+		}
+
+		echo '</tbody></table>';
 	}
 
 	/**
