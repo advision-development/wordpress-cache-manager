@@ -572,7 +572,7 @@ done
 [[ "${done_at}" =~ ^[1-9][0-9]*$ ]] && pass "the site's WP-Cron finishes the scan" || fail "the scan did not finish through WP-Cron: $(wpcli wp option get advcm_listings --format=json | head -c 300)"
 
 fresh_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=freshness")"
-if grep -q 'Frozen state page</a>' <<< "${fresh_tab}" && grep -q '<code>tag frozen-state</code>' <<< "${fresh_tab}" && grep -q 'nothing new</span>' <<< "${fresh_tab}" && grep -q 'The last frozen news</a>' <<< "${fresh_tab}"; then
+if grep -q 'Frozen state page</a>' <<< "${fresh_tab}" && grep -q '<code>tag frozen-state</code>' <<< "${fresh_tab}" && grep -q 'over 30 days</span>' <<< "${fresh_tab}" && grep -q 'The last frozen news</a>' <<< "${fresh_tab}"; then
 	pass "the Freshness tab lists the frozen listing, red, with its tag and its newest post"
 else
 	fail "the Freshness tab does not list the frozen listing: $(grep -oE 'Last scan[^<]{0,200}|Scanning[^<]{0,200}' <<< "${fresh_tab}" | head -2)"

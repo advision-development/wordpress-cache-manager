@@ -352,4 +352,39 @@ $out = screen_part( 'render_freshness', array( true ) );
 check( 'the cache age at each clear is listed, layer by layer', false !== strpos( $out, 'host cache 83 min 20 s' ) && false !== strpos( $out, 'NitroPack: stale' ) );
 check( 'pages cleared by hand often are listed, with no rule clearing them', false !== strpos( $out, 'no rule clears this page' ) && false !== strpos( $out, '2 times' ) );
 
+// ------------------------------------------------- Freshness says what to do (0.5.1)
+
+$GLOBALS['options']['advcm_rules'] = array( 'r2' => array( 'post_type' => 'post', 'enabled' => true, 'urls' => array( 'https://example.test/news/' ) ) );
+$GLOBALS['options'][ ADVCM_Freshness::STATS ] = array(
+	'pages' => array(
+		'https://example.test/old/'  => array( 'n' => 3, 'hand' => 3, 'auto' => 0, 'unk' => 0, 'young' => 0, 'over' => 2, 'max' => 9 * 3600, 'sum' => 20 * 3600, 'hsum' => 20 * 3600, 'hk' => 3, 'last' => time() - 60, 'rules' => array() ),
+		'https://example.test/news/' => array( 'n' => 8, 'hand' => 0, 'auto' => 8, 'unk' => 0, 'young' => 8, 'over' => 0, 'max' => 120, 'sum' => 400, 'hsum' => 0, 'hk' => 0, 'last' => time() - 30, 'rules' => array( 'r2' ) ),
+	),
+	'days'  => array( gmdate( 'Y-m-d' ) => array( 'n' => 11, 'unk' => 0, 'young' => 8, 'over' => 2, 'max' => 9 * 3600 ) ),
+);
+$GLOBALS['options'][ ADVCM_Listings::OPTION ]['done']     = time() - 60;
+$GLOBALS['options'][ ADVCM_Listings::OPTION ]['findings'] = array();
+
+for ( $k = 0; $k < 4; $k++ ) {
+	$GLOBALS['options'][ ADVCM_Listings::OPTION ]['findings'][] = array( 'verdict' => 'amber', 'days' => 17, 'doc' => 7, 'pos' => $k, 'title' => 'Category articles', 'doc_type' => 'elementor_library', 'url' => '', 'widget' => 'w' . $k, 'type' => 'posts', 'post_type' => 'picks', 'per_page' => 3, 'filter' => 'picks_tag analysis', 'broken' => false, 'cannot_match' => false, 'custom' => false, 'newest' => array( 'id' => 9, 'title' => 'Patriots vs Bills', 'date' => time() - 17 * 86400 ) );
+}
+
+$GLOBALS['options'][ ADVCM_Listings::OPTION ]['findings'][] = array( 'verdict' => 'red', 'days' => 293, 'doc' => 1, 'pos' => 0, 'title' => 'Alabama', 'doc_type' => 'states', 'url' => 'https://example.test/usa/alabama/', 'widget' => 'b2', 'type' => 'posts', 'post_type' => 'post', 'per_page' => 6, 'filter' => 'tag alabama', 'broken' => false, 'cannot_match' => false, 'custom' => false, 'newest' => array( 'id' => 6, 'title' => 'Alabama news', 'date' => time() - 293 * 86400 ) );
+$GLOBALS['options'][ ADVCM_Listings::OPTION ]['findings'][] = array( 'verdict' => 'red', 'days' => null, 'doc' => 3, 'pos' => 0, 'title' => 'Template', 'doc_type' => 'elementor_library', 'url' => '', 'widget' => 'c3', 'type' => 'posts', 'post_type' => 'post', 'per_page' => null, 'filter' => 'missing term #99', 'broken' => true, 'cannot_match' => false, 'custom' => false, 'newest' => null );
+
+$out = screen_part( 'render_freshness', array( true ) );
+
+$order = array( 'Last 30 days', 'Past the target', 'Cleared while fresh', 'Cleared by hand, often', 'Listings with nothing new', 'Last measurements' );
+$at    = array_map( function ( $h ) use ( $out ) { return strpos( $out, '>' . $h . '</h2>' ); }, $order );
+
+check( 'the tab leads with what to do: summary, past the target, cleared while fresh, by hand, listings, then the raw measurements', ! in_array( false, $at, true ) && $at === array_values( array_unique( $at ) ) && $at == ( function ( $a ) { sort( $a ); return $a; } )( $at ), json_encode( $at ) );
+check( 'the summary counts the last 30 days against the 3-hour target', false !== strpos( $out, '11 pages measured' ) && false !== strpos( $out, '2 past the 3-hour target' ) && false !== strpos( $out, '8 found a copy under 10 minutes' ) );
+check( 'a page past the target with no rule says so, and links to adding one', 1 === preg_match( '~/old/.*?no rule clears it.*?tab=auto~s', $out ) );
+check( 'a page cleared while fresh names, in words, the rule that clears it', 1 === preg_match( '~/news/.*?When a post is published~s', $out ) );
+check( 'the raw measurements are folded away', 1 === preg_match( '~<details[^>]*><summary><h2[^>]*>Last measurements</h2>~', $out ) );
+check( 'listing labels say how old: over 30 days, 7–30 days, broken filter', false !== strpos( $out, 'over 30 days</span>' ) && false !== strpos( $out, '7–30 days</span>' ) && false !== strpos( $out, 'broken filter</span>' ) && false === strpos( $out, 'slowing' ) );
+check( 'the same listing four times in one template is one row, ×4', 1 === substr_count( $out, 'picks_tag analysis' ) && false !== strpos( $out, '×4' ) );
+
+unset( $GLOBALS['options']['advcm_rules'] );
+
 finish();

@@ -1519,9 +1519,7 @@ final class ADVCM_Screen {
 	 * @return void
 	 */
 	private static function render_freshness( $hard ) {
-		echo '<p>' . esc_html__( 'A page can look old for two reasons: a cache kept an old copy, or the page itself has nothing new to show. Clearing fixes the first and does nothing for the second. This tab tells them apart.', 'advcm' ) . '</p>';
-
-		foreach ( array( 'render_listings', 'render_measured', 'render_often' ) as $part ) {
+		foreach ( array( 'render_summary', 'render_over', 'render_young', 'render_often', 'render_listings', 'render_measured' ) as $part ) {
 			ADVCM_Safe::run(
 				'screen:' . $part,
 				function () use ( $part ) {
@@ -1529,6 +1527,114 @@ final class ADVCM_Screen {
 				}
 			);
 		}
+	}
+
+	/**
+	 * The last 30 days of measurements, added up against the cache target.
+	 *
+	 * @return void
+	 */
+	private static function render_summary() {
+		$insights = ADVCM_Freshness::insights();
+		$sum      = $insights['summary'];
+		$target   = ADVCM_Settings::get()['cache_target'];
+
+		echo '<h2>' . esc_html__( 'Last 30 days', 'advcm' ) . '</h2>';
+
+		if ( 0 === $sum['n'] ) {
+			echo '<p>' . esc_html__( 'No clear has been measured yet. Each clear of some pages measures them first; come back after a few days of publishing.', 'advcm' ) . '</p>';
+
+			if ( ! ADVCM_Settings::get()['measure_before_clear'] ) {
+				echo '<p class="description">' . esc_html__( 'Measuring is switched off in Settings.', 'advcm' ) . '</p>';
+			}
+
+			return;
+		}
+
+		/* translators: 1: pages, 2: days, 3: past the target, 4: hours, 5: under 10 minutes, 6: no age. */
+		echo '<p><strong>' . esc_html( sprintf( _n( '%1$d pages measured in %2$d day:', '%1$d pages measured in %2$d days:', $sum['days'], 'advcm' ), $sum['n'], $sum['days'] ) ) . '</strong> ';
+		echo esc_html( sprintf( __( '%1$d past the %2$d-hour target, %3$d found a copy under 10 minutes, %4$d where no cache said its age.', 'advcm' ), $sum['over'], $target, $sum['young'], $sum['unk'] ) ) . '</p>';
+	}
+
+	/**
+	 * Pages a cache kept past the target.
+	 *
+	 * @return void
+	 */
+	private static function render_over() {
+		$over   = ADVCM_Freshness::insights()['over'];
+		$target = ADVCM_Settings::get()['cache_target'];
+
+		echo '<h2>' . esc_html__( 'Past the target', 'advcm' ) . '</h2>';
+		/* translators: %d: hours. */
+		echo '<p class="description">' . esc_html( sprintf( __( 'Pages whose cached copy was older than %d hours when a clear reached it: a visitor saw that old copy until then. Without a rule, an auto-clear rule naming the page clears it on every publish that should change it.', 'advcm' ), $target ) ) . '</p>';
+
+		if ( empty( $over ) ) {
+			echo '<p>' . esc_html__( 'None.', 'advcm' ) . '</p>';
+
+			return;
+		}
+
+		echo '<div style="overflow-x:auto"><table class="widefat striped"><thead><tr>';
+
+		foreach ( array( __( 'Page', 'advcm' ), __( 'Past the target', 'advcm' ), __( 'Oldest copy', 'advcm' ), __( 'Rule', 'advcm' ) ) as $head ) {
+			echo '<th>' . esc_html( $head ) . '</th>';
+		}
+
+		echo '</tr></thead><tbody>';
+
+		foreach ( $over as $page ) {
+			echo '<tr><td><code>' . esc_html( $page['url'] ) . '</code></td>';
+			/* translators: 1: clears past the target, 2: clears. */
+			echo '<td>' . esc_html( sprintf( __( '%1$d of %2$d clears', 'advcm' ), $page['over'], $page['n'] ) ) . '</td>';
+			echo '<td>' . esc_html( ADVCM_Probe::duration( $page['max'] ) ) . '</td>';
+			echo '<td>' . ( $page['has_rule'] ? esc_html__( 'a rule clears it', 'advcm' ) : esc_html__( 'no rule clears it', 'advcm' ) . ' — <a href="' . esc_url( self::tab_url( 'auto' ) ) . '">' . esc_html__( 'add one', 'advcm' ) . '</a>' ) . '</td></tr>';
+		}
+
+		echo '</tbody></table></div>';
+	}
+
+	/**
+	 * Pages whose clears keep finding a fresh copy.
+	 *
+	 * @return void
+	 */
+	private static function render_young() {
+		$young = ADVCM_Freshness::insights()['young'];
+		$rules = ADVCM_Auto::rules();
+
+		echo '<h2>' . esc_html__( 'Cleared while fresh', 'advcm' ) . '</h2>';
+		echo '<p class="description">' . esc_html__( 'Pages cleared twice or more where three clears in four found a copy under 10 minutes old. The cache was not what made them look old: their content had not changed, or a rule clears them more often than they change.', 'advcm' ) . '</p>';
+
+		if ( empty( $young ) ) {
+			echo '<p>' . esc_html__( 'None.', 'advcm' ) . '</p>';
+
+			return;
+		}
+
+		echo '<div style="overflow-x:auto"><table class="widefat striped"><thead><tr>';
+
+		foreach ( array( __( 'Page', 'advcm' ), __( 'Under 10 minutes', 'advcm' ), __( 'Cleared by', 'advcm' ) ) as $head ) {
+			echo '<th>' . esc_html( $head ) . '</th>';
+		}
+
+		echo '</tr></thead><tbody>';
+
+		foreach ( $young as $page ) {
+			$by = array();
+
+			foreach ( $page['rules'] as $id ) {
+				/* translators: %s: a rule in words. */
+				$by[] = isset( $rules[ $id ] ) ? sprintf( __( 'When %s', 'advcm' ), ADVCM_Auto::describe( $rules[ $id ] ) ) : __( 'a rule since deleted', 'advcm' );
+			}
+
+			echo '<tr><td><code>' . esc_html( $page['url'] ) . '</code></td>';
+			/* translators: 1: clears under 10 minutes, 2: clears. */
+			echo '<td>' . esc_html( sprintf( __( '%1$d of %2$d clears', 'advcm' ), $page['young'], $page['n'] ) ) . '</td>';
+			echo '<td>' . esc_html( empty( $by ) ? __( 'people, by hand', 'advcm' ) : implode( '; ', $by ) ) . '</td></tr>';
+		}
+
+		echo '</tbody></table></div>';
 	}
 
 	/**
@@ -1591,16 +1697,25 @@ final class ADVCM_Screen {
 			return;
 		}
 
-		$labels = array(
-			'red'       => __( 'nothing new', 'advcm' ),
-			'amber'     => __( 'slowing', 'advcm' ),
-			'unchecked' => __( 'not checked', 'advcm' ),
-		);
-
 		// Stored in this order already; sorted again so a row written by an older version reads
 		// the same.
 		$findings = $state['findings'];
 		usort( $findings, array( 'ADVCM_Listings', 'compare' ) );
+
+		// The same widget repeated in one document — a template with four copies of one list —
+		// is one row with how many: four identical rows read as four problems.
+		$rows = array();
+
+		foreach ( $findings as $f ) {
+			$key = implode( '|', array( (int) $f['doc'], $f['type'], $f['filter'], $f['verdict'], is_array( $f['newest'] ) ? (int) $f['newest']['id'] : 0 ) );
+
+			if ( isset( $rows[ $key ] ) ) {
+				$rows[ $key ]['times']++;
+				continue;
+			}
+
+			$rows[ $key ] = $f + array( 'times' => 1 );
+		}
 
 		echo '<div style="overflow-x:auto;margin-top:12px"><table class="widefat striped"><thead><tr>';
 
@@ -1610,7 +1725,7 @@ final class ADVCM_Screen {
 
 		echo '</tr></thead><tbody>';
 
-		foreach ( $findings as $f ) {
+		foreach ( $rows as $f ) {
 			$verdict = isset( $f['verdict'] ) ? (string) $f['verdict'] : 'red';
 			$title   = '' !== (string) $f['title'] ? (string) $f['title'] : '#' . (int) $f['doc'];
 			$page    = '' !== (string) $f['url'] ? '<a href="' . esc_url( $f['url'] ) . '">' . esc_html( $title ) . '</a>' : esc_html( __( 'Template:', 'advcm' ) . ' ' . $title );
@@ -1630,7 +1745,7 @@ final class ADVCM_Screen {
 				$notes[] = __( 'custom query, not checked', 'advcm' );
 			}
 
-			$widget = $f['type'] . ( null !== $f['per_page'] ? ', ' . sprintf( _n( '%d post', '%d posts', (int) $f['per_page'], 'advcm' ), (int) $f['per_page'] ) : '' );
+			$widget = $f['type'] . ( null !== $f['per_page'] ? ', ' . sprintf( _n( '%d post', '%d posts', (int) $f['per_page'], 'advcm' ), (int) $f['per_page'] ) : '' ) . ( $f['times'] > 1 ? ' ×' . $f['times'] : '' );
 
 			if ( is_array( $f['newest'] ) ) {
 				$newest = esc_html( gmdate( 'Y-m-d', (int) $f['newest']['date'] ) ) . ' <a href="' . esc_url( home_url( '/?p=' . (int) $f['newest']['id'] ) ) . '">' . esc_html( $f['newest']['title'] ) . '</a>';
@@ -1638,7 +1753,7 @@ final class ADVCM_Screen {
 				$newest = empty( $f['custom'] ) && empty( $f['broken'] ) && empty( $f['cannot_match'] ) ? esc_html__( 'no post matches', 'advcm' ) : '—';
 			}
 
-			echo '<tr><td>' . self::badge( isset( $labels[ $verdict ] ) ? $labels[ $verdict ] : $verdict, $verdict ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput -- badge() escapes.
+			echo '<tr><td>' . self::badge( self::listing_label( $f ), $verdict ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput -- badge() escapes.
 			echo '<td>' . $page . ' <span class="description">' . esc_html( $f['doc_type'] ) . '</span></td>'; // phpcs:ignore WordPress.Security.EscapeOutput -- built escaped above.
 			echo '<td>' . esc_html( $widget ) . '</td>';
 			echo '<td><code>' . esc_html( $f['filter'] ) . '</code>' . ( $notes ? '<br><span class="description">' . esc_html( implode( '; ', $notes ) ) . '</span>' : '' ) . '</td>';
@@ -1650,18 +1765,51 @@ final class ADVCM_Screen {
 	}
 
 	/**
+	 * A finding's state in words a person reads without the legend.
+	 *
+	 * @param array $f Finding.
+	 * @return string
+	 */
+	private static function listing_label( array $f ) {
+		if ( ! empty( $f['broken'] ) ) {
+			return __( 'broken filter', 'advcm' );
+		}
+
+		if ( ! empty( $f['cannot_match'] ) ) {
+			return __( 'cannot match', 'advcm' );
+		}
+
+		if ( 'unchecked' === $f['verdict'] ) {
+			return __( 'not checked', 'advcm' );
+		}
+
+		if ( 'red' === $f['verdict'] ) {
+			return null === $f['newest'] ? __( 'no posts', 'advcm' ) : __( 'over 30 days', 'advcm' );
+		}
+
+		return 'amber' === $f['verdict'] ? __( '7–30 days', 'advcm' ) : __( 'up to date', 'advcm' );
+	}
+
+	/**
 	 * How old each page's cache was when a clear cleared it: the last 20, people's and automatic.
 	 *
 	 * @return void
 	 */
 	private static function render_measured() {
-		echo '<h2>' . esc_html__( 'Cache age at clear', 'advcm' ) . '</h2>';
-		echo '<p class="description">' . esc_html__( 'Before a clear of some pages, each page was asked how old its cached copy was. An old copy means a cache held the page; a young one means the page was already fresh and whatever looked old is the content. Only the caches this site has answer.', 'advcm' ) . '</p>';
+		echo '<details style="margin-top:16px"><summary><h2 style="display:inline">' . esc_html__( 'Last measurements', 'advcm' ) . '</h2></summary>';
+		echo '<p class="description">' . esc_html__( 'The last 20 pages measured, one row each, newest first: what the lists above are added up from. Only the caches this site has answer.', 'advcm' ) . '</p>';
 
-		if ( ! ADVCM_Settings::get()['measure_before_clear'] ) {
-			echo '<p class="description">' . esc_html__( 'Measuring is switched off in Settings.', 'advcm' ) . '</p>';
-		}
+		self::render_measured_rows();
 
+		echo '</details>';
+	}
+
+	/**
+	 * The rows of render_measured().
+	 *
+	 * @return void
+	 */
+	private static function render_measured_rows() {
 		$rows = array_merge( ADVCM_Freshness::rows(), ADVCM_Freshness::rows( true ) );
 
 		usort(
@@ -1758,7 +1906,7 @@ final class ADVCM_Screen {
 	 */
 	private static function render_often() {
 		echo '<h2>' . esc_html__( 'Cleared by hand, often', 'advcm' ) . '</h2>';
-		echo '<p class="description">' . esc_html__( 'Pages somebody cleared twice or more, among the last 100 measured. With no rule, an auto-clear rule could do it on publish. With a young cache age, the clear was not what the page needed.', 'advcm' ) . '</p>';
+		echo '<p class="description">' . esc_html__( 'Pages somebody cleared twice or more. With no rule, an auto-clear rule could do it on publish instead. With a young average cache age, the clear was not what the page needed.', 'advcm' ) . '</p>';
 
 		$often = ADVCM_Freshness::insights()['hand'];
 
@@ -1770,7 +1918,7 @@ final class ADVCM_Screen {
 
 		echo '<div style="overflow-x:auto"><table class="widefat striped"><thead><tr>';
 
-		foreach ( array( __( 'Page', 'advcm' ), __( 'Clears', 'advcm' ), __( 'Latest (UTC)', 'advcm' ), __( 'Median cache age', 'advcm' ), __( 'Rule', 'advcm' ) ) as $head ) {
+		foreach ( array( __( 'Page', 'advcm' ), __( 'Clears', 'advcm' ), __( 'Latest (UTC)', 'advcm' ), __( 'Average cache age', 'advcm' ), __( 'Rule', 'advcm' ) ) as $head ) {
 			echo '<th>' . esc_html( $head ) . '</th>';
 		}
 
