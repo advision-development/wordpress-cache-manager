@@ -84,6 +84,13 @@ check( 'the types offered are the public, viewable ones', in_array( 'review_prof
 check( 'never the three that are always left out', ! in_array( 'revision', $offered, true ) );
 check( 'nor those a shipped prefix covers, which stay left out without a box to untick', ! in_array( 'acf-field-group', $offered, true ) && ! in_array( 'wpforms_log', $offered, true ) );
 
+// Saving the form as it was shown, with the shipped boxes ticked, must not freeze the shipped list:
+// types a later release adds to it would otherwise never apply on this site, and nothing would say.
+$GLOBALS['options'][ ADVCM_Log::OPTION ] = array();
+ADVCM_Settings::save_form( array( 'op' => 'save', 'excluded_present' => '1', 'excluded' => array_values( array_intersect( ADVCM_Auto::EXCLUDED, $offered ) ) ) );
+
+check( 'saving the shipped list unchanged keeps following the shipped list', null === ADVCM_Settings::get()['excluded_types'] && array() === settings_log(), implode( ' | ', settings_log() ) );
+
 $refusal = ADVCM_Settings::save_form( array( 'op' => 'save', 'excluded_present' => '1', 'excluded' => array( 'review_profile', 'made_up' ) ) );
 
 check( 'a post type the site does not have is refused, by name', is_string( $refusal ) && false !== strpos( $refusal, 'made_up' ) && null === ADVCM_Settings::get()['excluded_types'] );

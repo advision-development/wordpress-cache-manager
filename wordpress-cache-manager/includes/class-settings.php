@@ -173,12 +173,11 @@ final class ADVCM_Settings {
 			$before = null === $now['excluded_types'] ? array_values( array_intersect( ADVCM_Auto::EXCLUDED, $offered ) ) : $now['excluded_types'];
 			sort( $before );
 
-			if ( null === $now['excluded_types'] || $before !== $asked ) {
+			// Stored only when it differs from what applies now. Saving the shipped list unchanged
+			// keeps following it, so a type a later release adds to it still applies here.
+			if ( $before !== $asked ) {
 				$changes['excluded_types'] = $asked;
-
-				if ( $before !== $asked ) {
-					ADVCM_Log::add( 'settings', 'excluded_types', __( 'Post types auto-clear leaves out', 'advcm' ), implode( ', ', $before ), implode( ', ', $asked ) );
-				}
+				ADVCM_Log::add( 'settings', 'excluded_types', __( 'Post types auto-clear leaves out', 'advcm' ), implode( ', ', $before ), implode( ', ', $asked ) );
 			}
 		}
 
