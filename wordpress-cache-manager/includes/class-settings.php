@@ -140,6 +140,14 @@ final class ADVCM_Settings {
 		);
 
 		if ( isset( $switches[ $op ] ) ) {
+			// Already where it was asked to go — a stale tab, a double submit: nothing changes, so
+			// nothing is recorded, and a pause keeps the time it began.
+			$now = 'pause' === $switches[ $op ][0] ? ADVCM_Auto::paused() : isset( ADVCM_Auto::rules()[ ADVCM_Auto::OWN ] );
+
+			if ( $now === ( 'on' === $switches[ $op ][3] ) ) {
+				return '';
+			}
+
 			$refusal = ADVCM_Auto::change( array( 'op' => $op ) );
 
 			if ( '' === $refusal ) {

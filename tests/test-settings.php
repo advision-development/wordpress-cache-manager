@@ -147,6 +147,16 @@ ADVCM_Settings::save_form( array( 'op' => 'own_off' ) );
 
 check( 'and back', ! ADVCM_Auto::paused() && ! isset( ADVCM_Auto::rules()[ ADVCM_Auto::OWN ] ) && 4 === count( settings_log() ) );
 
+$GLOBALS['options'][ ADVCM_Log::OPTION ] = array();
+
+ADVCM_Settings::save_form( array( 'op' => 'pause' ) );
+ADVCM_Settings::save_form( array( 'op' => 'pause' ) );
+ADVCM_Settings::save_form( array( 'op' => 'resume' ) );
+ADVCM_Settings::save_form( array( 'op' => 'resume' ) );
+ADVCM_Settings::save_form( array( 'op' => 'own_off' ) );
+
+check( 'a switch already where it was asked to go records nothing: a stale tab or a double submit is not a change', array( 'pause:on>off', 'pause:off>on' ) === settings_log(), implode( ' | ', settings_log() ) );
+
 check( 'an operation nobody offers is refused', is_string( ADVCM_Settings::save_form( array( 'op' => 'drop_tables' ) ) ) );
 
 // ------------------------------------------------------------- the version seen
