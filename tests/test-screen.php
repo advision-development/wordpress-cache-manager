@@ -188,13 +188,57 @@ ADVCM_Jobs::save( array( 'id' => 'quick', 'created' => $t - 20, 'finished' => $t
 	array( 'id' => 'wp-engine', 'label' => 'Host', 'stage' => 6, 'action' => 'run', 'status' => 'ok', 'message' => '', 'ms' => 12, 'started' => $t - 20 + 0.3 ),
 ) ) );
 
+// Three more: one that waited 15 minutes, one of five pages with measurements, one that failed.
+ADVCM_Jobs::save( array( 'id' => 'amber', 'created' => $t - 1000, 'finished' => $t - 90, 'by' => 0, 'source' => 'wp-cli', 'scope' => 'all', 'urls' => array(), 'mode' => 'balanced', 'state' => 'done with skips', 'steps' => array(
+	array( 'id' => 'wp-engine', 'label' => 'Host', 'stage' => 6, 'action' => 'run', 'status' => 'ok', 'message' => '', 'ms' => 12, 'started' => $t - 1000 + 900 ),
+) ) );
+ADVCM_Jobs::save( array( 'id' => 'pages', 'created' => $t - 50, 'finished' => $t - 40, 'by' => 0, 'source' => 'wp-cli', 'scope' => 'urls', 'urls' => array( 'https://example.test/a/', 'https://example.test/b/?x=<script>', 'https://example.test/c/', 'https://example.test/d/', 'https://example.test/e/' ), 'mode' => 'fast', 'state' => 'done with failures', 'measured' => true, 'not_measured' => 0, 'steps' => array(
+	array( 'id' => 'wp-engine', 'label' => 'Host', 'stage' => 6, 'action' => 'run', 'status' => 'failed', 'message' => 'Error: <b>gone</b>', 'ms' => 12, 'started' => $t - 50 ),
+) ) );
+$GLOBALS['options']['advcm_freshness'] = array(
+	array( 'at' => $t - 50, 'url' => 'https://example.test/a/', 'job' => 'pages', 'source' => 'wp-cli', 'by' => 0, 'code' => 200, 'age' => 5000, 'how' => 'exact', 'ages' => array( 'host cache' => 5000 ), 'nitro_state' => null, 'nitro_copy' => null, 'nitro_age' => null ),
+	array( 'at' => $t - 50, 'url' => 'https://example.test/c/', 'job' => 'pages', 'source' => 'wp-cli', 'by' => 0, 'code' => 200, 'age' => 30, 'how' => 'exact', 'ages' => array(), 'nitro_state' => null, 'nitro_copy' => null, 'nitro_age' => null ),
+	array( 'at' => $t - 20, 'url' => 'https://example.test/q/', 'job' => 'quick', 'source' => 'wp-cli', 'by' => 0, 'code' => 0, 'age' => null, 'how' => 'no answer', 'ages' => array(), 'nitro_state' => null, 'nitro_copy' => null, 'nitro_age' => null ),
+);
+
+load_class( 'freshness' );
+
 $out = screen_part( 'render_jobs', array( '' ) );
 
-check( 'History says how long a clear took', false !== strpos( $out, 'took 90 s' ) );
-check( 'and how long a clear somebody asked for waited before it ran, when WP-Cron was late', 1 === preg_match( '~Balanced — done — waited 8 h 30 min — took~', $out ) );
-check( 'a Fast clear, which runs in the request, shows no wait', 1 === preg_match( '~Fast — done — took 3 s~', $out ) && 0 === preg_match( '~whole site — Fast — done — waited~', $out ) );
-check( 'and how long an automatic clear waited after the first save that set it off', false !== strpos( $out, 'waited 8 h 30 min' ) );
-check( 'a clear still running has no time yet', 1 === preg_match( '~balanced — running(?! — took)~i', $out ) );
+/**
+ * One job's summary row, and the details row under it.
+ */
+function job_row( $out, $id ) {
+	return preg_match( '~<tr data-job="' . preg_quote( $id, '~' ) . '">(.*?)</tr>~s', $out, $m ) ? $m[1] : '';
+}
+
+function job_cell( $out, $id, $column ) {
+	return preg_match( '~<td data-col="' . $column . '"[^>]*>(.*?)</td>~s', job_row( $out, $id ), $m ) ? $m[1] : '';
+}
+
+function job_details( $out, $id ) {
+	return preg_match( '~<tr data-details="' . preg_quote( $id, '~' ) . '">(.*?)</tr>\s*(?=<tr data-job|</tbody>)~s', $out, $m ) ? $m[1] : '';
+}
+
+check( 'each list is a table with the summary columns', 2 === substr_count( $out, '<table class="widefat striped advcm-history"' ) && 1 === preg_match( '~<th>When</th><th>Who</th><th>What</th><th>Mode</th><th>State</th><th>Waited</th><th>Took</th><th>Cache age</th>~', $out ) );
+check( 'which scrolls sideways on a narrow screen rather than breaking the page', false !== strpos( $out, '<div style="overflow-x:auto">' ) );
+check( 'When is the time in UTC and how long ago', 1 === preg_match( '~\d{4}-\d\d-\d\d \d\d:\d\d UTC.*90 s ago~s', job_cell( $out, 'took', 'when' ) ) );
+check( 'History says how long a clear took', '90 s' === strip_tags( job_cell( $out, 'took', 'took' ) ) );
+check( 'and how long a clear somebody asked for waited before it ran, when WP-Cron was late', '8 h 30 min' === strip_tags( job_cell( $out, 'late', 'waited' ) ), (string) job_cell( $out, 'late', 'waited' ) );
+check( 'a wait over an hour is red, over ten minutes amber', false !== strpos( job_row( $out, 'late' ), 'advcm-wait-red' ) && false !== strpos( job_row( $out, 'amber' ), 'advcm-wait-amber' ) && false === strpos( job_row( $out, 'quick' ), 'advcm-wait' ) );
+check( 'a Fast clear, which runs in the request, shows no wait', '' === trim( strip_tags( job_cell( $out, 'quick', 'waited' ) ) ) && '3 s' === strip_tags( job_cell( $out, 'quick', 'took' ) ) );
+check( 'and how long an automatic clear waited after the first save that set it off', '8 h 30 min' === strip_tags( job_cell( $out, 'waited', 'waited' ) ) );
+check( 'a clear still running has no time yet, and is open', '' === trim( strip_tags( job_cell( $out, 'still', 'took' ) ) ) && 1 === preg_match( '~<details open~', job_details( $out, 'still' ) ) );
+check( 'Who is a badge for WP-CLI and Auto-clear', false !== strpos( job_cell( $out, 'took', 'who' ), 'WP-CLI</span>' ) && false !== strpos( job_cell( $out, 'waited', 'who' ), 'Auto-clear</span>' ) );
+check( 'What is the whole site, or the first two pages and how many more', 'Whole site' === strip_tags( job_cell( $out, 'took', 'what' ) ) && 1 === preg_match( '~/a/, /b/\?x=&lt;script&gt; \+3 more~', job_cell( $out, 'pages', 'what' ) ), (string) job_cell( $out, 'pages', 'what' ) );
+check( 'State is a badge in its colour', false !== strpos( job_cell( $out, 'took', 'state' ), '#008a20' ) && false !== strpos( job_cell( $out, 'pages', 'state' ), '#d63638' ) && false !== strpos( job_cell( $out, 'amber', 'state' ), '#646970' ) && false !== strpos( job_cell( $out, 'still', 'state' ), '#2271b1' ) );
+check( 'Cache age is the oldest copy measured for that clear', '83 min 20 s' === strip_tags( job_cell( $out, 'pages', 'age' ) ) );
+check( 'unknown when measured and no cache said, empty when not measured', 'unknown' === strip_tags( job_cell( $out, 'quick', 'age' ) ) && '' === strip_tags( job_cell( $out, 'took', 'age' ) ) );
+
+$details = job_details( $out, 'pages' );
+
+check( 'a row opens to its steps, every page and each page\'s cache age', false !== strpos( $details, 'Host' ) && false !== strpos( $details, 'https://example.test/e/' ) && 1 === preg_match( '~https://example.test/a/.{0,80}83 min 20 s~s', $details ) );
+check( 'everything in it escaped', false === strpos( $out, '<script>' ) && false === strpos( $out, '<b>gone' ) );
 
 // ------------------------------------------------------------------- the log box
 

@@ -837,71 +837,220 @@ final class ADVCM_Screen {
 			return;
 		}
 
-		foreach ( $jobs as $job ) {
-			$who     = self::who( (int) $job['by'], isset( $job['source'] ) ? $job['source'] : '' );
-			$what    = 'all' === $job['scope'] ? __( 'whole site', 'advcm' ) : implode( ', ', $job['urls'] );
-			$mode    = ADVCM_Modes::get( isset( $job['mode'] ) ? $job['mode'] : ADVCM_Modes::FAST );
-			$summary = sprintf( '%s — %s — %s — %s — %s', gmdate( 'Y-m-d H:i', (int) $job['created'] ) . ' UTC', $who, $what, $mode['label'], $job['state'] ) . self::timings( $job );
-			$running = 'running' === $job['state'];
+		$measured = self::measured_by_job();
+		$states   = array(
+			'done'               => 'green',
+			'done with skips'    => 'grey',
+			'done with failures' => 'red',
+			'running'            => 'blue',
+		);
 
-			echo '<details' . ( ( $open === $job['id'] || $running ) ? ' open' : '' ) . ' style="margin:0 0 8px">';
-			echo '<summary>' . esc_html( $summary ) . '</summary>';
+		echo '<div style="overflow-x:auto"><table class="widefat striped advcm-history" style="margin-bottom:16px"><thead><tr>';
 
-			if ( $running ) {
-				echo '<p><strong>' . esc_html( self::progress_line( $job ) ) . '</strong></p>';
-
-				if ( ADVCM_Runner::stuck( $job ) ) {
-					echo '<form method="post" action="' . esc_url( ADVCM_Controller::url() ) . '">';
-					wp_nonce_field( ADVCM_Controller::RESUME );
-					echo '<input type="hidden" name="action" value="' . esc_attr( ADVCM_Controller::RESUME ) . '" />';
-					echo '<input type="hidden" name="job" value="' . esc_attr( $job['id'] ) . '" />';
-					submit_button( __( 'Continue now, without the remaining pauses', 'advcm' ), 'secondary small', 'submit', false );
-					echo '</form>';
-				}
-			}
-
-			if ( ! empty( $job['refused'] ) ) {
-				echo '<p>' . esc_html( __( 'Not on this site, so not cleared:', 'advcm' ) . ' ' . implode( ', ', $job['refused'] ) ) . '</p>';
-			}
-
-			self::render_triggers( $job );
-
-			echo '<table class="widefat striped" style="margin-top:6px"><tbody>';
-
-			foreach ( $job['steps'] as $step ) {
-				// The same rule as Status: a layer that was not on the site when the clear was
-				// planned is not a row. A layer that was there at the plan and gone by its step
-				// still is — it says the site changed under the clear.
-				if ( 'skip' === $step['action'] && 'skipped' === $step['status'] && ADVCM_Runner::LEFT_OUT !== $step['message'] ) {
-					continue;
-				}
-
-				echo '<tr>';
-				echo '<td>' . esc_html( $step['stage'] . ' · ' . $step['label'] ) . '</td>';
-				echo '<td><strong>' . esc_html( $step['status'] ) . '</strong></td>';
-				echo '<td>' . esc_html( $step['message'] ) . '</td>';
-				echo '<td>' . esc_html( $step['ms'] ? $step['ms'] . ' ms' : '' ) . '</td>';
-				echo '</tr>';
-			}
-
-			echo '</tbody></table></details>';
+		foreach ( array( __( 'When', 'advcm' ), __( 'Who', 'advcm' ), __( 'What', 'advcm' ), __( 'Mode', 'advcm' ), __( 'State', 'advcm' ), __( 'Waited', 'advcm' ), __( 'Took', 'advcm' ), __( 'Cache age', 'advcm' ) ) as $head ) {
+			echo '<th>' . esc_html( $head ) . '</th>';
 		}
 
+		echo '</tr></thead><tbody>';
+
+		// Over an hour red, over ten minutes amber: the waits that mean WP-Cron is behind.
+		$wait_styles = array(
+			'red'   => 'color:#d63638;font-weight:600',
+			'amber' => 'color:#996800;font-weight:600',
+		);
+
+		foreach ( $jobs as $job ) {
+			$source  = isset( $job['source'] ) ? $job['source'] : '';
+			$who     = self::who( (int) $job['by'], $source );
+			$mode    = ADVCM_Modes::get( isset( $job['mode'] ) ? $job['mode'] : ADVCM_Modes::FAST );
+			$running = 'running' === $job['state'];
+			$waited  = self::waited( $job );
+			$took    = self::took( $job );
+			$rows    = isset( $measured[ $job['id'] ] ) ? $measured[ $job['id'] ] : array();
+			$late    = '';
+
+			if ( null !== $waited && $waited > HOUR_IN_SECONDS ) {
+				$late = 'red';
+			} elseif ( null !== $waited && $waited > 10 * MINUTE_IN_SECONDS ) {
+				$late = 'amber';
+			}
+
+			echo '<tr data-job="' . esc_attr( $job['id'] ) . '">';
+			/* translators: %s: a duration. */
+			echo '<td data-col="when">' . esc_html( gmdate( 'Y-m-d H:i', (int) $job['created'] ) . ' UTC' ) . '<br><span class="description">' . esc_html( sprintf( __( '%s ago', 'advcm' ), ADVCM_Probe::duration( max( 0, time() - (int) $job['created'] ) ) ) ) . '</span></td>';
+			// phpcs:disable WordPress.Security.EscapeOutput -- badge() escapes.
+			echo '<td data-col="who">' . ( 'wp-cli' === $source || ADVCM_Auto::SOURCE === $source ? self::badge( $who, 'grey' ) : esc_html( $who ) ) . '</td>';
+			echo '<td data-col="what">' . esc_html( self::what( $job ) ) . '</td>';
+			echo '<td data-col="mode">' . esc_html( $mode['label'] ) . '</td>';
+			echo '<td data-col="state">' . self::badge( $job['state'], isset( $states[ $job['state'] ] ) ? $states[ $job['state'] ] : 'grey' ) . '</td>';
+			// phpcs:enable
+			echo '<td data-col="waited"' . ( '' !== $late ? ' class="advcm-wait advcm-wait-' . esc_attr( $late ) . '" style="' . esc_attr( $wait_styles[ $late ] ) . '"' : '' ) . '>' . esc_html( null === $waited ? '' : ADVCM_Probe::duration( $waited ) ) . '</td>';
+			echo '<td data-col="took">' . esc_html( null === $took ? '' : ADVCM_Probe::duration( $took ) ) . '</td>';
+			echo '<td data-col="age">' . esc_html( self::oldest( $rows ) ) . '</td>';
+			echo '</tr>';
+
+			// A second row, so the details span the table; <details> opens it without JavaScript.
+			echo '<tr data-details="' . esc_attr( $job['id'] ) . '"><td colspan="8" style="padding-top:0">';
+			echo '<details' . ( ( $open === $job['id'] || $running ) ? ' open' : '' ) . '>';
+			echo '<summary>' . esc_html__( 'Details', 'advcm' ) . '</summary>';
+
+			self::render_job_details( $job, $rows, $running );
+
+			echo '</details></td></tr>';
+		}
+
+		echo '</tbody></table></div>';
 	}
 
 	/**
-	 * How long a clear took, and how long it waited: an automatic one from the first save that set
-	 * it off, one somebody asked for from the request to its first step — the number that showed
-	 * BMR's clears running hours late. "took" is empty while running.
+	 * What a job's row opens to: progress and the continue button while it runs, the pages it
+	 * refused, what set it off, every page with its measured cache age, and the steps.
+	 *
+	 * @param array   $job     Job.
+	 * @param array[] $rows    Its measurements.
+	 * @param bool    $running Whether it is running.
+	 * @return void
+	 */
+	private static function render_job_details( array $job, array $rows, $running ) {
+		if ( $running ) {
+			echo '<p><strong>' . esc_html( self::progress_line( $job ) ) . '</strong></p>';
+
+			if ( ADVCM_Runner::stuck( $job ) ) {
+				echo '<form method="post" action="' . esc_url( ADVCM_Controller::url() ) . '">';
+				wp_nonce_field( ADVCM_Controller::RESUME );
+				echo '<input type="hidden" name="action" value="' . esc_attr( ADVCM_Controller::RESUME ) . '" />';
+				echo '<input type="hidden" name="job" value="' . esc_attr( $job['id'] ) . '" />';
+				submit_button( __( 'Continue now, without the remaining pauses', 'advcm' ), 'secondary small', 'submit', false );
+				echo '</form>';
+			}
+		}
+
+		if ( ! empty( $job['refused'] ) ) {
+			echo '<p>' . esc_html( __( 'Not on this site, so not cleared:', 'advcm' ) . ' ' . implode( ', ', $job['refused'] ) ) . '</p>';
+		}
+
+		self::render_triggers( $job );
+
+		if ( 'all' !== $job['scope'] && ! empty( $job['urls'] ) ) {
+			$ages = array();
+
+			foreach ( $rows as $row ) {
+				$layers                       = self::layer_words( $row );
+				$ages[ (string) $row['url'] ] = self::age_words( $row ) . ( '—' !== $layers ? ' (' . $layers . ')' : '' );
+			}
+
+			echo '<ul style="list-style:disc;margin:6px 0 6px 20px">';
+
+			foreach ( $job['urls'] as $url ) {
+				/* translators: %s: an age. */
+				echo '<li><code>' . esc_html( $url ) . '</code>' . ( isset( $ages[ $url ] ) ? ' — ' . esc_html( sprintf( __( 'cache age %s', 'advcm' ), $ages[ $url ] ) ) : '' ) . '</li>';
+			}
+
+			echo '</ul>';
+
+			if ( ! empty( $job['not_measured'] ) ) {
+				/* translators: %d: pages. */
+				echo '<p class="description">' . esc_html( sprintf( _n( '%d page was not measured: a clear measures at most 10, within 20 seconds.', '%d pages were not measured: a clear measures at most 10, within 20 seconds.', (int) $job['not_measured'], 'advcm' ), (int) $job['not_measured'] ) ) . '</p>';
+			}
+		}
+
+		echo '<table class="widefat striped" style="margin-top:6px"><tbody>';
+
+		foreach ( $job['steps'] as $step ) {
+			// The same rule as Status: a layer that was not on the site when the clear was
+			// planned is not a row. A layer that was there at the plan and gone by its step
+			// still is — it says the site changed under the clear.
+			if ( 'skip' === $step['action'] && 'skipped' === $step['status'] && ADVCM_Runner::LEFT_OUT !== $step['message'] ) {
+				continue;
+			}
+
+			echo '<tr>';
+			echo '<td>' . esc_html( $step['stage'] . ' · ' . $step['label'] ) . '</td>';
+			echo '<td><strong>' . esc_html( $step['status'] ) . '</strong></td>';
+			echo '<td>' . esc_html( $step['message'] ) . '</td>';
+			echo '<td>' . esc_html( $step['ms'] ? $step['ms'] . ' ms' : '' ) . '</td>';
+			echo '</tr>';
+		}
+
+		echo '</tbody></table>';
+	}
+
+	/**
+	 * What a job cleared, short: the whole site, or its first two pages and how many more.
 	 *
 	 * @param array $job Job.
-	 * @return string " — took …", " — waited …", or both, or empty.
+	 * @return string
 	 */
-	private static function timings( array $job ) {
-		$out     = '';
-		$created = isset( $job['created'] ) ? (int) $job['created'] : 0;
+	private static function what( array $job ) {
+		if ( 'all' === $job['scope'] ) {
+			return __( 'Whole site', 'advcm' );
+		}
 
-		$first = 0;
+		$urls  = array_values( (array) $job['urls'] );
+		$paths = array();
+
+		foreach ( array_slice( $urls, 0, 2 ) as $url ) {
+			$parts   = wp_parse_url( (string) $url );
+			$path    = is_array( $parts ) && isset( $parts['path'] ) ? $parts['path'] : '/';
+			$paths[] = $path . ( is_array( $parts ) && isset( $parts['query'] ) ? '?' . $parts['query'] : '' );
+		}
+
+		/* translators: %d: pages. */
+		return implode( ', ', $paths ) . ( count( $urls ) > 2 ? ' ' . sprintf( __( '+%d more', 'advcm' ), count( $urls ) - 2 ) : '' );
+	}
+
+	/**
+	 * Every measurement, by job id: read once for the whole History.
+	 *
+	 * @return array job id => rows.
+	 */
+	private static function measured_by_job() {
+		$out = array();
+
+		foreach ( array_merge( ADVCM_Freshness::rows(), ADVCM_Freshness::rows( true ) ) as $row ) {
+			if ( isset( $row['job'] ) ) {
+				$out[ (string) $row['job'] ][] = $row;
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * The oldest copy a job's measurements found: empty when not measured, "unknown" when no
+	 * cache said.
+	 *
+	 * @param array[] $rows Measurements.
+	 * @return string
+	 */
+	private static function oldest( array $rows ) {
+		if ( empty( $rows ) ) {
+			return '';
+		}
+
+		$oldest = null;
+
+		foreach ( $rows as $row ) {
+			if ( isset( $row['age'] ) && null !== $row['age'] ) {
+				$oldest = null === $oldest ? (int) $row['age'] : max( $oldest, (int) $row['age'] );
+			}
+		}
+
+		return null === $oldest ? __( 'unknown', 'advcm' ) : ADVCM_Probe::duration( $oldest );
+	}
+
+	/**
+	 * How long a clear waited, in seconds, or null when it did not wait to speak of: an automatic
+	 * one from the first save that set it off, one somebody asked for from the request to its
+	 * first step that ran. A Fast clear runs in that request and shows nothing; a background one
+	 * WP-Cron ran late shows how late — the number that would have shown BMR's 8.5 hours.
+	 *
+	 * @param array $job Job.
+	 * @return int|null
+	 */
+	private static function waited( array $job ) {
+		$created = isset( $job['created'] ) ? (int) $job['created'] : 0;
+		$first   = 0;
 
 		foreach ( isset( $job['options']['triggers'] ) && is_array( $job['options']['triggers'] ) ? $job['options']['triggers'] : array() as $trigger ) {
 			if ( is_array( $trigger ) && ! empty( $trigger['at'] ) ) {
@@ -910,32 +1059,38 @@ final class ADVCM_Screen {
 		}
 
 		if ( $first > 0 && $created > $first ) {
-			/* translators: %s: a duration. */
-			$out .= ' — ' . sprintf( __( 'waited %s', 'advcm' ), ADVCM_Probe::duration( $created - $first ) );
-		} else {
-			// A clear somebody asked for: from the request to its first step that ran. A Fast clear
-			// runs in that request, so it shows nothing; a background one WP-Cron ran late shows how
-			// late — the number that would have shown BMR's 8.5 hours.
-			$ran = 0.0;
+			return $created - $first;
+		}
 
-			foreach ( isset( $job['steps'] ) && is_array( $job['steps'] ) ? $job['steps'] : array() as $step ) {
-				if ( is_array( $step ) && ! empty( $step['started'] ) ) {
-					$ran = 0.0 === $ran ? (float) $step['started'] : min( $ran, (float) $step['started'] );
-				}
-			}
+		$ran = 0.0;
 
-			if ( $ran > 0 && $created > 0 && $ran - $created >= self::WAIT_SHOWN ) {
-				/* translators: %s: a duration. */
-				$out .= ' — ' . sprintf( __( 'waited %s', 'advcm' ), ADVCM_Probe::duration( (int) ( $ran - $created ) ) );
+		foreach ( isset( $job['steps'] ) && is_array( $job['steps'] ) ? $job['steps'] : array() as $step ) {
+			if ( is_array( $step ) && ! empty( $step['started'] ) ) {
+				$ran = 0.0 === $ran ? (float) $step['started'] : min( $ran, (float) $step['started'] );
 			}
 		}
+
+		if ( $ran > 0 && $created > 0 && $ran - $created >= self::WAIT_SHOWN ) {
+			return (int) ( $ran - $created );
+		}
+
+		return null;
+	}
+
+	/**
+	 * How long a clear took, in seconds, or null while it runs.
+	 *
+	 * @param array $job Job.
+	 * @return int|null
+	 */
+	private static function took( array $job ) {
+		$created = isset( $job['created'] ) ? (int) $job['created'] : 0;
 
 		if ( ! empty( $job['finished'] ) && (int) $job['finished'] >= $created && $created > 0 ) {
-			/* translators: %s: a duration. */
-			$out .= ' — ' . sprintf( __( 'took %s', 'advcm' ), ADVCM_Probe::duration( (int) $job['finished'] - $created ) );
+			return (int) $job['finished'] - $created;
 		}
 
-		return $out;
+		return null;
 	}
 
 	/**
