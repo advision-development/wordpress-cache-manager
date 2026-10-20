@@ -26,54 +26,82 @@ function job( $id, $sent ) {
 
 // --------------------------------------------------------------------------- the trim
 
-for ( $i = 1; $i <= 15; $i++ ) {
-	ADVCM_Jobs::save( job( 'sent-' . $i, true ) );
+/**
+ * A finished automatic clear.
+ *
+ * @param string $id Id.
+ * @return array
+ */
+function auto_job( $id ) {
+	return array_merge( job( $id, false ), array( 'source' => 'auto' ) );
+}
+
+for ( $i = 1; $i <= 25; $i++ ) {
+	ADVCM_Jobs::save( job( 'manual-' . $i, true ) );
 }
 
 $ids = array_keys( ADVCM_Jobs::all() );
 
-check( 'sent jobs are kept to the last ten', ADVCM_Jobs::KEEP === count( $ids ) && 10 === ADVCM_Jobs::KEEP, (string) count( $ids ) );
-check( 'newest first', 'sent-15' === $ids[0] && 'sent-6' === $ids[9] );
+check( 'manual clears are kept to the last 20', 20 === ADVCM_Jobs::KEEP && ADVCM_Jobs::KEEP === count( $ids ), (string) count( $ids ) );
+check( 'newest first', 'manual-25' === $ids[0] && 'manual-6' === $ids[19] );
 
-$GLOBALS['options'] = array();
-
-ADVCM_Jobs::save( job( 'waiting-1', false ) );
-ADVCM_Jobs::save( job( 'waiting-2', false ) );
-
-for ( $i = 1; $i <= 12; $i++ ) {
-	ADVCM_Jobs::save( job( 'sent-' . $i, true ) );
+for ( $i = 1; $i <= 25; $i++ ) {
+	ADVCM_Jobs::save( auto_job( 'auto-' . $i ) );
 }
 
-$ids = array_keys( ADVCM_Jobs::all() );
+$auto   = isset( $GLOBALS['options'][ ADVCM_Jobs::OPTION_AUTO ] ) ? $GLOBALS['options'][ ADVCM_Jobs::OPTION_AUTO ] : array();
+$manual = $GLOBALS['options'][ ADVCM_Jobs::OPTION ];
 
-check( 'a job Hawkeye has not confirmed survives past the last ten', in_array( 'waiting-1', $ids, true ) && in_array( 'waiting-2', $ids, true ), implode( ',', $ids ) );
-check( 'while sent ones past the last ten go', ! in_array( 'sent-1', $ids, true ) && ! in_array( 'sent-2', $ids, true ) );
-check( 'so the buffer is the ten plus the two waiting', 12 === count( $ids ), (string) count( $ids ) );
-
-ADVCM_Jobs::mark_sent( 'waiting-1' );
-
-check( 'once confirmed, it is let go', ! array_key_exists( 'waiting-1', ADVCM_Jobs::all() ) );
+check( 'automatic clears have a row of their own, kept to the last 20', 20 === ADVCM_Jobs::AUTO_KEEP && ADVCM_Jobs::AUTO_KEEP === count( $auto ), (string) count( $auto ) );
+check( 'and never push a manual clear out', 20 === count( $manual ) && array_key_exists( 'manual-25', $manual ) && ! array_key_exists( 'auto-25', $manual ) );
+check( 'a job is found in either row', 'auto' === ADVCM_Jobs::get( 'auto-25' )['source'] && is_array( ADVCM_Jobs::get( 'manual-25' ) ) );
 
 $GLOBALS['options'] = array();
 
-for ( $i = 1; $i <= ADVCM_Jobs::UNSENT_CAP + 20; $i++ ) {
-	ADVCM_Jobs::save( job( 'down-' . $i, false ) );
+ADVCM_Jobs::save( array_merge( job( 'older', true ), array( 'created' => 100 ) ) );
+ADVCM_Jobs::save( array_merge( auto_job( 'middle' ), array( 'created' => 200 ) ) );
+ADVCM_Jobs::save( array_merge( job( 'newer', true ), array( 'created' => 300 ) ) );
+
+check( 'all() is both rows, newest first', array( 'newer', 'middle', 'older' ) === array_keys( ADVCM_Jobs::all() ), implode( ',', array_keys( ADVCM_Jobs::all() ) ) );
+
+$GLOBALS['options'] = array();
+
+for ( $i = 1; $i <= 30; $i++ ) {
+	ADVCM_Jobs::save( job( 'waiting-' . $i, false ) );
 }
 
-check( 'a Hawkeye that never confirms cannot grow the row past its cap', ADVCM_Jobs::UNSENT_CAP === count( ADVCM_Jobs::all() ), (string) count( ADVCM_Jobs::all() ) );
-check( 'and what the cap drops is the oldest', ! array_key_exists( 'down-1', ADVCM_Jobs::all() ) && array_key_exists( 'down-' . ( ADVCM_Jobs::UNSENT_CAP + 20 ), ADVCM_Jobs::all() ) );
+check( 'until Hawkeye exists, a job it has not confirmed is no reason to keep more than the cap', ADVCM_Jobs::KEEP === count( ADVCM_Jobs::all() ), (string) count( ADVCM_Jobs::all() ) );
 
 $GLOBALS['options'] = array();
 
-$running          = job( 'background', true );
+$running          = auto_job( 'background' );
 $running['state'] = 'running';
 ADVCM_Jobs::save( $running );
 
-for ( $i = 1; $i <= ADVCM_Jobs::UNSENT_CAP + 5; $i++ ) {
-	ADVCM_Jobs::save( job( 'burst-' . $i, false ) );
+for ( $i = 1; $i <= 30; $i++ ) {
+	ADVCM_Jobs::save( auto_job( 'burst-' . $i ) );
 }
 
-check( 'a running job is never pushed out of the buffer, however many clears follow it', array_key_exists( 'background', ADVCM_Jobs::all() ) );
+check( 'a running job is never pushed out of its row, however many clears follow it', array_key_exists( 'background', ADVCM_Jobs::all() ) );
+
+// ------------------------------------------------------------ the row of 0.3.2
+
+$GLOBALS['options'] = array(
+	ADVCM_Jobs::OPTION => array(
+		'm2'  => job( 'm2', false ),
+		'a2'  => auto_job( 'a2' ),
+		'm1'  => job( 'm1', false ),
+		'a1r' => array_merge( auto_job( 'a1r' ), array( 'state' => 'running' ) ),
+	),
+);
+
+ADVCM_Jobs::save( job( 'm3', false ) );
+
+$manual = array_keys( $GLOBALS['options'][ ADVCM_Jobs::OPTION ] );
+$auto   = array_keys( $GLOBALS['options'][ ADVCM_Jobs::OPTION_AUTO ] );
+
+check( 'automatic clears saved by 0.3.2 move to their own row on the next save', array( 'm3', 'm2', 'm1' ) === $manual, implode( ',', $manual ) );
+check( 'each once, a running one included', array( 'a2', 'a1r' ) === $auto, implode( ',', $auto ) );
 
 // -------------------------------------------------------------- what goes to Hawkeye
 

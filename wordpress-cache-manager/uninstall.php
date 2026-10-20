@@ -17,6 +17,7 @@ try {
 	delete_site_transient( 'advcm_release' );
 	delete_site_transient( 'advcm_loopback' );
 	delete_option( 'advcm_jobs' );
+	delete_option( 'advcm_jobs_auto' );
 	delete_option( 'advcm_layers' );
 	delete_option( 'advcm_last_error' );
 	delete_option( 'advcm_site_wide_at' );

@@ -27,7 +27,8 @@
     }
   ],
   "options": [
-    { "name": "advcm_jobs", "autoload": false, "why": "the last 10 clears (up to 30 while waiting for Hawkeye)" },
+    { "name": "advcm_jobs", "autoload": false, "why": "the last 20 clears people started (automatic ones are in advcm_jobs_auto since 0.4.0)" },
+    { "name": "advcm_jobs_auto", "autoload": false, "why": "since 0.4.0, the last 20 automatic clears (auto-clear rules and each post's own page), kept apart so they never push out a clear somebody pressed. A running job is never evicted" },
     { "name": "advcm_layers", "autoload": false, "why": "per layer, when it was last cleared and how" },
     { "name": "advcm_lock_<job id>", "autoload": false, "why": "one row while a job is running; deleted when it stops" },
     { "name": "advcm_last_error", "autoload": false, "why": "the last fault the plugin's guards caught, shown on its screen for a day" },

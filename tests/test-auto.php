@@ -828,17 +828,17 @@ $GLOBALS['can_edit'] = array();
 
 // ---------------------------------------------------------------- the history keeps room
 
-update_option( ADVCM_Jobs::OPTION, array() );
-$GLOBALS['options'][ ADVCM_Jobs::OPTION ] = array();
+$GLOBALS['options'][ ADVCM_Jobs::OPTION ]      = array();
+$GLOBALS['options'][ ADVCM_Jobs::OPTION_AUTO ] = array();
 
 ADVCM_Jobs::save( array( 'id' => 'manual', 'source' => 'wp-admin', 'state' => 'done', 'finished' => 1 ) );
 
-for ( $i = 0; $i < 6; $i++ ) {
+for ( $i = 0; $i < ADVCM_Jobs::AUTO_KEEP + 5; $i++ ) {
 	ADVCM_Jobs::save( array( 'id' => 'auto' . $i, 'source' => 'auto', 'state' => 'done', 'finished' => 1 ) );
 }
 
-$kept = array_keys( ADVCM_Jobs::all() );
-check( 'the history keeps the last ' . ADVCM_Jobs::AUTO_KEEP . ' auto-clears, so a busy day of publishing cannot push out a clear somebody pressed', array( 'auto5', 'auto4', 'auto3', 'manual' ) === $kept, implode( ',', $kept ) );
+$auto = array_keys( $GLOBALS['options'][ ADVCM_Jobs::OPTION_AUTO ] );
+check( 'the history keeps the last ' . ADVCM_Jobs::AUTO_KEEP . ' auto-clears in their own row, so a busy day of publishing cannot push out a clear somebody pressed', ADVCM_Jobs::AUTO_KEEP === count( $auto ) && 'auto' . ( ADVCM_Jobs::AUTO_KEEP + 4 ) === $auto[0] && array( 'manual' ) === array_keys( $GLOBALS['options'][ ADVCM_Jobs::OPTION ] ), implode( ',', $auto ) );
 
 ADVCM_Jobs::save( array( 'id' => 'auto-running', 'source' => 'auto', 'state' => 'running' ) );
 ADVCM_Jobs::save( array( 'id' => 'auto9', 'source' => 'auto', 'state' => 'done', 'finished' => 1 ) );

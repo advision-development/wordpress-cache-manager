@@ -22,7 +22,8 @@ and the code disagree.
 |---|---|---|
 | Cron (single) | `advcm_continue` | args `[job id]`; the next step of a background clear. Registered on every request, removed on deactivation and uninstall |
 | Cron (single) | `advcm_auto_flush` | no args; the auto-clear, about 60 s after a post matching a rule is published — or, when WP-Cron is more than 2 minutes behind, timestamped just before its oldest due event, so it runs first. Scheduled only when a rule is on; removed on deactivation and uninstall |
-| Option | `advcm_jobs` | not autoloaded; last 10 clears, up to 30 while waiting for Hawkeye |
+| Option | `advcm_jobs` | not autoloaded; the last 20 clears people started (automatic ones are in `advcm_jobs_auto` since 0.4.0) |
+| Option | `advcm_jobs_auto` | not autoloaded; since 0.4.0, the last 20 automatic clears, apart from the clears people started |
 | Option | `advcm_layers` | not autoloaded; per layer, last clear |
 | Option | `advcm_lock_<job id>` | while a job runs; deleted when it stops |
 | Option | `advcm_last_error` | not autoloaded; the last fault the guards caught, shown on the screen for a day |
