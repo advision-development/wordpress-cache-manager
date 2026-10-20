@@ -61,3 +61,30 @@ function finish() {
 function load_class( $name ) {
 	require_once ADVCM_DIR . 'includes/class-' . $name . '.php';
 }
+
+// The plugin's own autoloader, so a class a suite did not load by name is found as on a site.
+spl_autoload_register(
+	function ( $class ) {
+		if ( 0 === strpos( $class, 'ADVCM_' ) ) {
+			$path = ADVCM_DIR . 'includes/class-' . strtolower( str_replace( '_', '-', substr( $class, 6 ) ) ) . '.php';
+
+			if ( is_readable( $path ) ) {
+				require_once $path;
+			}
+		}
+	}
+);
+
+/**
+ * No suite reaches the network: a per-URL job measures its pages before its first stage, and
+ * here that measuring answers "no answer" unless a suite installs its own prober.
+ */
+function advcm_test_no_network() {
+	ADVCM_Freshness::use_prober(
+		function () {
+			return 'test: no network';
+		}
+	);
+}
+
+advcm_test_no_network();

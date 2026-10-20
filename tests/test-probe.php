@@ -99,6 +99,20 @@ $r = ADVCM_Probe::read( $url, 200, $wpe_hit + array( 'age' => '68', 'x-cache-cti
 
 check( 'Age still wins: the layer in front answered first', 68 === $r['age']['seconds'] );
 
+// --------------------------------------------------------------- each layer's age
+
+$r = ADVCM_Probe::read( $url, 200, array( 'cf-cache-status' => 'HIT', 'age' => '120', 'x-cache' => 'HIT: 2', 'x-cache-ctime' => (string) ( $now - 5000 ) ), 90, null, $now );
+
+check( 'each layer that said exactly gets its own age', array( 'Cloudflare' => 120, 'host cache' => 5000 ) === $r['ages'] );
+
+$r = ADVCM_Probe::read( $url, 200, array( 'age' => '30' ), 90, null, $now );
+
+check( 'an Age with no Cloudflare is the cache in front', array( 'cache in front' => 30 ) === $r['ages'] );
+
+$r = ADVCM_Probe::read( $url, 200, $wpe_hit, 90, $now - 60, $now );
+
+check( 'and an "at most" is no layer\'s exact age', array() === $r['ages'] );
+
 // ---------------------------------------------------------- NitroPack, in the page
 
 $r = ADVCM_Probe::read( $url, 200, array(), 100, null, $now, "<script>window.NITROPACK_STATE='STALE';</script>" );

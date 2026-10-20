@@ -26,6 +26,8 @@ try {
 	delete_option( 'advcm_rules_paused' );
 	delete_option( 'advcm_log' );
 	delete_option( 'advcm_settings' );
+	delete_option( 'advcm_freshness' );
+	delete_option( 'advcm_freshness_auto' );
 	wp_unschedule_hook( 'advcm_continue' ); // every job id, not only events with no arguments.
 	wp_unschedule_hook( 'advcm_auto_flush' );
 

@@ -350,6 +350,19 @@ final class ADVCM_Runner {
 			self::$registered = true;
 		}
 
+		// How old each page was, before anything clears it: once per job, on its first run, never
+		// for the whole site. Not a stage — ADVCM_Freshness::measure() changes nothing and never
+		// throws, and a job that cannot be measured is cleared all the same.
+		if ( empty( $job['measured'] ) ) {
+			try {
+				$job = ADVCM_Freshness::measure( $job );
+			} catch ( Throwable $e ) {
+				$job['measured'] = true;
+			}
+
+			ADVCM_Jobs::save( $job );
+		}
+
 		$adapters = array();
 
 		foreach ( self::adapters() as $adapter ) {

@@ -31,7 +31,9 @@ and the code disagree.
 | Option | `advcm_rules` | not autoloaded; auto-clear rules, and the "each post's own page" setting as the reserved rule `own-page`; written by administrators |
 | Option | `advcm_auto_<rule id>` | while a rule waits for its clear, with the first 10 posts that triggered it and a count of the rest (for `own-page`, also up to 40 of those posts' own URLs, taken at the save); deleted when the clear picks it up |
 | Option | `advcm_rules_last` | not autoloaded; per rule, when it last fired, how many posts and the job's state. Written by the clear, never by the rules form |
-| Option | `advcm_settings` | not autoloaded; since 0.4.0, the Settings tab: own-page ignores unchanged saves, the post types auto-clear leaves out, the NitroPack choice for new rules, the version last seen. Read in a post save only after a rule is on, the save is visible and auto-clear is not paused |
+| Option | `advcm_settings` | not autoloaded; since 0.4.0, the Settings tab: own-page ignores unchanged saves, the post types auto-clear leaves out, the NitroPack choice for new rules, whether a clear of some pages measures their cache age first (0.5.0), the version last seen. Read in a post save only after a rule is on, the save is visible and auto-clear is not paused |
+| Option | `advcm_freshness` | not autoloaded; since 0.5.0, how old each page's cached copy was when a clear somebody started cleared it: the last 100 pages (URL cut to 2048 characters, job, who, HTTP code, each layer's age, NitroPack's state). At most 10 pages per job, never for a whole-site clear |
+| Option | `advcm_freshness_auto` | not autoloaded; since 0.5.0, the same for automatic clears, the last 100 pages, kept apart |
 | Option | `advcm_log` | not autoloaded; since 0.4.0, who changed what: the last 20 changes per tab section, each with the person, the time and the value before and after (cut to 200 characters). Written only by requests a person made |
 | Option | `advcm_rules_paused` | not autoloaded; while an administrator has paused every auto-clear rule |
 | Site transient | `advcm_release` | updater's cached GitHub answer |

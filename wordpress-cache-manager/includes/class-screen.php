@@ -1251,6 +1251,7 @@ final class ADVCM_Screen {
 		echo '<input type="hidden" name="op" value="save" />';
 		echo '<input type="hidden" name="own_present" value="1" />';
 		echo '<input type="hidden" name="excluded_present" value="1" />';
+		echo '<input type="hidden" name="measure_present" value="1" />';
 
 		echo '<p><label><input type="checkbox" name="own_skip_unchanged" value="1"' . ( $settings['own_skip_unchanged'] ? ' checked' : '' ) . ' /> ';
 		echo esc_html__( 'Ignore saves that change nothing a visitor sees: title, content, excerpt, slug, status, password, date, parent and order all as they were.', 'advcm' ) . '</label></p>';
@@ -1273,6 +1274,11 @@ final class ADVCM_Screen {
 		) as $value => $label ) {
 			echo '<p style="margin:0 0 4px"><label><input type="radio" name="nitropack_default" value="' . esc_attr( $value ) . '"' . ( $value === $settings['nitropack_default'] ? ' checked' : '' ) . ' /> ' . esc_html( $label ) . '</label></p>';
 		}
+
+		echo '<h3>' . esc_html__( 'Cache age before a clear', 'advcm' ) . '</h3>';
+		echo '<p><label><input type="checkbox" name="measure_before_clear" value="1"' . ( $settings['measure_before_clear'] ? ' checked' : '' ) . ' /> ';
+		echo esc_html__( 'Before clearing some pages, ask each one how old its cached copy is, and keep the answer for the Freshness tab.', 'advcm' ) . '</label></p>';
+		echo '<p class="description">' . esc_html__( 'One request per page, as a visitor would make: at most 10 pages per clear, 5 seconds each, 20 seconds in all. Never for a whole-site clear. Only the caches this site has answer.', 'advcm' ) . '</p>';
 
 		if ( $hard ) {
 			submit_button( __( 'Save settings', 'advcm' ) );

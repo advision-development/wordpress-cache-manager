@@ -485,4 +485,39 @@ ADVCM_Runner::start( array( 'scope' => 'all' ) );
 
 check( 'a step is told how every step before it ended', array( 'first' => 'ok', 'gone' => 'skipped' ) === ( isset( $last->options['earlier'] ) ? $last->options['earlier'] : null ), json_encode( $last->options ) );
 
+// --------------------------------------------------------------- measured, once, first
+
+$asked = array();
+$host  = new Fake_Adapter(
+	'host',
+	ADVCM_Stages::HOST,
+	null,
+	function () use ( &$asked ) {
+		$asked[] = 'clear';
+
+		return array( 'status' => 'ok' );
+	}
+);
+
+ADVCM_Runner::use_adapters( array( $host ) );
+ADVCM_Freshness::use_prober(
+	function ( $url ) use ( &$asked ) {
+		$asked[] = 'measure ' . $url;
+
+		return 'no answer here';
+	}
+);
+
+$job = ADVCM_Runner::start( array( 'scope' => 'urls', 'urls' => array( 'https://example.test/a/' ) ) );
+
+check( 'a per-URL clear measures its pages before its first stage', array( 'measure https://example.test/a/', 'clear' ) === $asked, implode( ', ', $asked ) );
+check( 'and the job keeps that it did', ! empty( $job['measured'] ) );
+
+$asked = array();
+$job   = ADVCM_Runner::start( array( 'scope' => 'all' ) );
+
+check( 'a whole-site clear goes straight to its stages', array( 'clear' ) === $asked, implode( ', ', $asked ) );
+
+advcm_test_no_network();
+
 finish();

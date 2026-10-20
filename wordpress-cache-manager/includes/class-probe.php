@@ -78,6 +78,7 @@ final class ADVCM_Probe {
 				'layers'  => array(),
 				'age'     => array( 'seconds' => null, 'how' => 'no answer' ),
 				'max_ttl' => null,
+				'ages'    => array(),
 				'hits'    => null,
 				'nitropack_state' => null,
 			);
@@ -168,12 +169,26 @@ final class ADVCM_Probe {
 			);
 		}
 
+		// Each layer that said exactly how old its copy is, apart: the visitor's age above is the
+		// front layer's, and a clear needs to know which layer held the old copy. Only layers that
+		// answered are here — on most sites that is none, or one.
+		$ages = array();
+
+		if ( isset( $headers['age'] ) && preg_match( '~^\d+$~', trim( $headers['age'] ) ) ) {
+			$ages[ isset( $headers['cf-cache-status'] ) ? 'Cloudflare' : 'cache in front' ] = (int) trim( $headers['age'] );
+		}
+
+		if ( isset( $headers['x-cache-ctime'] ) && preg_match( '~^\d+$~', trim( $headers['x-cache-ctime'] ) ) && (int) trim( $headers['x-cache-ctime'] ) <= $now ) {
+			$ages['host cache'] = $now - (int) trim( $headers['x-cache-ctime'] );
+		}
+
 		$reading = array(
 			'url'     => $url,
 			'code'    => (int) $code,
 			'ms'      => (int) $ms,
 			'layers'  => $layers,
 			'age'     => $age,
+			'ages'    => $ages,
 			'max_ttl' => $max_ttl,
 			'hits'    => isset( $headers['x-cache'] ) && preg_match( '~HIT:\s*(\d+)~i', $headers['x-cache'], $m ) ? (int) $m[1] : null,
 			// NitroPack writes this into every page it serves, and turns FRESH into STALE when it
