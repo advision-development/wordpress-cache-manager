@@ -42,6 +42,13 @@ final class ADVCM_Controller {
 	/** How many per-URL clears one person may start in a minute. */
 	const URL_JOBS_PER_MINUTE = 10;
 
+	/** Page clears a minute from everybody together: ten editors are not ten times the load. */
+	const URL_JOBS_PER_MINUTE_SITE = 30;
+
+	/** Whole-site clears an hour, whoever starts them, and where their times are kept. */
+	const SITE_WIDE_PER_HOUR = 4;
+	const SITE_WIDE_LOG      = 'advcm_site_wide_log';
+
 	/** The most a URL list may weigh, in bytes. Fifty URLs of 2 KB each fit with room. */
 	const MAX_INPUT = 110000;
 
@@ -68,42 +75,46 @@ final class ADVCM_Controller {
 	}
 
 	/**
-	 * A link that purges one URL (the admin bar's "purge this page").
+	 * Whether this request is a POST. A clear changes the site, so it is never a link: a link's
+	 * nonce ends up in access logs and browser history (security review, 2026-10-20).
+	 *
+	 * @return bool
+	 */
+	public static function posted() {
+		return isset( $_SERVER['REQUEST_METHOD'] ) && 'POST' === strtoupper( (string) $_SERVER['REQUEST_METHOD'] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- compared, never used.
+	}
+
+	/**
+	 * Where the admin bar's "Clear this page" posts to. No nonce: admin_bar_confirm() posts it.
 	 *
 	 * @param string $url The page.
 	 * @return string
 	 */
 	public static function purge_url_link( $url ) {
-		return wp_nonce_url(
-			add_query_arg(
-				array(
-					'action' => self::ACTION,
-					'scope'  => 'urls',
-					'mode'   => ADVCM_Modes::recommended( 'urls' ),
-					'urls'   => rawurlencode( $url ),
-				),
-				self::url()
+		return add_query_arg(
+			array(
+				'action' => self::ACTION,
+				'scope'  => 'urls',
+				'mode'   => ADVCM_Modes::recommended( 'urls' ),
+				'urls'   => rawurlencode( $url ),
 			),
-			self::ACTION
+			self::url()
 		);
 	}
 
 	/**
-	 * A link that purges the site.
+	 * Where the admin bar's "Clear the whole site" posts to. No nonce, as above.
 	 *
 	 * @return string
 	 */
 	public static function purge_site_link() {
-		return wp_nonce_url(
-			add_query_arg(
-				array(
-					'action' => self::ACTION,
-					'scope'  => 'all',
-					'mode'   => ADVCM_Modes::recommended( 'all' ),
-				),
-				self::url()
+		return add_query_arg(
+			array(
+				'action' => self::ACTION,
+				'scope'  => 'all',
+				'mode'   => ADVCM_Modes::recommended( 'all' ),
 			),
-			self::ACTION
+			self::url()
 		);
 	}
 
@@ -144,6 +155,10 @@ final class ADVCM_Controller {
 	public static function handle() {
 		if ( ! current_user_can( ADVCM_Capabilities::PURGE ) ) {
 			wp_die( esc_html__( 'You are not allowed to clear the cache on this site.', 'advcm' ), '', array( 'response' => 403 ) );
+		}
+
+		if ( ! self::posted() ) {
+			wp_die( esc_html__( 'A clear is sent from a button, not opened as a link.', 'advcm' ), '', array( 'response' => 405 ) );
 		}
 
 		check_admin_referer( self::ACTION );
@@ -312,6 +327,44 @@ final class ADVCM_Controller {
 			}
 		}
 
+		// Since 0.5.1, at most SITE_WIDE_PER_HOUR an hour as well: every editor may clear the whole
+		// site, and a purge every two minutes, held for hours, keeps every page un-optimized and
+		// the origin under load. From the security review of 2026-10-20.
+		$hour = array_values(
+			array_filter(
+				array_map( 'intval', (array) get_option( self::SITE_WIDE_LOG, array() ) ),
+				function ( $at ) {
+					return $at > time() - HOUR_IN_SECONDS;
+				}
+			)
+		);
+
+		if ( count( $hour ) >= self::SITE_WIDE_PER_HOUR ) {
+			return sprintf(
+				/* translators: %d: how many. */
+				__( 'The whole site has been cleared %d times in the last hour, the most allowed. Clear the pages that need it instead, or wait.', 'advcm' ),
+				count( $hour )
+			);
+		}
+
+		$refusal = self::site_wide_gap();
+
+		if ( '' === $refusal ) {
+			// At most SITE_WIDE_PER_HOUR entries: only the last hour's are kept, and a full hour
+			// was refused above.
+			$hour[] = time();
+			update_option( self::SITE_WIDE_LOG, $hour, false );
+		}
+
+		return $refusal;
+	}
+
+	/**
+	 * The two-minute gap between whole-site clears, claimed when it allows one.
+	 *
+	 * @return string Why not, or empty.
+	 */
+	private static function site_wide_gap() {
 		// The last site-wide start lives in its own row, not in the job history: the history is a
 		// short buffer that a run of small clears can push a site-wide one out of, and the rate
 		// limit with it. add_option() inserts only when the row is absent, so two presses at the
@@ -354,7 +407,17 @@ final class ADVCM_Controller {
 			);
 		}
 
+		// And everybody together: each person's limit times every editor is no limit at all.
+		$site = (int) get_transient( 'advcm_rate_site' );
+
+		if ( $site >= self::URL_JOBS_PER_MINUTE_SITE ) {
+			return __( 'This site has had as many page clears this minute as it allows. Wait a moment.', 'advcm' );
+		}
+
+		// Read and written, not claimed: two presses in the same instant can both pass. The cost
+		// is one clear over the limit, not a way past it.
 		set_transient( $key, $count + 1, MINUTE_IN_SECONDS );
+		set_transient( 'advcm_rate_site', $site + 1, MINUTE_IN_SECONDS );
 
 		return '';
 	}

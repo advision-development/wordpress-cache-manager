@@ -30,6 +30,9 @@ final class ADVCM_Urls {
 	/** How many refused entries are kept, by name, in a job. */
 	const MAX_REFUSED = 20;
 
+	/** Paths that are WordPress itself, not pages: admin, login, the APIs, cron, core and code. */
+	const MACHINERY = '~^/(wp-admin(/|$)|wp-login\.php|wp-json(/|$)|xmlrpc\.php|wp-cron\.php|wp-includes/|wp-content/(plugins|themes|mu-plugins)/)~i';
+
 	/**
 	 * Split raw input into accepted absolute URLs and refused entries.
 	 *
@@ -143,10 +146,17 @@ final class ADVCM_Urls {
 			return '';
 		}
 
-		$path  = isset( $parts['path'] ) ? $parts['path'] : '/';
+		$path  = self::clean_path( isset( $parts['path'] ) ? $parts['path'] : '/' );
 		$query = isset( $parts['query'] ) ? '?' . $parts['query'] : '';
 
-		return $origin . self::clean_path( $path ) . $query;
+		// WordPress's own machinery is never a cached page, and the probe and the warm-up request
+		// accepted URLs from the server's own address: an editor naming one would reach whatever
+		// on the site trusts that address. From the security review of 2026-10-20.
+		if ( preg_match( self::MACHINERY, $path ) || false !== stripos( $query, 'rest_route=' ) ) {
+			return '';
+		}
+
+		return $origin . $path . $query;
 	}
 
 	/**

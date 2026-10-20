@@ -8,6 +8,7 @@
 
 $GLOBALS['user_id']  = 7;
 $GLOBALS['logins']   = array( 7 => 'ed', 9 => 'admin' );
+$GLOBALS['names']    = array( 7 => 'Ed Itor', 9 => 'Site Admin' );
 $GLOBALS['autoload'] = array();
 
 function get_current_user_id() {
@@ -17,7 +18,7 @@ function get_current_user_id() {
 function wp_get_current_user() {
 	$id = $GLOBALS['user_id'];
 
-	return (object) array( 'ID' => $id, 'user_login' => isset( $GLOBALS['logins'][ $id ] ) ? $GLOBALS['logins'][ $id ] : '' );
+	return (object) array( 'ID' => $id, 'user_login' => isset( $GLOBALS['logins'][ $id ] ) ? $GLOBALS['logins'][ $id ] : '', 'display_name' => isset( $GLOBALS['names'][ $id ] ) ? $GLOBALS['names'][ $id ] : '' );
 }
 
 function update_option( $name, $value, $autoload = null ) {
@@ -65,13 +66,15 @@ ADVCM_Log::add( 'auto', 'rule_added', 'a picks is published', 'off', 'on' );
 
 $record = ADVCM_Log::recent( 'auto' )[0];
 
-check( 'a record names the person and when', 7 === $record['user'] && 'ed' === $record['login'] && abs( time() - $record['at'] ) < 5 );
+check( 'a record names the person and when', 7 === $record['user'] && 'Ed Itor' === $record['name'] && abs( time() - $record['at'] ) < 5 );
 check( 'and what changed, before and after', 'rule_added' === $record['action'] && 'off' === $record['before'] && 'on' === $record['after'] );
 check( 'the row is not autoloaded', false === $GLOBALS['autoload'][ ADVCM_Log::OPTION ] );
 
-unset( $GLOBALS['logins'][7] );
+unset( $GLOBALS['logins'][7], $GLOBALS['names'][7] );
 
-check( 'a person deleted since still reads by the login they had', 'ed' === ADVCM_Log::recent( 'auto' )[0]['login'] );
+check( 'a person deleted since still reads by the name they had', 'Ed Itor' === ADVCM_Log::recent( 'auto' )[0]['name'] );
+
+$GLOBALS['names'][7] = 'Ed Itor';
 
 ADVCM_Log::add( 'settings', 'changed', 'long', str_repeat( 'é', 500 ), 'short' );
 
@@ -114,5 +117,15 @@ $GLOBALS['options'][ ADVCM_Log::OPTION ] = 'not a list';
 ADVCM_Log::add( 'clear', 'started', 'after a broken row' );
 
 check( 'a broken row is started again rather than failing', 1 === count( ADVCM_Log::recent( 'clear' ) ) );
+
+// -------------------------------------------------- no login names shown (security)
+
+$GLOBALS['options'] = array();
+$GLOBALS['user_id'] = 7;
+ADVCM_Log::add( 'auto', 'x', 'y' );
+
+$record = ADVCM_Log::recent( 'auto' )[0];
+
+check( 'a record keeps the person\'s display name, not their login: editors read this log', 'Ed Itor' === $record['name'] && ! isset( $record['login'] ) );
 
 finish();

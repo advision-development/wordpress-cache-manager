@@ -26,9 +26,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # Only a commit that is already on main can be released. A tag pushed on a branch — by a
-      # collaborator, a stolen token, a mistake — would otherwise be built and installed across
-      # the fleet without ever having been through a pull request.
+      # Only a commit that is already on main can be released: a tag pushed on a branch by
+      # mistake is not built. This is not a defence against someone with write access. A tag
+      # runs the release.yml of the commit it points at, so a branch whose workflow drops this
+      # check passes it, and main itself is only as safe as its protection. What stops a
+      # malicious release is in the repository settings: a ruleset on v* tags, a protected main,
+      # immutable releases and a reviewed `release` environment (security review, 2026-10-20).
       - name: The tagged commit must be on main
         run: |
           if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then

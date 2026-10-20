@@ -69,8 +69,13 @@ function admin_url( $path = '' ) {
 	return 'https://example.test/wp-admin/' . $path;
 }
 
-function add_query_arg( $args, $url ) {
-	return $url . '?' . http_build_query( $args );
+function add_query_arg( $args, $url, $third = null ) {
+	// Both shapes WordPress takes: ( array, url ) and ( key, value, url ).
+	if ( ! is_array( $args ) ) {
+		return $third . ( false === strpos( (string) $third, '?' ) ? '?' : '&' ) . rawurlencode( $args ) . '=' . rawurlencode( $url );
+	}
+
+	return $url . ( false === strpos( $url, '?' ) ? '?' : '&' ) . http_build_query( $args );
 }
 
 function current_user_can( $cap ) {
@@ -83,6 +88,14 @@ function wp_get_current_user() {
 
 function sanitize_key( $key ) {
 	return preg_replace( '~[^a-z0-9_\-]~', '', strtolower( (string) $key ) );
+}
+
+function is_admin() {
+	return false;
+}
+
+function wp_nonce_url( $url, $action = -1 ) {
+	return $url . '&_wpnonce=nonce-' . $action;
 }
 
 function wp_unslash( $value ) {
@@ -412,5 +425,28 @@ $help = screen_part( 'render_help', array( 'clear' ) );
 check( 'Clear explains every mode this site offers, from the modes themselves', false !== strpos( $help, ADVCM_Modes::get( 'fast' )['label'] ) && false !== strpos( $help, ADVCM_Modes::get( 'fast' )['summary'] ) );
 check( 'the help box is drawn on its own guard, so it never takes a tab with it', false !== strpos( file_get_contents( ADVCM_DIR . 'includes/class-screen.php' ), "'screen:help'" ) );
 check( 'the change-log box says what it is', false !== strpos( screen_part( 'render_log', array( 'auto' ) ), 'Who changed what on this tab' ) );
+
+// ------------------------------------------------ the admin bar posts its clears (security)
+
+// From the security review of 2026-10-20: the links carried the nonce in the URL, into access
+// logs and browser history. They now hold no nonce; a listener posts it.
+$bar = new class() {
+	public $nodes = array();
+
+	public function add_node( $node ) {
+		$this->nodes[ $node['id'] ] = $node;
+	}
+};
+
+$_SERVER['REQUEST_URI'] = '/analysis/';
+ADVCM_Screen::admin_bar( $bar );
+
+check( 'the admin bar\'s clear links carry no nonce', isset( $bar->nodes['advcm-page'], $bar->nodes['advcm-site'] ) && false === strpos( $bar->nodes['advcm-page']['href'] . $bar->nodes['advcm-site']['href'], '_wpnonce' ) );
+
+ob_start();
+ADVCM_Screen::admin_bar_confirm();
+$script = ob_get_clean();
+
+check( 'a listener posts them, with the nonce in the form, the whole site after asking', false !== strpos( $script, '"post"' ) && false !== strpos( $script, 'nonce-' . ADVCM_Controller::ACTION ) && false !== strpos( $script, '#wp-admin-bar-advcm-page > a' ) && false !== strpos( $script, 'confirm(' ) );
 
 finish();

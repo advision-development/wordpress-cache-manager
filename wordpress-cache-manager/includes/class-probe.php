@@ -58,7 +58,9 @@ final class ADVCM_Probe {
 		$url     = $parsed['accepted'][0];
 		$started = microtime( true );
 
-		$response = wp_remote_get(
+		// The safe variant: on top of the origin check above, WordPress refuses an address that
+		// resolves to a private network unless it is the site's own host.
+		$response = wp_safe_remote_get(
 			$url,
 			array(
 				'timeout'     => (int) $timeout,

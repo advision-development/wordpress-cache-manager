@@ -887,7 +887,8 @@ final class ADVCM_Runner {
 		try {
 			return call_user_func( $call );
 		} catch ( Throwable $e ) {
-			$error = get_class( $e ) . ': ' . $e->getMessage();
+			// Shown to editors in History: another plugin's message, without the server's paths.
+			$error = get_class( $e ) . ': ' . ADVCM_Safe::without_paths( $e->getMessage() );
 
 			return null;
 		}

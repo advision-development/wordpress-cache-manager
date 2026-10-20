@@ -21,6 +21,7 @@ try {
 	delete_option( 'advcm_layers' );
 	delete_option( 'advcm_last_error' );
 	delete_option( 'advcm_site_wide_at' );
+	delete_option( 'advcm_site_wide_log' );
 	delete_option( 'advcm_rules' );
 	delete_option( 'advcm_rules_last' );
 	delete_option( 'advcm_rules_paused' );

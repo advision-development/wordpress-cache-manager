@@ -107,6 +107,10 @@ final class ADVCM_Screen {
 	 * after the bar renders, with the message as a JSON literal in a script, where nothing
 	 * re-escapes it.
 	 *
+	 * Since 0.5.1 both clears are posted from here: the links hold no nonce, and a click sends a
+	 * form with it, so the nonce stays out of access logs and browser history (security review,
+	 * 2026-10-20). Without JavaScript the links do nothing but say they need a button.
+	 *
 	 * @return void
 	 */
 	public static function admin_bar_confirm() {
@@ -114,7 +118,10 @@ final class ADVCM_Screen {
 			return;
 		}
 
-		echo '<script>(function(){var a=document.querySelector("#wp-admin-bar-advcm-site > a");if(!a){return;}var m=' . wp_json_encode( self::site_warning() ) . ';a.addEventListener("click",function(e){if(!window.confirm(m)){e.preventDefault();}});})();</script>';
+		echo '<script>(function(){var n=' . wp_json_encode( wp_create_nonce( ADVCM_Controller::ACTION ) ) . ',m=' . wp_json_encode( self::site_warning() ) . ';'
+			. 'var post=function(a){var f=document.createElement("form");f.method="post";f.action=a.href;var i=document.createElement("input");i.type="hidden";i.name="_wpnonce";i.value=n;f.appendChild(i);document.body.appendChild(f);f.submit();};'
+			. '[["#wp-admin-bar-advcm-page > a",false],["#wp-admin-bar-advcm-site > a",true]].forEach(function(s){var a=document.querySelector(s[0]);if(!a){return;}a.addEventListener("click",function(e){e.preventDefault();if(s[1]&&!window.confirm(m)){return;}post(a);});});'
+			. '})();</script>';
 	}
 
 	/**
@@ -2205,6 +2212,31 @@ final class ADVCM_Screen {
 	}
 
 	/**
+	 * Who a change-log record names: the person's display name as it is now, or as it was when
+	 * recorded. Records before 0.5.1 stored the login; for an account that still exists the
+	 * display name is shown instead, so a login reaches the screen only for an account deleted
+	 * since.
+	 *
+	 * @param array $record Record.
+	 * @return string
+	 */
+	private static function log_who( array $record ) {
+		$user = ! empty( $record['user'] ) && function_exists( 'get_userdata' ) ? get_userdata( (int) $record['user'] ) : false;
+
+		if ( $user && '' !== (string) $user->display_name ) {
+			return (string) $user->display_name;
+		}
+
+		foreach ( array( 'name', 'login' ) as $key ) {
+			if ( isset( $record[ $key ] ) && '' !== (string) $record[ $key ] ) {
+				return (string) $record[ $key ];
+			}
+		}
+
+		return __( 'WordPress', 'advcm' );
+	}
+
+	/**
 	 * Who changed what in a tab's section: its last few records.
 	 *
 	 * @param string $section The tab, which is the section.
@@ -2231,7 +2263,7 @@ final class ADVCM_Screen {
 		echo '</tr></thead><tbody>';
 
 		foreach ( $records as $record ) {
-			$who    = '' !== $record['login'] ? $record['login'] : __( 'WordPress', 'advcm' );
+			$who    = self::log_who( $record );
 			$change = '' === $record['before'] && '' === $record['after'] ? '' : $record['before'] . ' → ' . $record['after'];
 
 			echo '<tr><td>' . esc_html( gmdate( 'Y-m-d H:i', (int) $record['at'] ) ) . '</td><td>' . esc_html( $who ) . '</td><td>' . esc_html( $record['summary'] ) . '</td><td>' . esc_html( $change ) . '</td></tr>';

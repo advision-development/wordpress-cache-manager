@@ -121,4 +121,16 @@ check( 'an archive resolves to nothing', ! in_array( 0, $ids, true ) );
 check( 'the home page resolves to the page set as the front page', in_array( 99, $ids, true ) );
 check( 'and a post named twice is one id', 2 === count( $ids ), implode( ',', $ids ) );
 
+// ------------------------------------------------- WordPress's own machinery (security)
+
+// From the security review of 2026-10-20: the probe and the warm-up request these URLs from the
+// server's own address, so an editor could reach anything on the site that trusts that address.
+// None of them is a cached page.
+foreach ( array( '/wp-admin/', '/wp-admin/options.php', '/wp-login.php', '/wp-json/wp/v2/users', '/?rest_route=/wp/v2/users', '/xmlrpc.php', '/wp-cron.php', '/wp-includes/version.php', '/wp-content/plugins/x/readme.txt', '/WP-ADMIN/' ) as $path ) {
+	check( 'WordPress\'s own ' . $path . ' is refused', null === one( $path ), (string) one( $path ) );
+}
+
+check( 'a page under wp-content uploads is still a page', null !== one( '/wp-content/uploads/2026/10/a.jpg' ) );
+check( 'and a post whose slug starts like one is too', null !== one( '/wp-admin-tips/' ) );
+
 finish();

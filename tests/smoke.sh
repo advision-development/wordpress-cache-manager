@@ -219,6 +219,21 @@ else
 	fail "the admin bar's whole-site clear has no working confirmation"
 fi
 
+# Since 0.5.1 the admin bar's clears are posted: no nonce in their links (it went to access logs
+# and browser history), a GET of one refused, and the listener's POST with its nonce clears.
+bar_links="$(grep -oE 'id="wp-admin-bar-advcm-(page|site)"[^>]*><a[^>]*href="[^"]*"' <<< "${front}")"
+page_link="$(grep -oE 'id="wp-admin-bar-advcm-page"[^>]*><a[^>]*href="[^"]*"' <<< "${front}" | sed 's/.*href="//; s/"$//; s/&#038;/\&/g; s/&amp;/\&/g')"
+bar_nonce="$(grep -oE 'var n="[a-f0-9]+"' <<< "${front}" | head -1 | sed 's/var n="//; s/"//')"
+get_code="$(curl -s -o /dev/null -w '%{http_code}' -b "${jar}" "${page_link}&_wpnonce=${bar_nonce}")"
+before="$(wpcli wp option get advcm_jobs --format=json 2>/dev/null | grep -o '"id"' | wc -l | tr -d ' ')"
+curl -s -o /dev/null -b "${jar}" -d "_wpnonce=${bar_nonce}" "${page_link}"
+after="$(wpcli wp option get advcm_jobs --format=json 2>/dev/null | grep -o '"id"' | wc -l | tr -d ' ')"
+if [[ -n "${page_link}" && -n "${bar_nonce}" ]] && ! grep -q '_wpnonce' <<< "${bar_links}" && [[ "${get_code}" == "405" && "${after}" -gt "${before}" ]]; then
+	pass "the admin bar's clears hold no nonce in their links, refuse a GET, and clear when posted"
+else
+	fail "the admin bar's posted clears: link '${page_link}', nonce '${bar_nonce}', GET ${get_code}, jobs ${before} -> ${after}"
+fi
+
 # The menu is CacheManager; and "Leave NitroPack as it is" is offered only where NitroPack is,
 # which this site does not have.
 clear_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=clear")"
