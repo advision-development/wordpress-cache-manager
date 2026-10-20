@@ -22,6 +22,7 @@ and the code disagree.
 |---|---|---|
 | Cron (single) | `advcm_continue` | args `[job id]`; the next step of a background clear. Registered on every request, removed on deactivation and uninstall |
 | Cron (single) | `advcm_auto_flush` | no args; the auto-clear, about 60 s after a post matching a rule is published — or, when WP-Cron is more than 2 minutes behind, timestamped just before its oldest due event, so it runs first. Scheduled only when a rule is on; removed on deactivation and uninstall |
+| Cron (single) | `advcm_listings_scan` | no args; since 0.5.0, the next batch of a listings scan a person started: up to 20 Elementor documents within 8 s. Scheduled only by a press; reads only. Removed on deactivation and uninstall |
 | Option | `advcm_jobs` | not autoloaded; the last 20 clears people started (automatic ones are in `advcm_jobs_auto` since 0.4.0) |
 | Option | `advcm_jobs_auto` | not autoloaded; since 0.4.0, the last 20 automatic clears, apart from the clears people started |
 | Option | `advcm_layers` | not autoloaded; per layer, last clear |
@@ -34,6 +35,8 @@ and the code disagree.
 | Option | `advcm_settings` | not autoloaded; since 0.4.0, the Settings tab: own-page ignores unchanged saves, the post types auto-clear leaves out, the NitroPack choice for new rules, whether a clear of some pages measures their cache age first (0.5.0), the version last seen. Read in a post save only after a rule is on, the save is visible and auto-clear is not paused |
 | Option | `advcm_freshness` | not autoloaded; since 0.5.0, how old each page's cached copy was when a clear somebody started cleared it: the last 100 pages (URL cut to 2048 characters, job, who, HTTP code, each layer's age, NitroPack's state). At most 10 pages per job, never for a whole-site clear |
 | Option | `advcm_freshness_auto` | not autoloaded; since 0.5.0, the same for automatic clears, the last 100 pages, kept apart |
+| Option | `advcm_listings` | not autoloaded; since 0.5.0, the last listings scan: who started it, a cursor (a post id) and counters, at most 300 findings (red, amber, custom query; strings cut), green ones only counted |
+| Option | `advcm_lock_listings` | not autoloaded; since 0.5.0, while a listings batch runs, naming the document it reads |
 | Option | `advcm_log` | not autoloaded; since 0.4.0, who changed what: the last 20 changes per tab section, each with the person, the time and the value before and after (cut to 200 characters). Written only by requests a person made |
 | Option | `advcm_rules_paused` | not autoloaded; while an administrator has paused every auto-clear rule |
 | Site transient | `advcm_release` | updater's cached GitHub answer |
@@ -42,6 +45,7 @@ and the code disagree.
 | Transient | `advcm_rate_<user id>` | per-URL clears in the last minute, at most 10 |
 | Capability | `advcm_purge`, `advcm_purge_hard` | granted by a `user_has_cap` filter from `edit_others_posts` / `manage_options`; never stored |
 | admin-post | `advcm_purge`, `advcm_resume`, `advcm_check_release` | logged in, capability and nonce |
+| admin-post | `advcm_listings` | logged in, `advcm_purge` and nonce; since 0.5.0, starts a listings scan on the Freshness tab |
 | admin-post | `advcm_settings` | logged in, `advcm_purge_hard` and nonce; since 0.4.0, saves the Settings tab, pauses and resumes auto-clear, switches each post's own page |
 | admin-post | `advcm_rules` | logged in, `advcm_purge_hard` and nonce; changes auto-clear rules, or pauses and resumes them all |
 | Hook | `wp_after_insert_post` | marks the auto-clear rules a saved post triggers. One option read when no rule is on; never clears in the save request |

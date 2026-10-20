@@ -24,6 +24,13 @@
       "single": true,
       "why": "the auto-clear: about 60 seconds after a post matching a rule is published, or, when WP-Cron is more than 2 minutes behind, timestamped just before its oldest due event so it runs first; clears the URLs every waiting rule names, as one per-URL job. Scheduled only when a rule exists and is switched on",
       "callback": "ADVCM_Auto::flush, registered on every request"
+    },
+    {
+      "hook": "advcm_listings_scan",
+      "args": [],
+      "single": true,
+      "why": "since 0.5.0, the next batch of a listings scan somebody started on the Freshness tab: up to 20 Elementor documents within 8 seconds, then the next event, until done. Scheduled only by a press; reads, never writes content",
+      "callback": "ADVCM_Listings::cron, registered on every request"
     }
   ],
   "options": [
@@ -40,6 +47,8 @@
     { "name": "advcm_log", "autoload": false, "why": "since 0.4.0, who changed what: per tab section, the last 20 changes a person made (time, user and login, action, one-line summary, value before and after, each cut to 200 characters). Written only by requests a person made, never by WP-Cron" },
     { "name": "advcm_freshness", "autoload": false, "why": "since 0.5.0, how old each page's cached copy was when a clear somebody started cleared it: the last 100 pages (time, URL cut to 2048 characters, job id, who, HTTP code, age and each layer's age, NitroPack's state and copy age). Written by the clear itself, before its first stage; at most 10 pages per job, never for a whole-site clear" },
     { "name": "advcm_freshness_auto", "autoload": false, "why": "since 0.5.0, the same for automatic clears, the last 100 pages, kept apart so auto-clear never pushes out what people cleared" },
+    { "name": "advcm_listings", "autoload": false, "why": "since 0.5.0, the last listings scan: who started it, a cursor (a post id) and counters, and at most 300 findings (red, amber and custom-query listings, each string cut; green ones only counted). Replaced by the next scan" },
+    { "name": "advcm_lock_listings", "autoload": false, "why": "since 0.5.0, one row while a listings batch runs, naming the document it is reading so a run that dies is stepped over; deleted when the batch ends" },
     { "name": "advcm_rules_paused", "autoload": false, "why": "present while an administrator has paused every auto-clear rule; holds when. Read on a post save only when a rule is switched on" }
   ],
   "wordpress_own_names_touched": [
@@ -64,7 +73,9 @@
     { "type": "admin-post", "action": "advcm_rules", "auth": "logged in, advcm_purge_hard, nonce", "why": "add, switch on or off, or delete an auto-clear rule; switch the own-page setting on or off; pause or resume them all" },
     { "type": "admin-ajax", "action": "advcm_tick", "auth": "logged in (wp_ajax_ only, no nopriv), advcm_purge, nonce", "why": "the status screen moves a due background clear where the site's cron cannot wake" },
     { "type": "admin-page", "slug": "advcm-cache", "parent": "tools.php" },
-    { "type": "admin-bar", "nodes": ["advcm", "advcm-page", "advcm-site"] }
+    { "type": "admin-bar", "nodes": ["advcm", "advcm-page", "advcm-site",
+    { "type": "admin-post", "action": "advcm_listings", "auth": "logged in, advcm_purge, nonce; since 0.5.0, starts a listings scan" }
+  ] }
   ],
   "hooks_on_content": [
     { "hook": "wp_after_insert_post", "why": "marks the auto-clear rules a saved post triggers; returns after one option read when no rule is switched on, and never clears anything in the save request" }

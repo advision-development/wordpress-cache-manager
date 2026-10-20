@@ -41,7 +41,7 @@ final class ADVCM_Log {
 	const MAX_CHARS = 200;
 
 	/** One section per tab. */
-	const SECTIONS = array( 'status', 'clear', 'check', 'history', 'auto', 'settings' );
+	const SECTIONS = array( 'status', 'clear', 'check', 'history', 'freshness', 'auto', 'settings' );
 
 	/**
 	 * Record something a person did.

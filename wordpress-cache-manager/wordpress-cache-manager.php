@@ -80,6 +80,9 @@ try {
 	// Off until an administrator writes a rule; with none, a post save costs one option read.
 	ADVCM_Auto::register();
 
+	// The listings scan: its WP-Cron event and its button. Reads documents only when pressed.
+	ADVCM_Listings::register();
+
 	// The Settings tab's form. The settings themselves are read where they are used.
 	ADVCM_Settings::register();
 
@@ -113,6 +116,7 @@ function advcm_deactivate() {
 		// as an argument, and the second only clears events whose arguments match.
 		wp_unschedule_hook( 'advcm_continue' );
 		wp_unschedule_hook( 'advcm_auto_flush' );
+		wp_unschedule_hook( 'advcm_listings_scan' );
 	} catch ( Throwable $e ) {
 		error_log( '[advcm] deactivate: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- deactivating must never fail.
 	}
