@@ -402,8 +402,8 @@ final class ADVCM_Screen {
 				}
 
 				$parts[ __( 'Limits', 'advcm' ) ] = array(
-					/* translators: 1: clears a minute, 2: minutes. */
-					sprintf( __( 'Each person can start %1$d page clears a minute, and a whole-site clear can start at most every %2$d minutes.', 'advcm' ), ADVCM_Controller::URL_JOBS_PER_MINUTE, (int) ( ADVCM_Controller::SITE_WIDE_GAP / MINUTE_IN_SECONDS ) ),
+					/* translators: 1: clears a minute, 2: clears a minute, 3: minutes, 4: clears an hour. */
+					sprintf( __( 'Each person can start %1$d page clears a minute, and everybody together %2$d page clears a minute. A whole-site clear can start at most every %3$d minutes and %4$d times an hour; past that, the refusal says when the next can start.', 'advcm' ), ADVCM_Controller::URL_JOBS_PER_MINUTE, ADVCM_Controller::URL_JOBS_PER_MINUTE_SITE, (int) ( ADVCM_Controller::SITE_WIDE_GAP / MINUTE_IN_SECONDS ), ADVCM_Controller::SITE_WIDE_PER_HOUR ),
 					__( 'Balanced and Careful run through WP-Cron. On a site whose WP-Cron is late they start late; History shows how long they waited.', 'advcm' ),
 				);
 
@@ -481,6 +481,7 @@ final class ADVCM_Screen {
 						),
 						__( 'How it works', 'advcm' )   => array(
 							__( 'Measurements: before each clear of some pages, each page (at most 10, within 20 seconds) is asked how old its cached copy is. They are added up per page (200 pages) and per day (the last 30), so a month of clears reads as a few lists. A whole-site clear is never measured.', 'advcm' ),
+							__( 'It only shows. It never clears a page, adds a rule or changes a setting: a link such as "add one" opens the tab where a person decides.', 'advcm' ),
 							__( 'Listings scan: when somebody presses Scan listings, WP-Cron reads every published Elementor page and template, 20 at a time, finds each post list or loop grid filtered by category or tag, and looks up the newest post that filter matches. It changes nothing and runs one at a time.', 'advcm' ),
 						),
 						__( 'What it shows', 'advcm' )  => array(
@@ -1826,8 +1827,9 @@ final class ADVCM_Screen {
 			return;
 		}
 
-		/* translators: 1: pages, 2: days, 3: past the target, 4: hours, 5: under 10 minutes, 6: no age. */
+		/* translators: 1: pages, 2: days. */
 		echo '<p><strong>' . esc_html( sprintf( _n( '%1$d pages measured in %2$d day:', '%1$d pages measured in %2$d days:', $sum['days'], 'advcm' ), $sum['n'], $sum['days'] ) ) . '</strong> ';
+		/* translators: 1: past the target, 2: hours, 3: under 10 minutes, 4: no age. */
 		echo esc_html( sprintf( __( '%1$d past the %2$d-hour target, %3$d found a copy under 10 minutes, %4$d where no cache said its age.', 'advcm' ), $sum['over'], $target, $sum['young'], $sum['unk'] ) ) . '</p>';
 	}
 

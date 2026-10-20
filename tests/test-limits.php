@@ -84,6 +84,7 @@ $GLOBALS['options'][ ADVCM_Controller::SITE_WIDE_AT ] = $t - ADVCM_Controller::S
 
 check( 'whole-site clears up to the hourly limit go', $ok );
 check( 'the next within the hour does not, whoever asks', false !== strpos( ADVCM_Controller::busy( $site ), 'last hour' ) );
+check( 'and says when the next is allowed, and what to do meanwhile', 1 === preg_match( '~in (about )?\d+ minutes?~', ADVCM_Controller::busy( $site ) ) && false !== strpos( ADVCM_Controller::busy( $site ), 'host' ) );
 
 $GLOBALS['options'][ ADVCM_Controller::SITE_WIDE_LOG ] = array_fill( 0, ADVCM_Controller::SITE_WIDE_PER_HOUR, $t - HOUR_IN_SECONDS - 1 );
 

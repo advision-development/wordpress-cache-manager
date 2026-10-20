@@ -58,6 +58,12 @@ final class ADVCM_Freshness {
 	const STATS_PAGES = 200;
 	const STATS_DAYS  = 30;
 
+	/**
+	 * Characters of a URL kept as a page's key in the sums. Half a row's URL: two hundred keys of
+	 * 2,048 characters alone would be 400 KB, and no page anybody clears has a longer address.
+	 */
+	const STATS_URL_CHARS = 1024;
+
 	/** A copy younger than this, in seconds, was fresh when cleared. */
 	const YOUNG = 600;
 
@@ -276,7 +282,7 @@ final class ADVCM_Freshness {
 		$target = (int) ADVCM_Settings::get()['cache_target'] * HOUR_IN_SECONDS;
 
 		foreach ( $rows as $row ) {
-			$url = (string) $row['url'];
+			$url = substr( (string) $row['url'], 0, self::STATS_URL_CHARS );
 			$age = $row['age'];
 			$day = gmdate( 'Y-m-d', (int) $row['at'] );
 
@@ -292,13 +298,20 @@ final class ADVCM_Freshness {
 			$page['n']++;
 			$page[ $auto ? 'auto' : 'hand' ]++;
 			$page['last'] = max( $page['last'], (int) $row['at'] );
-			$page['rules'] = array_slice( array_values( array_unique( array_merge( $page['rules'], (array) $row['rules'] ) ) ), 0, 10 );
+			$page['rules'] = array_slice( array_values( array_unique( array_merge( $page['rules'], (array) $row['rules'] ) ) ), 0, 5 );
 
 			$stats['days'][ $day ]['n']++;
 
 			if ( null === $age ) {
 				$page['unk']++;
 				$stats['days'][ $day ]['unk']++;
+			} elseif ( 'exact' !== $row['how'] ) {
+				// "At most" is a bound — the time since this plugin last cleared the page — not an
+				// age: the copy may be minutes old. It proves a young copy, never an old one.
+				if ( $age < self::YOUNG ) {
+					$page['young']++;
+					$stats['days'][ $day ]['young']++;
+				}
 			} else {
 				$page['sum'] += $age;
 				$page['max']  = max( $page['max'], $age );
@@ -334,8 +347,17 @@ final class ADVCM_Freshness {
 			}
 		}
 
+		// The last 30 calendar days, not the last 30 days that had a clear: on a quiet site the
+		// latter would read months as a month.
+		$oldest = gmdate( 'Y-m-d', time() - ( self::STATS_DAYS - 1 ) * DAY_IN_SECONDS );
+
+		foreach ( array_keys( $stats['days'] ) as $day ) {
+			if ( $day < $oldest ) {
+				unset( $stats['days'][ $day ] );
+			}
+		}
+
 		ksort( $stats['days'] );
-		$stats['days'] = array_slice( $stats['days'], -self::STATS_DAYS, null, true );
 
 		update_option( self::STATS, $stats, false );
 	}
@@ -382,8 +404,11 @@ final class ADVCM_Freshness {
 			}
 		}
 
+		$own = self::own_on();
+
 		foreach ( $stats['pages'] as $url => $page ) {
-			$has_rule = isset( $ruled[ self::path( $url ) ] );
+			// Named by an enabled rule, or a post the own-page rule has been clearing.
+			$has_rule = isset( $ruled[ self::path( $url ) ] ) || ( $own && in_array( ADVCM_Auto::OWN, (array) $page['rules'], true ) );
 
 			if ( $page['over'] > 0 ) {
 				$out['over'][] = array( 'url' => $url, 'over' => $page['over'], 'n' => $page['n'], 'max' => $page['max'], 'has_rule' => $has_rule );
@@ -413,6 +438,17 @@ final class ADVCM_Freshness {
 		usort( $out['hand'], $sort( 'times', 'last' ) );
 
 		return $out;
+	}
+
+	/**
+	 * Whether "each post's own page" is switched on.
+	 *
+	 * @return bool
+	 */
+	private static function own_on() {
+		$rules = ADVCM_Auto::rules();
+
+		return isset( $rules[ ADVCM_Auto::OWN ] ) && $rules[ ADVCM_Auto::OWN ]['enabled'];
 	}
 
 	/**

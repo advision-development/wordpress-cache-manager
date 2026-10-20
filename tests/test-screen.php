@@ -414,6 +414,7 @@ check( 'History\'s legend shows the state badges as they look', false !== strpos
 
 $help = screen_part( 'render_help', array( 'freshness' ) );
 
+check( 'Freshness says it only shows, and never clears anything itself', false !== strpos( $help, 'never clears' ) );
 check( 'Freshness explains each label and the target from Settings', false !== strpos( $help, 'over 30 days' ) && false !== strpos( $help, '7–30 days' ) && false !== strpos( $help, 'broken filter' ) && false !== strpos( $help, '×N' ) && false !== strpos( $help, '3 hours' ) );
 
 $help = screen_part( 'render_help', array( 'check' ) );
@@ -422,6 +423,7 @@ check( 'a site without NitroPack is not told about NitroPack', false === strpos(
 
 $help = screen_part( 'render_help', array( 'clear' ) );
 
+check( 'Clear states every limit a person can meet', false !== strpos( $help, (string) ADVCM_Controller::SITE_WIDE_PER_HOUR . ' times an hour' ) && false !== strpos( $help, (string) ADVCM_Controller::URL_JOBS_PER_MINUTE_SITE . ' page clears a minute' ) );
 check( 'Clear explains every mode this site offers, from the modes themselves', false !== strpos( $help, ADVCM_Modes::get( 'fast' )['label'] ) && false !== strpos( $help, ADVCM_Modes::get( 'fast' )['summary'] ) );
 check( 'the help box is drawn on its own guard, so it never takes a tab with it', false !== strpos( file_get_contents( ADVCM_DIR . 'includes/class-screen.php' ), "'screen:help'" ) );
 check( 'the change-log box says what it is', false !== strpos( screen_part( 'render_log', array( 'auto' ) ), 'Who changed what on this tab' ) );

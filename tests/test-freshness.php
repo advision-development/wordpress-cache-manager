@@ -312,18 +312,93 @@ check( 'three hours unless somebody changed it', 3 === ( function () { $s = $GLO
 
 unset( $GLOBALS['options'][ ADVCM_Settings::OPTION ] );
 
+// ------------------------------------------- an "at most" is a bound, not an age (review)
+
+$GLOBALS['options'] = array();
+
+ADVCM_Freshness::use_prober(
+	function ( $url ) {
+		// A HIT with no Age and no ctime, five hours after this plugin last cleared the page.
+		return ADVCM_Probe::read( $url, 200, array( 'x-cache' => 'HIT: 1' ), 50, time() - 5 * HOUR_IN_SECONDS, time() );
+	}
+);
+
+ADVCM_Freshness::measure( job( 'm1', array( 'https://example.test/bound/' ) ) );
+
+$page = ADVCM_Freshness::stats()['pages']['https://example.test/bound/'];
+
+check( 'an "at most" age is never counted as past the target, nor as the oldest copy', 0 === $page['over'] && 0 === $page['max'] && 0 === $page['sum'] && 1 === $page['n'] );
+
+// ------------------------------------------- the own-page rule clears posts (review)
+
+$GLOBALS['options']['advcm_rules'] = array( 'own-page' => array( 'post_type' => '*', 'enabled' => true, 'own' => true, 'urls' => array() ) );
+$GLOBALS['options'][ ADVCM_Freshness::STATS ] = array(
+	'pages' => array( 'https://example.test/a-post/' => array( 'n' => 2, 'hand' => 0, 'auto' => 2, 'unk' => 0, 'young' => 0, 'over' => 2, 'max' => 5 * HOUR_IN_SECONDS, 'sum' => 10 * HOUR_IN_SECONDS, 'hsum' => 0, 'hk' => 0, 'last' => time(), 'rules' => array( 'own-page' ) ) ),
+	'days'  => array(),
+);
+
+check( 'a page each post\'s own page clears is not told it has no rule', true === ADVCM_Freshness::insights()['over'][0]['has_rule'] );
+
+$GLOBALS['options']['advcm_rules']['own-page']['enabled'] = false;
+
+check( 'unless own-page is switched off', false === ADVCM_Freshness::insights()['over'][0]['has_rule'] );
+
+ADVCM_Freshness::use_prober( $answer );
+
 // --------------------------------------------------------------------------- its caps
 
 $GLOBALS['options'] = array();
 
+/**
+ * A URL of exactly 2048 characters, the longest kept.
+ */
+function longest( $i ) {
+	$head = 'https://example.test/' . $i . '/';
+
+	return $head . str_repeat( 'p', ADVCM_Freshness::URL_CHARS - strlen( $head ) );
+}
+
+$many_rules = array();
+
+for ( $r = 1; $r <= 12; $r++ ) {
+	$many_rules[] = array( 'rule' => str_repeat( 'r', 38 ) . sprintf( '%02d', $r ), 'at' => time() );
+}
+
 for ( $i = 1; $i <= 260; $i++ ) {
 	$GLOBALS['ages'] = array( 10 );
-	ADVCM_Freshness::measure( job( 'c' . $i, array( 'https://example.test/' . str_repeat( 'p', 2000 ) . $i . '/' ) ) );
+	$big             = job( 'c' . $i, array( longest( $i ) ), 'auto' );
+	$big['options']  = array( 'triggers' => $many_rules );
+	ADVCM_Freshness::measure( $big );
 }
 
 $stats = ADVCM_Freshness::stats();
 
-check( 'at most 200 pages are summed: the one cleared longest ago goes first', ADVCM_Freshness::STATS_PAGES === count( $stats['pages'] ) && ! isset( $stats['pages'][ 'https://example.test/' . str_repeat( 'p', 2000 ) . '1/' ] ) );
+$key = function ( $url ) {
+	return substr( $url, 0, ADVCM_Freshness::STATS_URL_CHARS );
+};
+
+check( 'at most 200 pages are summed: the one cleared longest ago goes first', ADVCM_Freshness::STATS_PAGES === count( $stats['pages'] ) && ! isset( $stats['pages'][ $key( longest( 1 ) ) ] ) && isset( $stats['pages'][ $key( longest( 260 ) ) ] ) );
+check( 'each keyed by at most 1024 characters of its URL, with at most 5 rules', ADVCM_Freshness::STATS_URL_CHARS === strlen( (string) array_keys( $stats['pages'] )[0] ) && 5 === count( $stats['pages'][ $key( longest( 260 ) ) ]['rules'] ) );
+
+// The worst row: every page at the longest URL and five 40-character rules, every counter at
+// ten digits, and 30 days likewise. Measured, not estimated.
+$worst = get_option( ADVCM_Freshness::STATS );
+
+foreach ( $worst['pages'] as $url => $page ) {
+	foreach ( $page as $key => $value ) {
+		if ( ! is_array( $value ) ) {
+			$worst['pages'][ $url ][ $key ] = 9999999999;
+		}
+	}
+}
+
+for ( $d = 0; $d < ADVCM_Freshness::STATS_DAYS; $d++ ) {
+	$worst['days'][ gmdate( 'Y-m-d', time() - $d * DAY_IN_SECONDS ) ] = array( 'n' => 9999999999, 'unk' => 9999999999, 'young' => 9999999999, 'over' => 9999999999, 'max' => 9999999999 );
+}
+
+$size = strlen( serialize( $worst ) );
+
+check( 'the stats row\'s worst case stays under 500 KB, with room to spare', $size < 480 * 1024, round( $size / 1024 ) . ' KB' );
 
 // Times apart, so "longest ago" is a real choice: page 1 was cleared last, page 2 first.
 $seed = array();
@@ -340,6 +415,15 @@ $pages = ADVCM_Freshness::stats()['pages'];
 
 check( 'the page that goes is the one cleared longest ago, not the first one in the row', ! isset( $pages['https://example.test/s2/'] ) && isset( $pages['https://example.test/s1/'] ) && isset( $pages['https://example.test/new/'] ) );
 
+$GLOBALS['options'][ ADVCM_Freshness::STATS ]['days'] = array(
+	gmdate( 'Y-m-d', time() - 40 * DAY_IN_SECONDS ) => array( 'n' => 5, 'over' => 5, 'young' => 0, 'unk' => 0, 'max' => 0 ),
+	gmdate( 'Y-m-d', time() - 2 * DAY_IN_SECONDS )  => array( 'n' => 1, 'over' => 0, 'young' => 0, 'unk' => 0, 'max' => 0 ),
+);
+$GLOBALS['ages'] = array( 10 );
+ADVCM_Freshness::measure( job( 'd0', pages( 1 ) ) );
+
+check( 'a day older than 30 calendar days goes, however few days had clears since', array( gmdate( 'Y-m-d', time() - 2 * DAY_IN_SECONDS ), gmdate( 'Y-m-d' ) ) === array_keys( ADVCM_Freshness::stats()['days'] ) );
+
 $days = array();
 
 for ( $d = 0; $d < 40; $d++ ) {
@@ -351,9 +435,5 @@ $GLOBALS['ages'] = array( 10 );
 ADVCM_Freshness::measure( job( 'd1', pages( 1 ) ) );
 
 check( 'and the last 30 days', ADVCM_Freshness::STATS_DAYS === count( ADVCM_Freshness::stats()['days'] ) );
-
-$size = strlen( serialize( get_option( ADVCM_Freshness::STATS ) ) );
-
-check( 'the stats row stays under 500 KB even with every URL at its longest', $size < 500 * 1024, round( $size / 1024 ) . ' KB' );
 
 finish();

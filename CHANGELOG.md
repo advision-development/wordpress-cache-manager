@@ -6,11 +6,14 @@
   plugin off for about ten seconds, and a WP-Cron run in that window took an auto-clear's event
   with nothing listening: the clear waited 10 min 40 s for the next save. A waiting rule with no
   event — and a listings scan whose event is gone — is now scheduled again when a CacheManager
-  screen opens, from its tick, and when a plugin update ends. Never in a save.
+  screen opens, from its tick, and when a plugin update ends. Never in a save. (An update runs the
+  version being replaced, so the update hook helps from 0.5.1 onwards; updating to 0.5.1, the
+  first screen opened puts a lost clear back.)
 - **Freshness adds up a month.** Measurements were the last 100 clears of each kind, which
   auto-clear fills in hours. They now also add up per page (200 pages) and per day (30 days) in
   `advcm_freshness_stats`, and an automatic clear's row names the rules that set it off.
-- **The Freshness tab says what to do**: the last 30 days against a cache target (a new setting,
+- **The Freshness tab says what to do** — it only shows; it never clears, adds a rule or changes
+  a setting: the last 30 days against a cache target (a new setting,
   3 hours by default), pages kept past it and whether a rule clears them ("add one"), pages
   cleared while fresh and the rules that do it, pages cleared by hand often, then the listings —
   labelled "over 30 days", "7–30 days", "no posts", "broken filter", "cannot match", "not

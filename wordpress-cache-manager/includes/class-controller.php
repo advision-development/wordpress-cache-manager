@@ -340,10 +340,13 @@ final class ADVCM_Controller {
 		);
 
 		if ( count( $hour ) >= self::SITE_WIDE_PER_HOUR ) {
+			$wait = (int) ceil( ( min( $hour ) + HOUR_IN_SECONDS - time() ) / MINUTE_IN_SECONDS );
+
 			return sprintf(
-				/* translators: %d: how many. */
-				__( 'The whole site has been cleared %d times in the last hour, the most allowed. Clear the pages that need it instead, or wait.', 'advcm' ),
-				count( $hour )
+				/* translators: 1: how many, 2: minutes. */
+				__( 'The whole site has been cleared %1$d times in the last hour, the most allowed. The next can start in about %2$d minutes. Meanwhile, clear the pages that need it, or use the host\'s or the cache plugin\'s own purge.', 'advcm' ),
+				count( $hour ),
+				max( 1, $wait )
 			);
 		}
 

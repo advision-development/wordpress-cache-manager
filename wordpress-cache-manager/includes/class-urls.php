@@ -31,7 +31,7 @@ final class ADVCM_Urls {
 	const MAX_REFUSED = 20;
 
 	/** Paths that are WordPress itself, not pages: admin, login, the APIs, cron, core and code. */
-	const MACHINERY = '~^/(wp-admin(/|$)|wp-login\.php|wp-json(/|$)|xmlrpc\.php|wp-cron\.php|wp-includes/|wp-content/(plugins|themes|mu-plugins)/)~i';
+	const MACHINERY = '~^/(index\.php/)?(wp-admin(/|$)|wp-login\.php|wp-json(/|$)|xmlrpc\.php|wp-cron\.php|wp-mail\.php|wp-signup\.php|wp-trackback\.php|wp-includes/.*\.php$|wp-content/(plugins|themes|mu-plugins)/.*\.php$)~i';
 
 	/**
 	 * Split raw input into accepted absolute URLs and refused entries.
@@ -46,6 +46,7 @@ final class ADVCM_Urls {
 		$scheme   = isset( $home['scheme'] ) ? $home['scheme'] : 'https';
 		$host     = isset( $home['host'] ) ? strtolower( $home['host'] ) : '';
 		$port     = isset( $home['port'] ) ? (int) $home['port'] : 0;
+		$base     = isset( $home['path'] ) ? rtrim( (string) $home['path'], '/' ) : '';
 		$accepted = array();
 		$refused  = array();
 
@@ -62,7 +63,7 @@ final class ADVCM_Urls {
 				continue;
 			}
 
-			$url = self::absolute( $line, $scheme, $host, $port );
+			$url = self::absolute( $line, $scheme, $host, $port, $base );
 
 			if ( '' === $url ) {
 				$refused[] = $line;
@@ -102,9 +103,10 @@ final class ADVCM_Urls {
 	 * @param string $scheme This site's scheme.
 	 * @param string $host   This site's host.
 	 * @param int    $port   This site's port, 0 when it is the scheme's default.
+	 * @param string $base   The path WordPress is installed under, '' at the root.
 	 * @return string
 	 */
-	private static function absolute( $line, $scheme, $host, $port ) {
+	private static function absolute( $line, $scheme, $host, $port, $base = '' ) {
 		// The origin every accepted URL is rebuilt on. The port is part of it: a site served on
 		// :8080 has its pages cached under :8080, and a purge of the same path on :80 clears
 		// nothing — found by running the plugin, not by the suite.
@@ -152,7 +154,10 @@ final class ADVCM_Urls {
 		// WordPress's own machinery is never a cached page, and the probe and the warm-up request
 		// accepted URLs from the server's own address: an editor naming one would reach whatever
 		// on the site trusts that address. From the security review of 2026-10-20.
-		if ( preg_match( self::MACHINERY, $path ) || false !== stripos( $query, 'rest_route=' ) ) {
+		// Under the directory WordPress is installed in, on a site that is not at the root.
+		$inside = '' !== $base && 0 === stripos( $path, $base . '/' ) ? substr( $path, strlen( $base ) ) : $path;
+
+		if ( preg_match( self::MACHINERY, $inside ) || false !== stripos( $query, 'rest_route=' ) ) {
 			return '';
 		}
 

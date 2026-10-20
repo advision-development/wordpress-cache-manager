@@ -85,6 +85,10 @@ A clear fixes the first and does nothing for the second. The *Freshness* tab tel
   the content did not change, or a rule fires more than the page does; and pages cleared by hand
   often. Listings are labelled by what they mean, the same list in one template once with ×N.
 
+Freshness only shows: it never clears a page, adds a rule or changes a setting; its links open
+the tab where a person decides. An "at most" age is a bound, not an age, and never counts as past
+the target. Days are the last 30 calendar days.
+
 Every tab starts with what it is for and a folded "How this tab works": when to use it, how it
 works underneath, what each column, badge and word means, and its limits.
 
