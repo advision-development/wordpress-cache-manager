@@ -69,8 +69,10 @@ final class ADVCM_Log {
 				array(
 					'at'      => time(),
 					'user'    => $person ? (int) get_current_user_id() : 0,
-					// The login as it is now, so a record still reads after the account is gone.
-					'login'   => is_object( $user ) && isset( $user->user_login ) ? (string) $user->user_login : '',
+					// The display name as it is now, so a record still reads after the account is
+					// gone. Not the login: editors read this log, and an administrator's login is
+					// half of what guessing their password needs (security review, 2026-10-20).
+					'name'    => is_object( $user ) && isset( $user->display_name ) ? self::cut( (string) $user->display_name ) : '',
 					'section' => $section,
 					'action'  => self::cut( $action ),
 					'summary' => self::cut( $summary ),

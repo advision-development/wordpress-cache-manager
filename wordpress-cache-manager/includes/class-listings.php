@@ -485,6 +485,25 @@ final class ADVCM_Listings {
 	}
 
 	/**
+	 * Put back a scan whose event was lost: running, no event, no run holding the lock, and its
+	 * next run over LATE seconds due. The same loss as an auto-clear's in a plugin update; the
+	 * press that would otherwise pick it up may never come.
+	 *
+	 * @return int 1 when the next run was scheduled, 0 otherwise.
+	 */
+	public static function rescue() {
+		$state = self::state();
+
+		if ( ! $state['started'] || $state['done'] || false !== wp_next_scheduled( self::HOOK ) || self::locked() || time() - $state['next_at'] <= self::LATE ) {
+			return 0;
+		}
+
+		self::schedule();
+
+		return 1;
+	}
+
+	/**
 	 * Read up to $size documents within $budget seconds, from the cursor.
 	 *
 	 * @param int $size   Documents.

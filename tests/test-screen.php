@@ -69,8 +69,13 @@ function admin_url( $path = '' ) {
 	return 'https://example.test/wp-admin/' . $path;
 }
 
-function add_query_arg( $args, $url ) {
-	return $url . '?' . http_build_query( $args );
+function add_query_arg( $args, $url, $third = null ) {
+	// Both shapes WordPress takes: ( array, url ) and ( key, value, url ).
+	if ( ! is_array( $args ) ) {
+		return $third . ( false === strpos( (string) $third, '?' ) ? '?' : '&' ) . rawurlencode( $args ) . '=' . rawurlencode( $url );
+	}
+
+	return $url . ( false === strpos( $url, '?' ) ? '?' : '&' ) . http_build_query( $args );
 }
 
 function current_user_can( $cap ) {
@@ -83,6 +88,22 @@ function wp_get_current_user() {
 
 function sanitize_key( $key ) {
 	return preg_replace( '~[^a-z0-9_\-]~', '', strtolower( (string) $key ) );
+}
+
+function is_admin() {
+	return false;
+}
+
+function wp_nonce_url( $url, $action = -1 ) {
+	return $url . '&_wpnonce=nonce-' . $action;
+}
+
+function wp_unslash( $value ) {
+	return $value;
+}
+
+function sanitize_text_field( $text ) {
+	return trim( (string) $text );
 }
 
 function wp_create_nonce( $action = -1 ) {
@@ -133,6 +154,7 @@ $out = screen_part( 'render_settings', array( true ) );
 check( 'the Settings form posts to its own action', false !== strpos( $out, 'name="action" value="' . ADVCM_Settings::ACTION . '"' ) );
 check( 'with the markers that tell an unticked box from a missing one', false !== strpos( $out, 'name="excluded_present"' ) && false !== strpos( $out, 'name="own_present"' ) );
 check( 'own-page ignoring unchanged saves is shown ticked by default', 1 === preg_match( '~name="own_skip_unchanged"[^>]*checked~', $out ) );
+check( 'the cache target is offered, 3 hours selected', 1 === preg_match( '~<option value="3" selected>3 hours</option>~', $out ) );
 check( 'measuring before a clear is shown ticked by default, with its marker', 1 === preg_match( '~name="measure_before_clear"[^>]*checked~', $out ) && false !== strpos( $out, 'name="measure_present"' ) );
 check( 'the post types to leave out are boxes, the shipped ones ticked', 1 === preg_match( '~value="elementor_library"[^>]*checked~', $out ) && 1 === preg_match( '~value="review_profile"(?![^>]*checked)~', $out ) );
 check( 'never a box for the always-excluded three', false === strpos( $out, 'value="revision"' ) );
@@ -257,6 +279,23 @@ $source = file_get_contents( ADVCM_DIR . 'includes/class-screen.php' ) . file_ge
 
 check( 'no screen text still says administrators only', false === stripos( $source, 'administrators only' ) && false === strpos( $source, 'Only administrators can' ) );
 
+// ----------------------------------------------------------------- a lost clear
+
+// The plugin update that took an auto-clear's event on BMR was followed, a minute later, by
+// somebody opening this screen. Opening any tab now puts the clear back.
+$GLOBALS['options']['advcm_rules'] = array( 'r9' => array( 'post_type' => 'post', 'enabled' => true, 'urls' => array( 'https://example.test/x/' ) ) );
+add_option( ADVCM_Auto::MARK . 'r9', time() );
+wp_clear_scheduled_hook( ADVCM_Auto::FLUSH_HOOK );
+$_GET['tab'] = 'settings';
+screen_part( 'render' );
+unset( $_GET['tab'] );
+
+check( 'opening any tab puts back an auto-clear whose event was lost', false !== wp_next_scheduled( ADVCM_Auto::FLUSH_HOOK ) );
+
+delete_option( ADVCM_Auto::MARK . 'r9' );
+wp_clear_scheduled_hook( ADVCM_Auto::FLUSH_HOOK );
+unset( $GLOBALS['options']['advcm_rules'] );
+
 // -------------------------------------------------------------------- Freshness
 
 load_class( 'freshness' );
@@ -316,9 +355,100 @@ $GLOBALS['options'][ ADVCM_Freshness::OPTION ] = array(
 	array( 'at' => time() - 120, 'url' => 'https://example.test/analysis/', 'job' => 'h1', 'source' => 'wp-admin', 'by' => 7, 'code' => 200, 'age' => 30, 'how' => 'exact', 'ages' => array(), 'nitro_state' => null, 'nitro_copy' => null, 'nitro_age' => null ),
 );
 
+$GLOBALS['options'][ ADVCM_Freshness::STATS ] = array(
+	'pages' => array( 'https://example.test/analysis/' => array( 'n' => 2, 'hand' => 2, 'auto' => 0, 'unk' => 0, 'young' => 1, 'over' => 0, 'max' => 5000, 'sum' => 5030, 'hsum' => 5030, 'hk' => 2, 'last' => time() - 60, 'rules' => array() ) ),
+	'days'  => array( gmdate( 'Y-m-d' ) => array( 'n' => 2, 'unk' => 0, 'young' => 1, 'over' => 0, 'max' => 5000 ) ),
+);
+
 $out = screen_part( 'render_freshness', array( true ) );
 
 check( 'the cache age at each clear is listed, layer by layer', false !== strpos( $out, 'host cache 83 min 20 s' ) && false !== strpos( $out, 'NitroPack: stale' ) );
 check( 'pages cleared by hand often are listed, with no rule clearing them', false !== strpos( $out, 'no rule clears this page' ) && false !== strpos( $out, '2 times' ) );
+
+// ------------------------------------------------- Freshness says what to do (0.5.1)
+
+$GLOBALS['options']['advcm_rules'] = array( 'r2' => array( 'post_type' => 'post', 'enabled' => true, 'urls' => array( 'https://example.test/news/' ) ) );
+$GLOBALS['options'][ ADVCM_Freshness::STATS ] = array(
+	'pages' => array(
+		'https://example.test/old/'  => array( 'n' => 3, 'hand' => 3, 'auto' => 0, 'unk' => 0, 'young' => 0, 'over' => 2, 'max' => 9 * 3600, 'sum' => 20 * 3600, 'hsum' => 20 * 3600, 'hk' => 3, 'last' => time() - 60, 'rules' => array() ),
+		'https://example.test/news/' => array( 'n' => 8, 'hand' => 0, 'auto' => 8, 'unk' => 0, 'young' => 8, 'over' => 0, 'max' => 120, 'sum' => 400, 'hsum' => 0, 'hk' => 0, 'last' => time() - 30, 'rules' => array( 'r2' ) ),
+	),
+	'days'  => array( gmdate( 'Y-m-d' ) => array( 'n' => 11, 'unk' => 0, 'young' => 8, 'over' => 2, 'max' => 9 * 3600 ) ),
+);
+$GLOBALS['options'][ ADVCM_Listings::OPTION ]['done']     = time() - 60;
+$GLOBALS['options'][ ADVCM_Listings::OPTION ]['findings'] = array();
+
+for ( $k = 0; $k < 4; $k++ ) {
+	$GLOBALS['options'][ ADVCM_Listings::OPTION ]['findings'][] = array( 'verdict' => 'amber', 'days' => 17, 'doc' => 7, 'pos' => $k, 'title' => 'Category articles', 'doc_type' => 'elementor_library', 'url' => '', 'widget' => 'w' . $k, 'type' => 'posts', 'post_type' => 'picks', 'per_page' => 3, 'filter' => 'picks_tag analysis', 'broken' => false, 'cannot_match' => false, 'custom' => false, 'newest' => array( 'id' => 9, 'title' => 'Patriots vs Bills', 'date' => time() - 17 * 86400 ) );
+}
+
+$GLOBALS['options'][ ADVCM_Listings::OPTION ]['findings'][] = array( 'verdict' => 'red', 'days' => 293, 'doc' => 1, 'pos' => 0, 'title' => 'Alabama', 'doc_type' => 'states', 'url' => 'https://example.test/usa/alabama/', 'widget' => 'b2', 'type' => 'posts', 'post_type' => 'post', 'per_page' => 6, 'filter' => 'tag alabama', 'broken' => false, 'cannot_match' => false, 'custom' => false, 'newest' => array( 'id' => 6, 'title' => 'Alabama news', 'date' => time() - 293 * 86400 ) );
+$GLOBALS['options'][ ADVCM_Listings::OPTION ]['findings'][] = array( 'verdict' => 'red', 'days' => null, 'doc' => 3, 'pos' => 0, 'title' => 'Template', 'doc_type' => 'elementor_library', 'url' => '', 'widget' => 'c3', 'type' => 'posts', 'post_type' => 'post', 'per_page' => null, 'filter' => 'missing term #99', 'broken' => true, 'cannot_match' => false, 'custom' => false, 'newest' => null );
+
+$out = screen_part( 'render_freshness', array( true ) );
+
+$order = array( 'Last 30 days', 'Past the target', 'Cleared while fresh', 'Cleared by hand, often', 'Listings with nothing new', 'Last measurements' );
+$at    = array_map( function ( $h ) use ( $out ) { return strpos( $out, '>' . $h . '</h2>' ); }, $order );
+
+check( 'the tab leads with what to do: summary, past the target, cleared while fresh, by hand, listings, then the raw measurements', ! in_array( false, $at, true ) && $at === array_values( array_unique( $at ) ) && $at == ( function ( $a ) { sort( $a ); return $a; } )( $at ), json_encode( $at ) );
+check( 'the summary counts the last 30 days against the 3-hour target', false !== strpos( $out, '11 pages measured' ) && false !== strpos( $out, '2 past the 3-hour target' ) && false !== strpos( $out, '8 found a copy under 10 minutes' ) );
+check( 'a page past the target with no rule says so, and links to adding one', 1 === preg_match( '~/old/.*?no rule clears it.*?tab=auto~s', $out ) );
+check( 'a page cleared while fresh names, in words, the rule that clears it', 1 === preg_match( '~/news/.*?When a post is published~s', $out ) );
+check( 'the raw measurements are folded away', 1 === preg_match( '~<details[^>]*><summary><h2[^>]*>Last measurements</h2>~', $out ) );
+check( 'listing labels say how old: over 30 days, 7–30 days, broken filter', false !== strpos( $out, 'over 30 days</span>' ) && false !== strpos( $out, '7–30 days</span>' ) && false !== strpos( $out, 'broken filter</span>' ) && false === strpos( $out, 'slowing' ) );
+check( 'the same listing four times in one template is one row, ×4', 1 === substr_count( $out, 'picks_tag analysis' ) && false !== strpos( $out, '×4' ) );
+
+unset( $GLOBALS['options']['advcm_rules'] );
+
+// ------------------------------------------------------- every tab explains itself
+
+foreach ( ADVCM_Screen::TABS as $tab ) {
+	$help = screen_part( 'render_help', array( $tab ) );
+
+	check( 'the ' . $tab . ' tab says what it does, and how it works in detail', false !== strpos( $help, 'class="advcm-help"' ) && 1 === preg_match( '~<p><strong>[^<]{20,}~', $help ) && 1 === preg_match( '~<summary>How this tab works</summary>~', $help ) && substr_count( $help, '<h4' ) >= 3, $tab . ': ' . strlen( $help ) . ' bytes, ' . substr_count( $help, '<h4' ) . ' parts' );
+}
+
+$help = screen_part( 'render_help', array( 'history' ) );
+
+check( 'History\'s legend shows the state badges as they look', false !== strpos( $help, '#008a20' ) && false !== strpos( $help, '#d63638' ) && false !== strpos( $help, '#2271b1' ) && false !== strpos( $help, 'advcm-wait-red' ) );
+
+$help = screen_part( 'render_help', array( 'freshness' ) );
+
+check( 'Freshness says it only shows, and never clears anything itself', false !== strpos( $help, 'never clears' ) );
+check( 'Freshness explains each label and the target from Settings', false !== strpos( $help, 'over 30 days' ) && false !== strpos( $help, '7–30 days' ) && false !== strpos( $help, 'broken filter' ) && false !== strpos( $help, '×N' ) && false !== strpos( $help, '3 hours' ) );
+
+$help = screen_part( 'render_help', array( 'check' ) );
+
+check( 'a site without NitroPack is not told about NitroPack', false === strpos( $help, 'NitroPack' ) );
+
+$help = screen_part( 'render_help', array( 'clear' ) );
+
+check( 'Clear states every limit a person can meet', false !== strpos( $help, (string) ADVCM_Controller::SITE_WIDE_PER_HOUR . ' times an hour' ) && false !== strpos( $help, (string) ADVCM_Controller::URL_JOBS_PER_MINUTE_SITE . ' page clears a minute' ) );
+check( 'Clear explains every mode this site offers, from the modes themselves', false !== strpos( $help, ADVCM_Modes::get( 'fast' )['label'] ) && false !== strpos( $help, ADVCM_Modes::get( 'fast' )['summary'] ) );
+check( 'the help box is drawn on its own guard, so it never takes a tab with it', false !== strpos( file_get_contents( ADVCM_DIR . 'includes/class-screen.php' ), "'screen:help'" ) );
+check( 'the change-log box says what it is', false !== strpos( screen_part( 'render_log', array( 'auto' ) ), 'Who changed what on this tab' ) );
+
+// ------------------------------------------------ the admin bar posts its clears (security)
+
+// From the security review of 2026-10-20: the links carried the nonce in the URL, into access
+// logs and browser history. They now hold no nonce; a listener posts it.
+$bar = new class() {
+	public $nodes = array();
+
+	public function add_node( $node ) {
+		$this->nodes[ $node['id'] ] = $node;
+	}
+};
+
+$_SERVER['REQUEST_URI'] = '/analysis/';
+ADVCM_Screen::admin_bar( $bar );
+
+check( 'the admin bar\'s clear links carry no nonce', isset( $bar->nodes['advcm-page'], $bar->nodes['advcm-site'] ) && false === strpos( $bar->nodes['advcm-page']['href'] . $bar->nodes['advcm-site']['href'], '_wpnonce' ) );
+
+ob_start();
+ADVCM_Screen::admin_bar_confirm();
+$script = ob_get_clean();
+
+check( 'a listener posts them, with the nonce in the form, the whole site after asking', false !== strpos( $script, '"post"' ) && false !== strpos( $script, 'nonce-' . ADVCM_Controller::ACTION ) && false !== strpos( $script, '#wp-admin-bar-advcm-page > a' ) && false !== strpos( $script, 'confirm(' ) );
 
 finish();

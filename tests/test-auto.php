@@ -926,6 +926,20 @@ check( 'a mark another request took first is not cleared again', null === ADVCM_
 $GLOBALS['taken_elsewhere'] = array();
 reset_waiting();
 
+// ---------------------------------------------------------------- a clear that was lost
+
+// Measured on BMR on 2026-10-20: a plugin update switches the plugin off for a few seconds, and
+// a WP-Cron run in those seconds takes the clear's event with nothing listening. The mark stayed
+// and waited 10 minutes for the next save; on a quiet site it would wait for hours.
+add_option( ADVCM_Auto::MARK . 'a1', time() );
+
+check( 'a waiting rule whose clear was lost is put back on the schedule', 1 === ADVCM_Auto::rescue() && false !== flush_at() );
+check( 'once: a clear already scheduled is left as it is', 0 === ADVCM_Auto::rescue() );
+
+reset_waiting();
+
+check( 'with nothing waiting, nothing is scheduled', 0 === ADVCM_Auto::rescue() && false === flush_at() );
+
 // ---------------------------------------------------------------- the saved post's own page
 
 // Most manual clears on BMR were an editor clearing the post they had just edited: NitroPack

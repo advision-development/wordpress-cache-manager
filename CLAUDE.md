@@ -104,6 +104,12 @@ These are requirements, not preferences. Each was either asked for explicitly or
 - **The plugin is generic: no layer is assumed.** NitroPack, WP Engine, Cloudflare, Elementor may
   each be missing; every reading detects its layer at run time and says nothing, or "unknown", where
   it is absent. Each suite covers the site with none of them. BMR numbers belong in docs.
+- **Lost WP-Cron events are put back, never in a save.** Updating the plugin switches it off for
+  seconds and a WP-Cron run then consumes its events with nothing listening (measured on BMR:
+  a clear waited 10 min 40 s). `ADVCM_Controller::rescue()` re-schedules a waiting auto-clear and
+  a stalled scan when a screen opens, from the tick and after an update.
+- **Freshness sums are capped**: `advcm_freshness_stats` holds 200 pages (the one cleared
+  longest ago goes) and 30 days; its worst case is asserted under 500 KB.
 - **Measuring is not a stage.** `ADVCM_Freshness::measure()` runs once per job, before its first
   stage, only for a per-URL clear: 10 pages, 5 s each, no probe started past 20 s. It never throws
   and never stops the clear. NitroPack's copy is read with `file_exists`/`filemtime` on the paths
@@ -145,6 +151,12 @@ From the adversarial review of 2026-10-01; each has a test or a workflow check.
   `edit_others_posts`). The owner's decision of 2026-10-20: the change log names whoever acted,
   instead of the restriction. Every such action is an admin-post action with the capability and a
   nonce, and is recorded; `advcm_purge_hard_base_capability` lets a site restrict it again.
+- **Clears are POSTs.** The admin bar's links hold no nonce; a listener posts it, and a GET is
+  refused. **WordPress's own machinery is never a page**: `ADVCM_Urls` refuses wp-admin,
+  wp-login.php, the REST API, xmlrpc.php, wp-cron.php and core or plugin code, because the probe
+  and the warm-up request accepted URLs from the server's own address.
+- **Limits that hold with many editors**: 4 whole-site clears an hour, 30 page clears a minute
+  site-wide, beside the per-person ones. The change log stores display names, never logins.
 - **HTTP goes through WordPress's API** (`wp_remote_*`), never `Requests` directly, so a site's
   HTTP policy applies.
 

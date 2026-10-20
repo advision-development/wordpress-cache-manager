@@ -537,6 +537,24 @@ ADVCM_Runner::start( array( 'scope' => 'urls', 'urls' => array( 'https://example
 
 check( 'a job is stored as measured before its first page is asked', true === $seen, var_export( $seen, true ) );
 
+// Another plugin's error is shown to editors in History: without the server's paths.
+ADVCM_Runner::use_adapters(
+	array(
+		new Fake_Adapter(
+			'leaky',
+			ADVCM_Stages::HOST,
+			null,
+			function () {
+				throw new Error( 'failed in ' . ABSPATH . 'wp-content/plugins/vendor/purge.php on line 9' );
+			}
+		),
+	)
+);
+
+$job = ADVCM_Runner::start( array( 'scope' => 'all' ) );
+
+check( 'a layer\'s error keeps what failed, not where the site lives on disk', false !== strpos( $job['steps'][0]['message'], 'wp-content/plugins/vendor/purge.php' ) && false === strpos( $job['steps'][0]['message'], ABSPATH ), $job['steps'][0]['message'] );
+
 advcm_test_no_network();
 
 finish();

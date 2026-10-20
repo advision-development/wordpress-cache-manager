@@ -40,15 +40,17 @@
     { "name": "advcm_lock_<job id>", "autoload": false, "why": "one row while a job is running; deleted when it stops" },
     { "name": "advcm_last_error", "autoload": false, "why": "the last fault the plugin's guards caught, shown on its screen for a day" },
     { "name": "advcm_site_wide_at", "autoload": false, "why": "when a whole-site clear last started, for the two-minute gap between them" },
-    { "name": "advcm_rules", "autoload": false, "why": "auto-clear rules: a post type, optionally a term, and up to 10 of this site's own URLs to clear when such a post is published; and the reserved rule own-page, the setting that also clears each saved post's own URL. Written by administrators only" },
+    { "name": "advcm_rules", "autoload": false, "why": "auto-clear rules: a post type, optionally a term, and up to 10 of this site's own URLs to clear when such a post is published; and the reserved rule own-page, the setting that also clears each saved post's own URL. Written through the rules and settings forms by users holding advcm_purge_hard (editors and administrators since 0.4.0)" },
     { "name": "advcm_auto_<rule id>", "autoload": false, "why": "one row while a rule is waiting for its clear, with the first 10 posts that triggered it and a count of the rest (for own-page, also up to 40 of their own URLs); deleted when the clear picks it up" },
     { "name": "advcm_rules_last", "autoload": false, "why": "per auto-clear rule, when it last fired, how many posts triggered it and the job's id and state. Written by the clear, never by the rules form; a rule's entry goes when the rule is deleted" },
-    { "name": "advcm_settings", "autoload": false, "why": "since 0.4.0, the Settings tab: whether own-page ignores saves that change nothing, the post types auto-clear leaves out, the NitroPack choice a new rule starts with, whether a clear of some pages measures their cache age first (since 0.5.0), and the plugin version last seen (for the change log). Read in a post save only after a rule is on, the save is visible and auto-clear is not paused" },
-    { "name": "advcm_log", "autoload": false, "why": "since 0.4.0, who changed what: per tab section, the last 20 changes a person made (time, user and login, action, one-line summary, value before and after, each cut to 200 characters). Written only by requests a person made, never by WP-Cron" },
+    { "name": "advcm_settings", "autoload": false, "why": "since 0.4.0, the Settings tab: whether own-page ignores saves that change nothing, the post types auto-clear leaves out, the NitroPack choice a new rule starts with, whether a clear of some pages measures their cache age first (since 0.5.0), the longest a page should stay cached for the Freshness tab (since 0.5.1), and the plugin version last seen (for the change log). Read in a post save only after a rule is on, the save is visible and auto-clear is not paused" },
+    { "name": "advcm_log", "autoload": false, "why": "since 0.4.0, who changed what: per tab section, the last 20 changes a person made (time, user id and display name — since 0.5.1, no longer the login — action, one-line summary, value before and after, each cut to 200 characters). Written only by requests a person made, never by WP-Cron" },
     { "name": "advcm_freshness", "autoload": false, "why": "since 0.5.0, how old each page's cached copy was when a clear somebody started cleared it: the last 100 pages (time, URL cut to 2048 characters, job id, who, HTTP code, age and each layer's age, NitroPack's state and copy age). Written by the clear itself, before its first stage; at most 10 pages per job, never for a whole-site clear" },
     { "name": "advcm_freshness_auto", "autoload": false, "why": "since 0.5.0, the same for automatic clears, the last 100 pages, kept apart so auto-clear never pushes out what people cleared" },
+    { "name": "advcm_freshness_stats", "autoload": false, "why": "since 0.5.1, what the measurements add up to: per page (at most 200, the page cleared longest ago dropped first; URL cut to 2048 characters) how many clears by hand and automatic, how many found no age, a copy under 10 minutes or one past the cache target, the oldest and the sums for averages, and the rules seen; per day, the last 30, the same counts" },
     { "name": "advcm_listings", "autoload": false, "why": "since 0.5.0, the last listings scan: who started it, a cursor (a post id) and counters, and at most 300 findings (red, amber and custom-query listings, each string cut; green ones only counted). Replaced by the next scan" },
     { "name": "advcm_lock_listings", "autoload": false, "why": "since 0.5.0, one row while a listings batch runs, naming the document it is reading so a run that dies is stepped over; deleted when the batch ends" },
+    { "name": "advcm_site_wide_log", "autoload": false, "why": "since 0.5.1, the times of the whole-site clears in the last hour, at most 4, for the hourly limit" },
     { "name": "advcm_rules_paused", "autoload": false, "why": "present while an administrator has paused every auto-clear rule; holds when. Read on a post save only when a rule is switched on" }
   ],
   "wordpress_own_names_touched": [
@@ -58,11 +60,12 @@
     { "name": "advcm_release", "site": true, "why": "the updater's cached answer from GitHub" },
     { "name": "advcm_loopback", "site": true, "why": "whether the site can reach its own home page, as WordPress needs for its cron; an hour, ten minutes when it cannot" },
     { "name": "advcm_notice_<user id>", "site": false, "why": "a one-minute message after a refused press" },
+    { "name": "advcm_rate_site", "site": false, "why": "since 0.5.1, per-URL clears everybody started in the last minute (at most 30)" },
     { "name": "advcm_rate_<user id>", "site": false, "why": "per-URL clears one person started in the last minute (at most 10)" }
   ],
   "capabilities": [
     { "name": "advcm_purge", "granted_to": "users holding edit_others_posts", "stored": false },
-    { "name": "advcm_purge_hard", "granted_to": "users holding manage_options", "stored": false }
+    { "name": "advcm_purge_hard", "granted_to": "users holding edit_others_posts since 0.4.0 (manage_options before); a site can narrow it with the advcm_purge_hard_base_capability filter", "stored": false }
   ],
   "capability_mechanism": "a user_has_cap filter that only adds advcm_* keys; never written to roles or user meta",
   "endpoints": [
@@ -79,7 +82,17 @@
   "hooks_on_content": [
     { "hook": "wp_after_insert_post", "why": "marks the auto-clear rules a saved post triggers; returns after one option read when no rule is switched on, and never clears anything in the save request" }
   ],
+  "hooks_on_updates": [
+    { "hook": "upgrader_process_complete", "why": "after a plugin update, forgets the cached release answer and, since 0.5.1, puts back an auto-clear or a listings scan whose WP-Cron event the update consumed while the plugin was switched off" },
+    { "hook": "auto_update_plugin", "why": "this plugin updates itself from its GitHub releases whatever the site's per-plugin auto-update toggle says; a site turns that off with the advcm_auto_update filter" }
+  ],
   "filters_offered": [
+    { "name": "advcm_auto_update", "why": "false stops this plugin installing its own releases" },
+    { "name": "advcm_purge_base_capability", "why": "the capability that grants advcm_purge (default edit_others_posts)" },
+    { "name": "advcm_purge_hard_base_capability", "why": "the capability that grants advcm_purge_hard (default edit_others_posts since 0.4.0)" },
+    { "name": "advcm_background_available", "why": "true turns Balanced and Careful back on where DISABLE_WP_CRON is set and a server cron calls wp-cron.php" },
+    { "name": "advcm_modes", "why": "the pauses and warm-up sizes of each mode; pauses where the order forbids them are refused" },
+    { "name": "advcm_adapters", "why": "the cache layers a clear knows; validated, run in stage order whatever order it returns" },
     { "name": "advcm_auto_excluded_post_types", "why": "the post types an \"any content\" auto-clear rule does not fire on. Validated; revision, auto-draft and nav_menu_item stay excluded whatever it returns" }
   ],
   "no_endpoints": ["REST routes", "wp_ajax_nopriv_*", "anything reachable without logging in"],

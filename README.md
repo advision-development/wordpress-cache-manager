@@ -8,7 +8,7 @@ The design spec lives in the team's internal workspace, not in this public repos
 
 ## Status
 
-**0.5.0.** Tools → CacheManager, in seven tabs — Status, Clear, Cache age, History, Freshness,
+**0.5.1.** Tools → CacheManager, in seven tabs — Status, Clear, Cache age, History, Freshness,
 Auto-clear, Settings — each with a box of its last changes, and the CacheManager menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
 time the screen opens: install a cache plugin later and it appears on the next load. Talking to Hawkeye is a later phase.
 
@@ -78,8 +78,19 @@ A clear fixes the first and does nothing for the second. The *Freshness* tab tel
   copy is, and the answer kept: the age a visitor would have got, each layer's own, and NitroPack's
   state. At most 10 pages per clear, 5 seconds each, 20 seconds in all; never for a whole-site
   clear. It is not a stage, and nothing it does can stop the clear. Switch it off in Settings.
-- **Cleared by hand, often.** Pages somebody cleared twice or more among the last 100 measured,
-  with the median cache age at those clears and whether a rule already clears them.
+- **What it adds up to** (since 0.5.1). Measurements are summed per page (200 pages) and per day
+  (30 days), and the tab leads with them: the last 30 days against the cache target in Settings
+  (3 hours by default); pages kept past the target, with "no rule clears it — add one"; pages
+  cleared while fresh (three clears in four under 10 minutes) and the rules that clear them —
+  the content did not change, or a rule fires more than the page does; and pages cleared by hand
+  often. Listings are labelled by what they mean, the same list in one template once with ×N.
+
+Freshness only shows: it never clears a page, adds a rule or changes a setting; its links open
+the tab where a person decides. An "at most" age is a bound, not an age, and never counts as past
+the target. Days are the last 30 calendar days.
+
+Every tab starts with what it is for and a folded "How this tab works": when to use it, how it
+works underneath, what each column, badge and word means, and its limits.
 
 ## Auto-clear: listing pages refresh themselves
 
@@ -128,6 +139,7 @@ Every setting a person may change is on the *Settings* tab:
 | Own page ignores saves that change nothing | on | A save that leaves title, content, excerpt, slug, status, password, date, parent and order as they were does not clear the post's page (on BMR, something saved seven review pages every hour unchanged). A change only to custom fields or a page builder's own data reads as unchanged; clearing by hand still works. Listing rules always fire. |
 | Post types auto-clear leaves out | media, page-builder templates | For each post's own page and for rules on "any content". Revisions, auto-drafts, menu items and form, snippet and field-group records are always left out. |
 | NitroPack for new rules | purge | The choice the add-rule form starts with. |
+| Longest a page should stay cached | 3 hours | Changes no cache: what the Freshness tab counts as past the target. |
 | Cache age before a clear | on | Before clearing some pages, ask each how old its cached copy is (at most 10 pages, 20 seconds), for the Freshness tab. |
 
 Not settings, on purpose: the plugin's auto-update, the mode timings, who may use the plugin, rate
@@ -188,8 +200,19 @@ Reviewed adversarially on 2026-10-01 from seven positions (anonymous, subscriber
 content, network, release publisher, another plugin). Nothing is reachable without logging in:
 no REST routes, no `wp_ajax_nopriv_`. Releases are built only from commits on `main`, by a
 read-only job with actions pinned to commits; publishing is a separate job. Package URLs must have
-the exact shape of this repository's releases. The two controls left to the repository's settings
-— who may create `v*` tags, and a required review before publishing — are in `CLAUDE.md`.
+the exact shape of this repository's releases.
+
+Reviewed again on 2026-10-20: no backdoor, obfuscation or injection. 0.5.1 added the plugin-side
+fixes — limits on whole-site and site-wide page clears, display names instead of logins in the
+change log, WordPress's own endpoints refused as pages, posted admin-bar clears, path-free errors.
+
+**The real risk is the release path, and it is in GitHub, not in the code.** The plugin installs
+its own releases on every site, so anyone who can publish a release here can run code on all of
+them. That is guarded only by the repository's settings: a ruleset limiting who may create `v*`
+tags, a protected `main` with required review, immutable releases, a `release` environment with
+required reviewers, SHA-pinned actions and 2FA. Until those are set, any account with write
+access — or a token stolen from one — is enough. Signing the zip with a key held outside GitHub,
+verified by the plugin, is the step that removes GitHub from the trust.
 
 ## Build, test, release
 

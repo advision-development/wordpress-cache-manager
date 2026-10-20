@@ -70,4 +70,41 @@ $GLOBALS['me'] = 8;
 
 check( 'and the limit is per person', '' === ADVCM_Controller::busy( $page ) );
 
+// --------------------------------------------- whole-site clears in an hour (security)
+
+$GLOBALS['options'] = array();
+$t                  = time();
+
+for ( $i = 0; $i < ADVCM_Controller::SITE_WIDE_PER_HOUR; $i++ ) {
+	$GLOBALS['options'][ ADVCM_Controller::SITE_WIDE_AT ] = $t - ADVCM_Controller::SITE_WIDE_GAP - 1;
+	$ok = '' === ADVCM_Controller::busy( $site );
+}
+
+$GLOBALS['options'][ ADVCM_Controller::SITE_WIDE_AT ] = $t - ADVCM_Controller::SITE_WIDE_GAP - 1;
+
+check( 'whole-site clears up to the hourly limit go', $ok );
+check( 'the next within the hour does not, whoever asks', false !== strpos( ADVCM_Controller::busy( $site ), 'last hour' ) );
+check( 'and says when the next is allowed, and what to do meanwhile', 1 === preg_match( '~in (about )?\d+ minutes?~', ADVCM_Controller::busy( $site ) ) && false !== strpos( ADVCM_Controller::busy( $site ), 'host' ) );
+
+$GLOBALS['options'][ ADVCM_Controller::SITE_WIDE_LOG ] = array_fill( 0, ADVCM_Controller::SITE_WIDE_PER_HOUR, $t - HOUR_IN_SECONDS - 1 );
+
+check( 'and an hour later they go again', '' === ADVCM_Controller::busy( $site ) );
+check( 'the record of them never grows past the limit', count( $GLOBALS['options'][ ADVCM_Controller::SITE_WIDE_LOG ] ) <= ADVCM_Controller::SITE_WIDE_PER_HOUR );
+
+// ------------------------------------------------ page clears for the whole site (security)
+
+$GLOBALS['options'] = array();
+$GLOBALS['transients'] = array();
+$went                  = 0;
+
+for ( $u = 1; $u <= 10; $u++ ) {
+	$GLOBALS['me'] = 100 + $u;
+
+	for ( $i = 0; $i < ADVCM_Controller::URL_JOBS_PER_MINUTE; $i++ ) {
+		$went += '' === ADVCM_Controller::busy( $page ) ? 1 : 0;
+	}
+}
+
+check( 'page clears from every person together stop at the site\'s limit', ADVCM_Controller::URL_JOBS_PER_MINUTE_SITE === $went, (string) $went );
+
 finish();

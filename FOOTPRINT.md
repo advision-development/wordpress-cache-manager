@@ -9,7 +9,7 @@ anybody tie the sites running it to each other. The build excludes it.
 
 **Neither is a reason to exempt anything.** A file on a site that says "do not look at me" is the
 first thing a compromised site would write. Recognise this plugin by checking its directory
-against the release it claims to be — every release publishes `checksums.sha256` beside the zip —
+against the release it claims to be — every release publishes `wordpress-cache-manager-<version>.sha256` beside the zip —
 and decide exceptions where the site cannot edit them: in the scanner, or in Hawkeye.
 
 ## Everything is prefixed `advcm`
@@ -29,12 +29,14 @@ and the code disagree.
 | Option | `advcm_lock_<job id>` | while a job runs; deleted when it stops |
 | Option | `advcm_last_error` | not autoloaded; the last fault the guards caught, shown on the screen for a day |
 | Option | `advcm_site_wide_at` | not autoloaded; when a whole-site clear last started |
-| Option | `advcm_rules` | not autoloaded; auto-clear rules, and the "each post's own page" setting as the reserved rule `own-page`; written by administrators |
+| Option | `advcm_site_wide_log` | not autoloaded; since 0.5.1, the times of the whole-site clears in the last hour, at most 4 |
+| Option | `advcm_rules` | not autoloaded; auto-clear rules, and the "each post's own page" setting as the reserved rule `own-page`; written through the rules and settings forms by users holding `advcm_purge_hard` (editors and administrators since 0.4.0) |
 | Option | `advcm_auto_<rule id>` | while a rule waits for its clear, with the first 10 posts that triggered it and a count of the rest (for `own-page`, also up to 40 of those posts' own URLs, taken at the save); deleted when the clear picks it up |
 | Option | `advcm_rules_last` | not autoloaded; per rule, when it last fired, how many posts and the job's state. Written by the clear, never by the rules form |
-| Option | `advcm_settings` | not autoloaded; since 0.4.0, the Settings tab: own-page ignores unchanged saves, the post types auto-clear leaves out, the NitroPack choice for new rules, whether a clear of some pages measures their cache age first (0.5.0), the version last seen. Read in a post save only after a rule is on, the save is visible and auto-clear is not paused |
+| Option | `advcm_settings` | not autoloaded; since 0.4.0, the Settings tab: own-page ignores unchanged saves, the post types auto-clear leaves out, the NitroPack choice for new rules, whether a clear of some pages measures their cache age first (0.5.0), the cache target in hours (0.5.1), the version last seen. Read in a post save only after a rule is on, the save is visible and auto-clear is not paused |
 | Option | `advcm_freshness` | not autoloaded; since 0.5.0, how old each page's cached copy was when a clear somebody started cleared it: the last 100 pages (URL cut to 2048 characters, job, who, HTTP code, each layer's age, NitroPack's state). At most 10 pages per job, never for a whole-site clear |
 | Option | `advcm_freshness_auto` | not autoloaded; since 0.5.0, the same for automatic clears, the last 100 pages, kept apart |
+| Option | `advcm_freshness_stats` | not autoloaded; since 0.5.1, the measurements added up: per page (at most 200, URL cut to 2048 characters) and per day (the last 30) — clears by hand and automatic, unknown, under 10 minutes, past the cache target, oldest, sums, rules seen |
 | Option | `advcm_listings` | not autoloaded; since 0.5.0, the last listings scan: who started it, a cursor (a post id) and counters, at most 300 findings (red, amber, custom query; strings cut), green ones only counted |
 | Option | `advcm_lock_listings` | not autoloaded; since 0.5.0, while a listings batch runs, naming the document it reads |
 | Option | `advcm_log` | not autoloaded; since 0.4.0, who changed what: the last 20 changes per tab section, each with the person, the time and the value before and after (cut to 200 characters). Written only by requests a person made |
@@ -43,7 +45,8 @@ and the code disagree.
 | Site transient | `advcm_loopback` | whether the site can reach its own home page; an hour (ten minutes when not) |
 | Transient | `advcm_notice_<user id>` | one minute |
 | Transient | `advcm_rate_<user id>` | per-URL clears in the last minute, at most 10 |
-| Capability | `advcm_purge`, `advcm_purge_hard` | granted by a `user_has_cap` filter from `edit_others_posts` / `manage_options`; never stored |
+| Transient | `advcm_rate_site` | since 0.5.1, per-URL clears everybody started in the last minute, at most 30 |
+| Capability | `advcm_purge`, `advcm_purge_hard` | granted by a `user_has_cap` filter from `edit_others_posts` (both, since 0.4.0; a filter narrows either); never stored |
 | admin-post | `advcm_purge`, `advcm_resume`, `advcm_check_release` | logged in, capability and nonce |
 | admin-post | `advcm_listings` | logged in, `advcm_purge` and nonce; since 0.5.0, starts a listings scan on the Freshness tab |
 | admin-post | `advcm_settings` | logged in, `advcm_purge_hard` and nonce; since 0.4.0, saves the Settings tab, pauses and resumes auto-clear, switches each post's own page |

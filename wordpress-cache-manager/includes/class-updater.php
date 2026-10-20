@@ -261,6 +261,11 @@ class ADVCM_Updater {
 	 * this is read back out of a log: nothing was asked, it was already current, something
 	 * stood in the way, or it ran.
 	 *
+	 * Nothing calls this yet: it is for the Hawkeye phase. Whatever calls it installs code on the
+	 * site, so the caller must itself be authenticated and authorised as an update would be — a
+	 * logged-in request with update_plugins and a nonce, or a signed message from the console —
+	 * never a value from a request, an option or a filter alone (security review, 2026-10-20).
+	 *
 	 * @param string $version The version the console asked for.
 	 * @return string One of `idle`, `current`, `blocked`, `updated`, `failed`.
 	 */
@@ -472,6 +477,10 @@ class ADVCM_Updater {
 		}
 
 		delete_site_transient( self::CACHE );
+
+		// A plugin update switches the plugin off while its files change; a WP-Cron run then takes
+		// this plugin's events with nothing listening. Put back what was waiting.
+		ADVCM_Controller::rescue();
 	}
 
 	/**

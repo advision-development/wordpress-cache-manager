@@ -57,6 +57,10 @@ function wp_remote_get( $url, $args = array() ) {
 	return new WP_Error( 'offline', 'no network in the test' );
 }
 
+function wp_safe_remote_get( $url, $args = array() ) {
+	return wp_remote_get( $url, $args );
+}
+
 class WP_Error {
 	private $message;
 
@@ -139,6 +143,9 @@ ADVCM_Runner::use_adapters( array( new Quiet_Adapter() ) );
  * @return string redirected, died
  */
 function press( $handler ) {
+	// Every press here is a form, so a POST, as WordPress's admin-post.php receives it.
+	$_SERVER['REQUEST_METHOD'] = 'POST';
+
 	try {
 		call_user_func( $handler );
 	} catch ( Redirected $e ) {
@@ -245,7 +252,7 @@ ADVCM_Screen::record_version();
 $status = ADVCM_Log::recent( 'status', 20 );
 
 check( 'a new version is recorded once, from the one before', 2 === count( $status ) && 'updated' === $status[0]['action'] && '0.3.2' === $status[0]['before'] && ADVCM_VERSION === $status[0]['after'] );
-check( 'as nobody: WordPress updates the plugin on its own', 0 === $status[0]['user'] && '' === $status[0]['login'] );
+check( 'as nobody: WordPress updates the plugin on its own', 0 === $status[0]['user'] && '' === $status[0]['name'] );
 check( 'and the version is kept for next time', ADVCM_VERSION === ADVCM_Settings::get()['version_seen'] );
 
 $GLOBALS['options'][ ADVCM_Settings::OPTION ]['version_seen'] = '';

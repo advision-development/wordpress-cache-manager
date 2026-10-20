@@ -132,4 +132,19 @@ $r = ADVCM_Controller::request( array( 'override_hold' => '1' ), true );
 
 check( 'and kept for somebody with it', true === $r['options']['override_hold'] );
 
+// --------------------------------------------------------- a clear is a POST (security)
+
+$_SERVER['REQUEST_METHOD'] = 'GET';
+
+check( 'a clear asked for with GET is refused, before anything else', ! ADVCM_Controller::posted() );
+
+$_SERVER['REQUEST_METHOD'] = 'POST';
+
+check( 'and with POST goes on', ADVCM_Controller::posted() );
+
+$handle = file_get_contents( ADVCM_DIR . 'includes/class-controller.php' );
+$handle = substr( $handle, strpos( $handle, 'public static function handle()' ), 900 );
+
+check( 'and the press handler asks that first, before the nonce', false !== strpos( $handle, '! self::posted()' ) && strpos( $handle, '! self::posted()' ) < strpos( $handle, 'check_admin_referer' ) );
+
 finish();

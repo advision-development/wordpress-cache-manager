@@ -21,6 +21,7 @@ try {
 	delete_option( 'advcm_layers' );
 	delete_option( 'advcm_last_error' );
 	delete_option( 'advcm_site_wide_at' );
+	delete_option( 'advcm_site_wide_log' );
 	delete_option( 'advcm_rules' );
 	delete_option( 'advcm_rules_last' );
 	delete_option( 'advcm_rules_paused' );
@@ -28,6 +29,7 @@ try {
 	delete_option( 'advcm_settings' );
 	delete_option( 'advcm_freshness' );
 	delete_option( 'advcm_freshness_auto' );
+	delete_option( 'advcm_freshness_stats' );
 	delete_option( 'advcm_listings' );
 	wp_unschedule_hook( 'advcm_continue' ); // every job id, not only events with no arguments.
 	wp_unschedule_hook( 'advcm_auto_flush' );
