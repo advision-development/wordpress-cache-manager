@@ -191,9 +191,10 @@ unset( $GLOBALS['transients'][ 'advcm_rate_' . get_current_user_id() ] );
 $_POST = array( 'op' => 'add', 'post_type' => 'post', 'urls' => '/analysis/', 'enabled' => '1', 'nitropack' => 'purge', '_wpnonce' => 'n' );
 press( array( 'ADVCM_Auto', 'save' ) );
 
+// A random id that is all digits becomes an integer key in PHP; the form always sends a string.
 $id = '';
 foreach ( ADVCM_Auto::rules() as $rule_id => $rule ) {
-	$id = $rule_id;
+	$id = (string) $rule_id;
 }
 
 foreach ( array( 'disable', 'enable', 'delete' ) as $op ) {
