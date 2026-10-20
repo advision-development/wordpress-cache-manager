@@ -114,7 +114,15 @@ final class ADVCM_Freshness {
 					break;
 				}
 
-				$rows[] = self::row( $job, (string) $url );
+				$row    = self::row( $job, (string) $url );
+				$rows[] = $row;
+
+				// No answer at all: a site that cannot reach itself, or a host that drops the
+				// request. The next page would wait its full timeout too, in a person's request.
+				if ( 0 === $row['code'] ) {
+					$job['not_measured'] = count( $urls ) - $i - 1;
+					break;
+				}
 			}
 
 			self::store( $rows, isset( $job['source'] ) && 'auto' === $job['source'] );
@@ -259,6 +267,10 @@ final class ADVCM_Freshness {
 		$ok  = is_array( $reading );
 		$now = time();
 
+		// An age only for a page: a redirect or an error page has its own cached copy, and its age
+		// says nothing about the page the clear was for.
+		$page = $ok && isset( $reading['code'] ) && (int) $reading['code'] >= 200 && (int) $reading['code'] < 300;
+
 		return array(
 			'at'          => $now,
 			'url'         => substr( $url, 0, self::URL_CHARS ),
@@ -266,10 +278,10 @@ final class ADVCM_Freshness {
 			'source'      => isset( $job['source'] ) ? substr( (string) $job['source'], 0, 20 ) : '',
 			'by'          => isset( $job['by'] ) ? (int) $job['by'] : 0,
 			'code'        => $ok && isset( $reading['code'] ) ? (int) $reading['code'] : 0,
-			'age'         => $ok && isset( $reading['age']['seconds'] ) ? (int) $reading['age']['seconds'] : null,
-			'how'         => $ok && isset( $reading['age']['how'] ) ? substr( (string) $reading['age']['how'], 0, 20 ) : 'no answer',
-			'ages'        => $ok && isset( $reading['ages'] ) && is_array( $reading['ages'] ) ? array_map( 'intval', array_slice( $reading['ages'], 0, 4, true ) ) : array(),
-			'nitro_state' => $ok && isset( $reading['nitropack_state'] ) ? (string) $reading['nitropack_state'] : null,
+			'age'         => $page && isset( $reading['age']['seconds'] ) ? (int) $reading['age']['seconds'] : null,
+			'how'         => $page && isset( $reading['age']['how'] ) ? substr( (string) $reading['age']['how'], 0, 20 ) : ( $ok ? 'not a page' : 'no answer' ),
+			'ages'        => $page && isset( $reading['ages'] ) && is_array( $reading['ages'] ) ? array_map( 'intval', array_slice( $reading['ages'], 0, 4, true ) ) : array(),
+			'nitro_state' => $page && isset( $reading['nitropack_state'] ) ? (string) $reading['nitropack_state'] : null,
 			'nitro_copy'  => null === $copy ? null : $copy['state'],
 			'nitro_age'   => null === $copy ? null : max( 0, $now - (int) $copy['at'] ),
 		);

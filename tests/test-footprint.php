@@ -104,6 +104,20 @@ $decoded   = json_decode( $footprint, true );
 
 check( 'footprint.json is valid JSON', is_array( $decoded ) );
 
+$shapeless = array();
+
+foreach ( isset( $decoded['endpoints'] ) ? $decoded['endpoints'] : array() as $endpoint ) {
+	foreach ( $endpoint as $value ) {
+		foreach ( (array) $value as $inner ) {
+			if ( is_array( $inner ) ) {
+				$shapeless[] = wp_json_encode( $inner );
+			}
+		}
+	}
+}
+
+check( 'and every endpoint is an entry of its own, not nested in another', array() === $shapeless, implode( ' | ', $shapeless ) );
+
 foreach ( array_diff( array_unique( array_merge( $names, $declared[1] ) ), $wordpress_own ) as $name ) {
 	$listed = false !== strpos( $footprint, '"' . $name ) || false !== strpos( $footprint, '"' . rtrim( $name, '_' ) );
 

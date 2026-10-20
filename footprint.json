@@ -73,9 +73,8 @@
     { "type": "admin-post", "action": "advcm_rules", "auth": "logged in, advcm_purge_hard, nonce", "why": "add, switch on or off, or delete an auto-clear rule; switch the own-page setting on or off; pause or resume them all" },
     { "type": "admin-ajax", "action": "advcm_tick", "auth": "logged in (wp_ajax_ only, no nopriv), advcm_purge, nonce", "why": "the status screen moves a due background clear where the site's cron cannot wake" },
     { "type": "admin-page", "slug": "advcm-cache", "parent": "tools.php" },
-    { "type": "admin-bar", "nodes": ["advcm", "advcm-page", "advcm-site",
-    { "type": "admin-post", "action": "advcm_listings", "auth": "logged in, advcm_purge, nonce; since 0.5.0, starts a listings scan" }
-  ] }
+    { "type": "admin-post", "action": "advcm_listings", "auth": "logged in, advcm_purge, nonce", "why": "since 0.5.0, starts a listings scan on the Freshness tab; reads only" },
+    { "type": "admin-bar", "nodes": ["advcm", "advcm-page", "advcm-site"] }
   ],
   "hooks_on_content": [
     { "hook": "wp_after_insert_post", "why": "marks the auto-clear rules a saved post triggers; returns after one option read when no rule is switched on, and never clears anything in the save request" }

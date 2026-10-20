@@ -187,10 +187,11 @@ ADVCM_Freshness::use_prober(
 	}
 );
 
-$job = ADVCM_Freshness::measure( job( 'e1', pages( 2 ) ) );
+$job = ADVCM_Freshness::measure( job( 'e1', pages( 4 ) ) );
 $row = ADVCM_Freshness::rows();
 
-check( 'a probe that throws is a row with no answer, and the job goes on', ! empty( $job['measured'] ) && 2 === count( $row ) && 0 === $row[0]['code'] && null === $row[0]['age'] );
+check( 'a probe that throws is a row with no answer, and the job goes on', ! empty( $job['measured'] ) && 0 === $row[0]['code'] && null === $row[0]['age'] );
+check( 'and the pages after it are not asked: a site that cannot reach itself would wait 5 s on each', 1 === count( $row ) && 3 === $job['not_measured'], count( $row ) . ' / ' . $job['not_measured'] );
 
 ADVCM_Freshness::use_prober(
 	function ( $url ) {
@@ -203,6 +204,7 @@ $GLOBALS['options'] = array();
 ADVCM_Freshness::measure( job( 'r1', pages( 1 ) ) );
 
 check( 'a redirect is recorded with its code', 301 === ADVCM_Freshness::rows()[0]['code'] );
+check( 'and no age: the copy measured is the redirect\'s, not the page\'s', null === ADVCM_Freshness::rows()[0]['age'] && array() === ADVCM_Freshness::rows()[0]['ages'] );
 
 ADVCM_Freshness::use_prober(
 	function () {

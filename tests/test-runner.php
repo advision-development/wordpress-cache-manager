@@ -518,6 +518,25 @@ $job   = ADVCM_Runner::start( array( 'scope' => 'all' ) );
 
 check( 'a whole-site clear goes straight to its stages', array( 'clear' ) === $asked, implode( ', ', $asked ) );
 
+// A fatal while measuring (memory, a NitroPack fatal) must not measure again on every
+// continuation: the job is saved as measured before the first page is asked.
+$seen = null;
+ADVCM_Freshness::use_prober(
+	function () use ( &$seen ) {
+		foreach ( ADVCM_Jobs::all() as $stored ) {
+			if ( array( 'https://example.test/b/' ) === $stored['urls'] ) {
+				$seen = ! empty( $stored['measured'] );
+			}
+		}
+
+		return 'no answer here';
+	}
+);
+
+ADVCM_Runner::start( array( 'scope' => 'urls', 'urls' => array( 'https://example.test/b/' ) ) );
+
+check( 'a job is stored as measured before its first page is asked', true === $seen, var_export( $seen, true ) );
+
 advcm_test_no_network();
 
 finish();

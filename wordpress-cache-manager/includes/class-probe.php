@@ -63,6 +63,8 @@ final class ADVCM_Probe {
 			array(
 				'timeout'     => (int) $timeout,
 				'redirection' => 0,
+				// Only the start is read; a huge page is not held in memory whole.
+				'limit_response_size' => self::BODY_READ,
 				'user-agent'  => 'Mozilla/5.0 (compatible; AdvisionCacheProbe/' . ( defined( 'ADVCM_VERSION' ) ? ADVCM_VERSION : '0' ) . ')',
 			)
 		);
