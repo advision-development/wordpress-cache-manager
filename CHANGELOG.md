@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 — unreleased
+## 0.4.0 — 2026-10-20
 
 After a day of 0.3.2 on BMR nobody could tell who had changed a rule, the editors using the plugin
 could not change rules, settings were spread across tabs, and History kept the last three automatic
