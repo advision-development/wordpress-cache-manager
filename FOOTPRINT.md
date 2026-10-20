@@ -30,6 +30,7 @@ and the code disagree.
 | Option | `advcm_rules` | not autoloaded; auto-clear rules, and the "each post's own page" setting as the reserved rule `own-page`; written by administrators |
 | Option | `advcm_auto_<rule id>` | while a rule waits for its clear, with the first 10 posts that triggered it and a count of the rest (for `own-page`, also up to 40 of those posts' own URLs, taken at the save); deleted when the clear picks it up |
 | Option | `advcm_rules_last` | not autoloaded; per rule, when it last fired, how many posts and the job's state. Written by the clear, never by the rules form |
+| Option | `advcm_log` | not autoloaded; since 0.4.0, who changed what: the last 20 changes per tab section, each with the person, the time and the value before and after (cut to 200 characters). Written only by requests a person made |
 | Option | `advcm_rules_paused` | not autoloaded; while an administrator has paused every auto-clear rule |
 | Site transient | `advcm_release` | updater's cached GitHub answer |
 | Site transient | `advcm_loopback` | whether the site can reach its own home page; an hour (ten minutes when not) |
