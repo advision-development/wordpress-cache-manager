@@ -8,8 +8,8 @@ The design spec lives in the team's internal workspace, not in this public repos
 
 ## Status
 
-**0.3.2.** Tools → CacheManager, in five tabs — Status, Clear, Cache age, History, Auto-clear — and the
-CacheManager menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
+**0.4.0.** Tools → CacheManager, in six tabs — Status, Clear, Cache age, History, Auto-clear,
+Settings — each with a box of its last changes, and the CacheManager menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
 time the screen opens: install a cache plugin later and it appears on the next load. Talking to Hawkeye is a later phase.
 
 ## The order
@@ -85,15 +85,50 @@ NitroPack skips its warm-up and says why; a warm-up that NitroPack answers with 
 - **History says what triggered each clear**: every rule in words, and up to ten posts per rule —
   title, ID, type, and whether it was published, updated or unpublished — with a count of the
   rest. The rules table shows each rule's last clear.
-- **Pause** stops every rule at once and keeps each one's own on or off for the resume.
-- **Each post's own page** is a site setting on the same tab: when it is on, a published, updated
-  or unpublished post's own URL goes into the same clear, purging NitroPack, so an edit shows
-  without an editor clearing it by hand (on BMR, most manual clears were exactly that). It is kept
-  as the reserved rule `own-page` in the rules row, so a save still costs one option read.
+- **History says how long**: each clear shows how long it *took*, and an automatic one how long
+  it *waited* after the first save that set it off.
 
-Administrators write rules and pause them; anyone who can clear can read them and test a post
-against them. History keeps the last three auto-clears, so a day of publishing does not push out
-a clear somebody pressed.
+## Settings
+
+Every setting a person may change is on the *Settings* tab:
+
+| Setting | Default | |
+|---|---|---|
+| Pause auto-clear | off | Stops every rule and each post's own page at once; each rule keeps its own on or off for the resume. |
+| Each post's own page | off | A published, updated or unpublished post's own URL goes into the same clear, purging NitroPack, so an edit shows without anybody clearing it by hand (on BMR, most manual clears were exactly that). Kept as the reserved rule `own-page` in the rules row, so a save still costs one option read. |
+| Own page ignores saves that change nothing | on | A save that leaves title, content, excerpt, slug and status as they were does not clear the post's page (on BMR, something saved seven review pages every hour unchanged). A change only to custom fields or a page builder's own data reads as unchanged; clearing by hand still works. Listing rules always fire. |
+| Post types auto-clear leaves out | media, page-builder templates | For each post's own page and for rules on "any content". Revisions, auto-drafts, menu items and form, snippet and field-group records are always left out. |
+| NitroPack for new rules | purge | The choice the add-rule form starts with. |
+
+Not settings, on purpose: the plugin's auto-update, the mode timings, who may use the plugin, rate
+limits and storage caps. They are filters and constants; a checkbox for them is a way to break a
+site or the release path.
+
+## Who can do what
+
+Everyone who can clear the cache — editors (`edit_others_posts`) and administrators — can use every
+tab and every action: clear pages or the whole site, purge NitroPack in full, override a builder
+hold, add, switch and delete rules, and change every setting. The change log is the record of who
+did it. A site can take the costly actions, rules and settings back from editors with the
+`advcm_purge_hard_base_capability` filter. Choosing which layers a clear runs has no control on any
+screen and stays with administrators (`manage_options`). The *Check for updates* button needs
+`update_plugins`.
+
+## Change log
+
+Each tab ends with its **last changes**: who, when (UTC), what, and the value before → after.
+Recorded: clears people started, rule changes, setting changes and the pause, stuck jobs finished
+by hand, release checks, Cache age probes (a reload within ten minutes is not recorded again), and
+updates of this plugin (as nobody's: WordPress installs them on its own). Refusals, WP-Cron and
+automatic clears are not: History has those. Kept in `advcm_log`, 20 per tab, 10 shown, each value
+cut to 200 characters.
+
+## History
+
+Two lists: **Clears** (started by somebody, or WP-CLI) and **Automatic clears** (auto-clear rules
+and each post's own page), the last 20 of each, in separate rows so a busy day of publishing never
+pushes out a clear somebody pressed. A running clear is never dropped. Nothing grows past its cap:
+about 100 KB per list and 30 KB of change log at most, none of it autoloaded.
 
 ## Nothing it does can break a page
 
