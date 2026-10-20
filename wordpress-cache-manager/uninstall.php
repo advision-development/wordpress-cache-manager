@@ -26,8 +26,12 @@ try {
 	delete_option( 'advcm_rules_paused' );
 	delete_option( 'advcm_log' );
 	delete_option( 'advcm_settings' );
+	delete_option( 'advcm_freshness' );
+	delete_option( 'advcm_freshness_auto' );
+	delete_option( 'advcm_listings' );
 	wp_unschedule_hook( 'advcm_continue' ); // every job id, not only events with no arguments.
 	wp_unschedule_hook( 'advcm_auto_flush' );
+	wp_unschedule_hook( 'advcm_listings_scan' );
 
 	// A job's lock is a row named after the job. Normally released, but a run killed hard enough
 	// can leave one behind; the prefix is this plugin's own, so the wildcard reaches nothing else.

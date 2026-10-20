@@ -131,6 +131,20 @@ ADVCM_Settings::save_form( array( 'op' => 'save', 'nitropack_default' => 'invali
 
 check( 'saving without changing anything records nothing', 2 === count( settings_log() ) );
 
+$GLOBALS['options'][ ADVCM_Log::OPTION ] = array();
+
+ADVCM_Settings::save_form( array( 'op' => 'save', 'nitropack_default' => 'invalidate' ) );
+
+check( 'a form without the measuring marker leaves measuring on', true === ADVCM_Settings::get()['measure_before_clear'] );
+
+ADVCM_Settings::save_form( array( 'op' => 'save', 'nitropack_default' => 'invalidate', 'measure_present' => '1' ) );
+
+check( 'its box unticked switches measuring off, recorded', false === ADVCM_Settings::get()['measure_before_clear'] && array( 'measure_before_clear:on>off' ) === settings_log(), implode( ' | ', settings_log() ) );
+
+ADVCM_Settings::save_form( array( 'op' => 'save', 'nitropack_default' => 'invalidate', 'measure_present' => '1', 'measure_before_clear' => '1' ) );
+
+check( 'and ticked, on again', true === ADVCM_Settings::get()['measure_before_clear'] && 2 === count( settings_log() ) );
+
 // ------------------------------------------------- pause and own-page, from here
 
 $GLOBALS['options'][ ADVCM_Log::OPTION ] = array();

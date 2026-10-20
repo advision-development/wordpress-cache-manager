@@ -350,6 +350,26 @@ final class ADVCM_Runner {
 			self::$registered = true;
 		}
 
+		// How old each page was, before anything clears it: once per job, on its first run, never
+		// for the whole site. Not a stage — ADVCM_Freshness::measure() changes nothing and never
+		// throws, and a job that cannot be measured is cleared all the same.
+		//
+		// Stored as measured before the first page is asked: a fatal while measuring (memory, a
+		// fault in NitroPack) would otherwise measure again on every continuation, and the job
+		// would never reach its stages.
+		if ( empty( $job['measured'] ) ) {
+			$job['measured'] = true;
+			ADVCM_Jobs::save( $job );
+
+			try {
+				$job = ADVCM_Freshness::measure( array( 'measured' => false ) + $job );
+			} catch ( Throwable $e ) {
+				$job['measured'] = true;
+			}
+
+			ADVCM_Jobs::save( $job );
+		}
+
 		$adapters = array();
 
 		foreach ( self::adapters() as $adapter ) {

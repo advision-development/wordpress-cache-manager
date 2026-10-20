@@ -11,6 +11,7 @@
  * - own-page ignores saves that change nothing a visitor sees
  * - the post types auto-clear leaves out
  * - the NitroPack choice a new rule starts with
+ * - whether a clear of some pages first measures how old their cached copies were (0.5.0)
  *
  * The last three are this row, `advcm_settings`, not autoloaded. The save hook reads it only
  * after a rule is known to be on, the save is visible and the pause is off.
@@ -50,7 +51,7 @@ final class ADVCM_Settings {
 	 * The settings, every key present and the right shape.
 	 *
 	 * @return array own_skip_unchanged, excluded_types (string[] or null for the shipped list),
-	 *               nitropack_default, version_seen.
+	 *               nitropack_default, measure_before_clear, version_seen.
 	 */
 	public static function get() {
 		$stored = get_option( self::OPTION, array() );
@@ -68,6 +69,7 @@ final class ADVCM_Settings {
 			'own_skip_unchanged' => ! array_key_exists( 'own_skip_unchanged', $stored ) || ! empty( $stored['own_skip_unchanged'] ),
 			'excluded_types'     => $excluded,
 			'nitropack_default'  => isset( $stored['nitropack_default'] ) && 'invalidate' === $stored['nitropack_default'] ? 'invalidate' : 'purge',
+			'measure_before_clear' => ! array_key_exists( 'measure_before_clear', $stored ) || ! empty( $stored['measure_before_clear'] ),
 			'version_seen'       => isset( $stored['version_seen'] ) ? (string) $stored['version_seen'] : '',
 		);
 	}
@@ -201,6 +203,15 @@ final class ADVCM_Settings {
 			if ( $skip !== $now['own_skip_unchanged'] ) {
 				$changes['own_skip_unchanged'] = $skip;
 				ADVCM_Log::add( 'settings', 'own_skip_unchanged', __( 'Own page ignores saves that change nothing', 'advcm' ), $now['own_skip_unchanged'] ? 'on' : 'off', $skip ? 'on' : 'off' );
+			}
+		}
+
+		if ( ! empty( $input['measure_present'] ) ) {
+			$measure = ! empty( $input['measure_before_clear'] );
+
+			if ( $measure !== $now['measure_before_clear'] ) {
+				$changes['measure_before_clear'] = $measure;
+				ADVCM_Log::add( 'settings', 'measure_before_clear', __( 'Measure cache age before a clear', 'advcm' ), $now['measure_before_clear'] ? 'on' : 'off', $measure ? 'on' : 'off' );
 			}
 		}
 

@@ -85,6 +85,10 @@ function sanitize_key( $key ) {
 	return preg_replace( '~[^a-z0-9_\-]~', '', strtolower( (string) $key ) );
 }
 
+function wp_create_nonce( $action = -1 ) {
+	return 'nonce-' . $action;
+}
+
 function wp_parse_url( $url, $component = -1 ) {
 	return parse_url( $url, $component );
 }
@@ -114,7 +118,8 @@ function screen_part( $method, array $args = array() ) {
 
 // ---------------------------------------------------------------------- the tabs
 
-check( 'Settings is the sixth tab', array( 'status', 'clear', 'check', 'history', 'auto', 'settings' ) === ADVCM_Screen::TABS );
+check( 'Freshness comes after History, Settings stays last', array( 'status', 'clear', 'check', 'history', 'freshness', 'auto', 'settings' ) === ADVCM_Screen::TABS );
+check( 'and Freshness is shown as a tab', false !== strpos( screen_part( 'render_tabs', array( 'status' ) ), '>Freshness</a>' ) );
 check( 'and is shown as one', false !== strpos( screen_part( 'render_tabs', array( 'status' ) ), '>Settings</a>' ) );
 
 $source = file_get_contents( ADVCM_DIR . 'includes/class-screen.php' );
@@ -128,6 +133,7 @@ $out = screen_part( 'render_settings', array( true ) );
 check( 'the Settings form posts to its own action', false !== strpos( $out, 'name="action" value="' . ADVCM_Settings::ACTION . '"' ) );
 check( 'with the markers that tell an unticked box from a missing one', false !== strpos( $out, 'name="excluded_present"' ) && false !== strpos( $out, 'name="own_present"' ) );
 check( 'own-page ignoring unchanged saves is shown ticked by default', 1 === preg_match( '~name="own_skip_unchanged"[^>]*checked~', $out ) );
+check( 'measuring before a clear is shown ticked by default, with its marker', 1 === preg_match( '~name="measure_before_clear"[^>]*checked~', $out ) && false !== strpos( $out, 'name="measure_present"' ) );
 check( 'the post types to leave out are boxes, the shipped ones ticked', 1 === preg_match( '~value="elementor_library"[^>]*checked~', $out ) && 1 === preg_match( '~value="review_profile"(?![^>]*checked)~', $out ) );
 check( 'never a box for the always-excluded three', false === strpos( $out, 'value="revision"' ) );
 check( 'NitroPack for new rules: purge selected', 1 === preg_match( '~name="nitropack_default" value="purge"[^>]*checked~', $out ) );
@@ -182,13 +188,57 @@ ADVCM_Jobs::save( array( 'id' => 'quick', 'created' => $t - 20, 'finished' => $t
 	array( 'id' => 'wp-engine', 'label' => 'Host', 'stage' => 6, 'action' => 'run', 'status' => 'ok', 'message' => '', 'ms' => 12, 'started' => $t - 20 + 0.3 ),
 ) ) );
 
+// Three more: one that waited 15 minutes, one of five pages with measurements, one that failed.
+ADVCM_Jobs::save( array( 'id' => 'amber', 'created' => $t - 1000, 'finished' => $t - 90, 'by' => 0, 'source' => 'wp-cli', 'scope' => 'all', 'urls' => array(), 'mode' => 'balanced', 'state' => 'done with skips', 'steps' => array(
+	array( 'id' => 'wp-engine', 'label' => 'Host', 'stage' => 6, 'action' => 'run', 'status' => 'ok', 'message' => '', 'ms' => 12, 'started' => $t - 1000 + 900 ),
+) ) );
+ADVCM_Jobs::save( array( 'id' => 'pages', 'created' => $t - 50, 'finished' => $t - 40, 'by' => 0, 'source' => 'wp-cli', 'scope' => 'urls', 'urls' => array( 'https://example.test/a/', 'https://example.test/b/?x=<script>', 'https://example.test/c/', 'https://example.test/d/', 'https://example.test/e/' ), 'mode' => 'fast', 'state' => 'done with failures', 'measured' => true, 'not_measured' => 0, 'steps' => array(
+	array( 'id' => 'wp-engine', 'label' => 'Host', 'stage' => 6, 'action' => 'run', 'status' => 'failed', 'message' => 'Error: <b>gone</b>', 'ms' => 12, 'started' => $t - 50 ),
+) ) );
+$GLOBALS['options']['advcm_freshness'] = array(
+	array( 'at' => $t - 50, 'url' => 'https://example.test/a/', 'job' => 'pages', 'source' => 'wp-cli', 'by' => 0, 'code' => 200, 'age' => 5000, 'how' => 'exact', 'ages' => array( 'host cache' => 5000 ), 'nitro_state' => null, 'nitro_copy' => null, 'nitro_age' => null ),
+	array( 'at' => $t - 50, 'url' => 'https://example.test/c/', 'job' => 'pages', 'source' => 'wp-cli', 'by' => 0, 'code' => 200, 'age' => 30, 'how' => 'exact', 'ages' => array(), 'nitro_state' => null, 'nitro_copy' => null, 'nitro_age' => null ),
+	array( 'at' => $t - 20, 'url' => 'https://example.test/q/', 'job' => 'quick', 'source' => 'wp-cli', 'by' => 0, 'code' => 0, 'age' => null, 'how' => 'no answer', 'ages' => array(), 'nitro_state' => null, 'nitro_copy' => null, 'nitro_age' => null ),
+);
+
+load_class( 'freshness' );
+
 $out = screen_part( 'render_jobs', array( '' ) );
 
-check( 'History says how long a clear took', false !== strpos( $out, 'took 90 s' ) );
-check( 'and how long a clear somebody asked for waited before it ran, when WP-Cron was late', 1 === preg_match( '~Balanced — done — waited 8 h 30 min — took~', $out ) );
-check( 'a Fast clear, which runs in the request, shows no wait', 1 === preg_match( '~Fast — done — took 3 s~', $out ) && 0 === preg_match( '~whole site — Fast — done — waited~', $out ) );
-check( 'and how long an automatic clear waited after the first save that set it off', false !== strpos( $out, 'waited 8 h 30 min' ) );
-check( 'a clear still running has no time yet', 1 === preg_match( '~balanced — running(?! — took)~i', $out ) );
+/**
+ * One job's summary row, and the details row under it.
+ */
+function job_row( $out, $id ) {
+	return preg_match( '~<tr data-job="' . preg_quote( $id, '~' ) . '">(.*?)</tr>~s', $out, $m ) ? $m[1] : '';
+}
+
+function job_cell( $out, $id, $column ) {
+	return preg_match( '~<td data-col="' . $column . '"[^>]*>(.*?)</td>~s', job_row( $out, $id ), $m ) ? $m[1] : '';
+}
+
+function job_details( $out, $id ) {
+	return preg_match( '~<tr data-details="' . preg_quote( $id, '~' ) . '">(.*?)</tr>\s*(?=<tr data-job|</tbody>)~s', $out, $m ) ? $m[1] : '';
+}
+
+check( 'each list is a table with the summary columns', 2 === substr_count( $out, '<table class="widefat striped advcm-history"' ) && 1 === preg_match( '~<th>When</th><th>Who</th><th>What</th><th>Mode</th><th>State</th><th>Waited</th><th>Took</th><th>Cache age</th>~', $out ) );
+check( 'which scrolls sideways on a narrow screen rather than breaking the page', false !== strpos( $out, '<div style="overflow-x:auto">' ) );
+check( 'When is the time in UTC and how long ago', 1 === preg_match( '~\d{4}-\d\d-\d\d \d\d:\d\d UTC.*90 s ago~s', job_cell( $out, 'took', 'when' ) ) );
+check( 'History says how long a clear took', '90 s' === strip_tags( job_cell( $out, 'took', 'took' ) ) );
+check( 'and how long a clear somebody asked for waited before it ran, when WP-Cron was late', '8 h 30 min' === strip_tags( job_cell( $out, 'late', 'waited' ) ), (string) job_cell( $out, 'late', 'waited' ) );
+check( 'a wait over an hour is red, over ten minutes amber', false !== strpos( job_row( $out, 'late' ), 'advcm-wait-red' ) && false !== strpos( job_row( $out, 'amber' ), 'advcm-wait-amber' ) && false === strpos( job_row( $out, 'quick' ), 'advcm-wait' ) );
+check( 'a Fast clear, which runs in the request, shows no wait', '' === trim( strip_tags( job_cell( $out, 'quick', 'waited' ) ) ) && '3 s' === strip_tags( job_cell( $out, 'quick', 'took' ) ) );
+check( 'and how long an automatic clear waited after the first save that set it off', '8 h 30 min' === strip_tags( job_cell( $out, 'waited', 'waited' ) ) );
+check( 'a clear still running has no time yet, and is open', '' === trim( strip_tags( job_cell( $out, 'still', 'took' ) ) ) && 1 === preg_match( '~<details open~', job_details( $out, 'still' ) ) );
+check( 'Who is a badge for WP-CLI and Auto-clear', false !== strpos( job_cell( $out, 'took', 'who' ), 'WP-CLI</span>' ) && false !== strpos( job_cell( $out, 'waited', 'who' ), 'Auto-clear</span>' ) );
+check( 'What is the whole site, or the first two pages and how many more', 'Whole site' === strip_tags( job_cell( $out, 'took', 'what' ) ) && 1 === preg_match( '~/a/, /b/\?x=&lt;script&gt; \+3 more~', job_cell( $out, 'pages', 'what' ) ), (string) job_cell( $out, 'pages', 'what' ) );
+check( 'State is a badge in its colour', false !== strpos( job_cell( $out, 'took', 'state' ), '#008a20' ) && false !== strpos( job_cell( $out, 'pages', 'state' ), '#d63638' ) && false !== strpos( job_cell( $out, 'amber', 'state' ), '#646970' ) && false !== strpos( job_cell( $out, 'still', 'state' ), '#2271b1' ) );
+check( 'Cache age is the oldest copy measured for that clear', '83 min 20 s' === strip_tags( job_cell( $out, 'pages', 'age' ) ) );
+check( 'unknown when measured and no cache said, empty when not measured', 'unknown' === strip_tags( job_cell( $out, 'quick', 'age' ) ) && '' === strip_tags( job_cell( $out, 'took', 'age' ) ) );
+
+$details = job_details( $out, 'pages' );
+
+check( 'a row opens to its steps, every page and each page\'s cache age', false !== strpos( $details, 'Host' ) && false !== strpos( $details, 'https://example.test/e/' ) && 1 === preg_match( '~https://example.test/a/.{0,80}83 min 20 s~s', $details ) );
+check( 'everything in it escaped', false === strpos( $out, '<script>' ) && false === strpos( $out, '<b>gone' ) );
 
 // ------------------------------------------------------------------- the log box
 
@@ -206,5 +256,69 @@ check( 'a record shows who, what, and before → after', false !== strpos( $out,
 $source = file_get_contents( ADVCM_DIR . 'includes/class-screen.php' ) . file_get_contents( ADVCM_DIR . 'includes/class-auto.php' );
 
 check( 'no screen text still says administrators only', false === stripos( $source, 'administrators only' ) && false === strpos( $source, 'Only administrators can' ) );
+
+// -------------------------------------------------------------------- Freshness
+
+load_class( 'freshness' );
+load_class( 'listings' );
+
+$GLOBALS['options'] = array();
+
+$out = screen_part( 'render_freshness', array( true ) );
+
+check( 'with no scan yet the tab says so, and offers one', false !== strpos( $out, 'No scan yet' ) && false !== strpos( $out, 'name="action" value="' . ADVCM_Listings::ACTION . '"' ) && false !== strpos( $out, 'nonce-' . ADVCM_Listings::ACTION ) );
+check( 'with no measurement yet, that too', false !== strpos( $out, 'No clear has been measured yet' ) );
+
+$GLOBALS['options'][ ADVCM_Listings::OPTION ] = array(
+	'started'  => time() - 600,
+	'by'       => 7,
+	'cursor'   => 400,
+	'done'     => time() - 300,
+	'scanned'  => 196,
+	'total'    => 196,
+	'listings' => 137,
+	'green'    => 120,
+	'findings' => array(
+		array( 'verdict' => 'amber', 'days' => 9, 'doc' => 2, 'pos' => 0, 'title' => 'Texas', 'doc_type' => 'states', 'url' => 'https://example.test/usa/texas/', 'widget' => 'a1', 'type' => 'loop-grid', 'post_type' => 'post', 'per_page' => 6, 'filter' => 'tag texas', 'broken' => false, 'cannot_match' => false, 'custom' => false, 'newest' => array( 'id' => 5, 'title' => 'Texas news', 'date' => time() - 9 * 86400 ) ),
+		array( 'verdict' => 'red', 'days' => 293, 'doc' => 1, 'pos' => 0, 'title' => 'Alabama <script>x</script>', 'doc_type' => 'states', 'url' => 'https://example.test/usa/alabama/', 'widget' => 'b2', 'type' => 'posts', 'post_type' => 'post', 'per_page' => 6, 'filter' => 'tag alabama', 'broken' => false, 'cannot_match' => false, 'custom' => false, 'newest' => array( 'id' => 6, 'title' => 'Alabama news', 'date' => time() - 293 * 86400 ) ),
+		array( 'verdict' => 'red', 'days' => null, 'doc' => 3, 'pos' => 0, 'title' => 'Template', 'doc_type' => 'elementor_library', 'url' => '', 'widget' => 'c3', 'type' => 'posts', 'post_type' => 'post', 'per_page' => null, 'filter' => 'missing term #99', 'broken' => true, 'cannot_match' => false, 'custom' => false, 'newest' => null ),
+	),
+);
+
+$out = screen_part( 'render_freshness', array( true ) );
+
+check( 'a finished scan says when, by whom, and what it read', false !== strpos( $out, '196 documents' ) && false !== strpos( $out, '137 listings' ) && false !== strpos( $out, '120 up to date' ) );
+check( 'findings are listed red first', strpos( $out, 'tag alabama' ) < strpos( $out, 'tag texas' ) && strpos( $out, 'missing term #99' ) < strpos( $out, 'tag texas' ) );
+check( 'with the filter in words and the days since its newest post', false !== strpos( $out, '293' ) && false !== strpos( $out, 'Alabama news' ) );
+check( 'a broken filter says so', false !== strpos( $out, 'broken filter' ) );
+check( 'everything shown is escaped', false === strpos( $out, '<script>x' ) && false !== strpos( $out, '&lt;script&gt;' ) );
+
+$GLOBALS['options'][ ADVCM_Listings::OPTION ]['done']     = 0;
+$GLOBALS['options'][ ADVCM_Listings::OPTION ]['scanned']  = 40;
+$GLOBALS['options'][ ADVCM_Listings::OPTION ]['next_at']  = time();
+
+$out = screen_part( 'render_freshness', array( true ) );
+
+check( 'a running scan shows its progress', false !== strpos( $out, '40 of 196' ) );
+
+$tick = screen_part( 'render_tick', array( true, true ) );
+
+check( 'and the tab moves it along, saying it is the Freshness tab', false !== strpos( $tick, 'd.append("listings","1")' ) );
+$GLOBALS['options'][ ADVCM_Jobs::OPTION ] = array( 'jr' => array( 'id' => 'jr', 'state' => 'running', 'scope' => 'all', 'urls' => array(), 'created' => time(), 'finished' => 0, 'steps' => array(), 'source' => 'wp-admin', 'by' => 7 ) );
+$other = screen_part( 'render_tick', array( false ) );
+
+check( 'other tabs never ask for a listings batch, even while they tick', false !== strpos( $other, 'fetch(' ) && false === strpos( $other, 'listings' ) );
+
+unset( $GLOBALS['options'][ ADVCM_Jobs::OPTION ] );
+
+$GLOBALS['options'][ ADVCM_Freshness::OPTION ] = array(
+	array( 'at' => time() - 60, 'url' => 'https://example.test/analysis/', 'job' => 'h2', 'source' => 'wp-admin', 'by' => 7, 'code' => 200, 'age' => 5000, 'how' => 'exact', 'ages' => array( 'host cache' => 5000 ), 'nitro_state' => 'STALE', 'nitro_copy' => 'stale', 'nitro_age' => 7200 ),
+	array( 'at' => time() - 120, 'url' => 'https://example.test/analysis/', 'job' => 'h1', 'source' => 'wp-admin', 'by' => 7, 'code' => 200, 'age' => 30, 'how' => 'exact', 'ages' => array(), 'nitro_state' => null, 'nitro_copy' => null, 'nitro_age' => null ),
+);
+
+$out = screen_part( 'render_freshness', array( true ) );
+
+check( 'the cache age at each clear is listed, layer by layer', false !== strpos( $out, 'host cache 83 min 20 s' ) && false !== strpos( $out, 'NitroPack: stale' ) );
+check( 'pages cleared by hand often are listed, with no rule clearing them', false !== strpos( $out, 'no rule clears this page' ) && false !== strpos( $out, '2 times' ) );
 
 finish();

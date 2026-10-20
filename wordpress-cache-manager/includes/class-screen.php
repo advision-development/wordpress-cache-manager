@@ -172,6 +172,9 @@ final class ADVCM_Screen {
 			'history' => function () use ( $open ) {
 				self::render_jobs( $open );
 			},
+			'freshness' => function () use ( $hard ) {
+				self::render_freshness( $hard );
+			},
 			'auto'    => function () use ( $hard ) {
 				self::render_auto( $hard );
 			},
@@ -201,7 +204,7 @@ final class ADVCM_Screen {
 		ADVCM_Safe::run(
 			'screen:tick',
 			function () use ( $tab ) {
-				self::render_tick( 'history' === $tab );
+				self::render_tick( 'history' === $tab || 'freshness' === $tab, 'freshness' === $tab );
 			}
 		);
 
@@ -212,7 +215,7 @@ final class ADVCM_Screen {
 	const WAIT_SHOWN = 5;
 
 	/** The tabs, in order, by id. */
-	const TABS = array( 'status', 'clear', 'check', 'history', 'auto', 'settings' );
+	const TABS = array( 'status', 'clear', 'check', 'history', 'freshness', 'auto', 'settings' );
 
 	/**
 	 * The tab to show: the one asked for, or History when a press has just landed with its job,
@@ -258,6 +261,7 @@ final class ADVCM_Screen {
 			'clear'   => __( 'Clear', 'advcm' ),
 			'check'   => __( 'Cache age', 'advcm' ),
 			'history' => __( 'History', 'advcm' ),
+			'freshness' => __( 'Freshness', 'advcm' ),
 			'auto'     => __( 'Auto-clear', 'advcm' ),
 			'settings' => __( 'Settings', 'advcm' ),
 		);
@@ -297,15 +301,19 @@ final class ADVCM_Screen {
 	 * gets. On History the page then reloads to show it; on the other tabs it only keeps calling,
 	 * so a list of URLs being typed on Clear is not thrown away by a reload.
 	 *
-	 * @param bool $reload Whether to reload after each call.
+	 * @param bool $reload   Whether to reload after each call.
+	 * @param bool $listings The Freshness tab: also move a listings scan WP-Cron has left late.
 	 * @return void
 	 */
-	private static function render_tick( $reload ) {
+	private static function render_tick( $reload, $listings = false ) {
 		// Also for an auto-clear WP-Cron has left a window past due: the tick runs it
 		// (ADVCM_Auto::tick()), as it moves a background job.
 		$late_clear = ADVCM_Auto::next_flush() > 0 && ADVCM_Auto::next_flush() <= time() - ADVCM_Auto::WINDOW;
 
-		if ( ! self::running_job() && ! $late_clear ) {
+		$scan = $listings ? ADVCM_Listings::state() : null;
+		$scan = null !== $scan && $scan['started'] && ! $scan['done'];
+
+		if ( ! self::running_job() && ! $late_clear && ! $scan ) {
 			return;
 		}
 
@@ -315,7 +323,7 @@ final class ADVCM_Screen {
 
 		$then = $reload ? 'setTimeout(function(){window.location.reload();},15000);' : 'setTimeout(tick,15000);';
 
-		echo '<script>(function(){var tick=function(){var d=new FormData();d.append("action",' . wp_json_encode( ADVCM_Controller::TICK ) . ');d.append("_ajax_nonce",' . wp_json_encode( wp_create_nonce( ADVCM_Controller::TICK ) ) . ');var done=function(){' . $then . '};fetch(' . wp_json_encode( admin_url( 'admin-ajax.php' ) ) . ',{method:"POST",body:d,credentials:"same-origin"}).then(done,done);};tick();})();</script>';
+		echo '<script>(function(){var tick=function(){var d=new FormData();d.append("action",' . wp_json_encode( ADVCM_Controller::TICK ) . ');d.append("_ajax_nonce",' . wp_json_encode( wp_create_nonce( ADVCM_Controller::TICK ) ) . ');' . ( $listings ? 'd.append("listings","1");' : '' ) . 'var done=function(){' . $then . '};fetch(' . wp_json_encode( admin_url( 'admin-ajax.php' ) ) . ',{method:"POST",body:d,credentials:"same-origin"}).then(done,done);};tick();})();</script>';
 	}
 
 	/** The nonce action for the cache-age check. */
@@ -389,6 +397,21 @@ final class ADVCM_Screen {
 
 		if ( null !== $reading['hits'] ) {
 			$rows[ __( 'Served from this copy', 'advcm' ) ] = sprintf( _n( '%d time', '%d times', $reading['hits'], 'advcm' ), $reading['hits'] );
+		}
+
+		// Both only on a site with NitroPack: elsewhere there is nothing to say and no row says it.
+		if ( null !== $reading['nitropack_state'] ) {
+			$rows[ __( 'NitroPack state in the page', 'advcm' ) ] = $reading['nitropack_state'];
+		}
+
+		$copy = ADVCM_Probe::nitropack_copy( $reading['url'] );
+
+		if ( null !== $copy ) {
+			$rows[ __( 'NitroPack copy', 'advcm' ) ] = 'fresh' === $copy['state']
+				/* translators: %s: how long ago. */
+				? sprintf( __( 'stored %s ago (fresh)', 'advcm' ), ADVCM_Probe::duration( max( 0, time() - $copy['at'] ) ) )
+				/* translators: %s: how long ago. */
+				: sprintf( __( 'stale, written %s ago — NitroPack serves it while it builds a new one', 'advcm' ), ADVCM_Probe::duration( max( 0, time() - $copy['at'] ) ) );
 		}
 
 		echo '<table class="widefat striped" style="max-width:900px"><tbody>';
@@ -814,71 +837,220 @@ final class ADVCM_Screen {
 			return;
 		}
 
-		foreach ( $jobs as $job ) {
-			$who     = self::who( (int) $job['by'], isset( $job['source'] ) ? $job['source'] : '' );
-			$what    = 'all' === $job['scope'] ? __( 'whole site', 'advcm' ) : implode( ', ', $job['urls'] );
-			$mode    = ADVCM_Modes::get( isset( $job['mode'] ) ? $job['mode'] : ADVCM_Modes::FAST );
-			$summary = sprintf( '%s — %s — %s — %s — %s', gmdate( 'Y-m-d H:i', (int) $job['created'] ) . ' UTC', $who, $what, $mode['label'], $job['state'] ) . self::timings( $job );
-			$running = 'running' === $job['state'];
+		$measured = self::measured_by_job();
+		$states   = array(
+			'done'               => 'green',
+			'done with skips'    => 'grey',
+			'done with failures' => 'red',
+			'running'            => 'blue',
+		);
 
-			echo '<details' . ( ( $open === $job['id'] || $running ) ? ' open' : '' ) . ' style="margin:0 0 8px">';
-			echo '<summary>' . esc_html( $summary ) . '</summary>';
+		echo '<div style="overflow-x:auto"><table class="widefat striped advcm-history" style="margin-bottom:16px"><thead><tr>';
 
-			if ( $running ) {
-				echo '<p><strong>' . esc_html( self::progress_line( $job ) ) . '</strong></p>';
-
-				if ( ADVCM_Runner::stuck( $job ) ) {
-					echo '<form method="post" action="' . esc_url( ADVCM_Controller::url() ) . '">';
-					wp_nonce_field( ADVCM_Controller::RESUME );
-					echo '<input type="hidden" name="action" value="' . esc_attr( ADVCM_Controller::RESUME ) . '" />';
-					echo '<input type="hidden" name="job" value="' . esc_attr( $job['id'] ) . '" />';
-					submit_button( __( 'Continue now, without the remaining pauses', 'advcm' ), 'secondary small', 'submit', false );
-					echo '</form>';
-				}
-			}
-
-			if ( ! empty( $job['refused'] ) ) {
-				echo '<p>' . esc_html( __( 'Not on this site, so not cleared:', 'advcm' ) . ' ' . implode( ', ', $job['refused'] ) ) . '</p>';
-			}
-
-			self::render_triggers( $job );
-
-			echo '<table class="widefat striped" style="margin-top:6px"><tbody>';
-
-			foreach ( $job['steps'] as $step ) {
-				// The same rule as Status: a layer that was not on the site when the clear was
-				// planned is not a row. A layer that was there at the plan and gone by its step
-				// still is — it says the site changed under the clear.
-				if ( 'skip' === $step['action'] && 'skipped' === $step['status'] && ADVCM_Runner::LEFT_OUT !== $step['message'] ) {
-					continue;
-				}
-
-				echo '<tr>';
-				echo '<td>' . esc_html( $step['stage'] . ' · ' . $step['label'] ) . '</td>';
-				echo '<td><strong>' . esc_html( $step['status'] ) . '</strong></td>';
-				echo '<td>' . esc_html( $step['message'] ) . '</td>';
-				echo '<td>' . esc_html( $step['ms'] ? $step['ms'] . ' ms' : '' ) . '</td>';
-				echo '</tr>';
-			}
-
-			echo '</tbody></table></details>';
+		foreach ( array( __( 'When', 'advcm' ), __( 'Who', 'advcm' ), __( 'What', 'advcm' ), __( 'Mode', 'advcm' ), __( 'State', 'advcm' ), __( 'Waited', 'advcm' ), __( 'Took', 'advcm' ), __( 'Cache age', 'advcm' ) ) as $head ) {
+			echo '<th>' . esc_html( $head ) . '</th>';
 		}
 
+		echo '</tr></thead><tbody>';
+
+		// Over an hour red, over ten minutes amber: the waits that mean WP-Cron is behind.
+		$wait_styles = array(
+			'red'   => 'color:#d63638;font-weight:600',
+			'amber' => 'color:#996800;font-weight:600',
+		);
+
+		foreach ( $jobs as $job ) {
+			$source  = isset( $job['source'] ) ? $job['source'] : '';
+			$who     = self::who( (int) $job['by'], $source );
+			$mode    = ADVCM_Modes::get( isset( $job['mode'] ) ? $job['mode'] : ADVCM_Modes::FAST );
+			$running = 'running' === $job['state'];
+			$waited  = self::waited( $job );
+			$took    = self::took( $job );
+			$rows    = isset( $measured[ $job['id'] ] ) ? $measured[ $job['id'] ] : array();
+			$late    = '';
+
+			if ( null !== $waited && $waited > HOUR_IN_SECONDS ) {
+				$late = 'red';
+			} elseif ( null !== $waited && $waited > 10 * MINUTE_IN_SECONDS ) {
+				$late = 'amber';
+			}
+
+			echo '<tr data-job="' . esc_attr( $job['id'] ) . '">';
+			/* translators: %s: a duration. */
+			echo '<td data-col="when">' . esc_html( gmdate( 'Y-m-d H:i', (int) $job['created'] ) . ' UTC' ) . '<br><span class="description">' . esc_html( sprintf( __( '%s ago', 'advcm' ), ADVCM_Probe::duration( max( 0, time() - (int) $job['created'] ) ) ) ) . '</span></td>';
+			// phpcs:disable WordPress.Security.EscapeOutput -- badge() escapes.
+			echo '<td data-col="who">' . ( 'wp-cli' === $source || ADVCM_Auto::SOURCE === $source ? self::badge( $who, 'grey' ) : esc_html( $who ) ) . '</td>';
+			echo '<td data-col="what">' . esc_html( self::what( $job ) ) . '</td>';
+			echo '<td data-col="mode">' . esc_html( $mode['label'] ) . '</td>';
+			echo '<td data-col="state">' . self::badge( $job['state'], isset( $states[ $job['state'] ] ) ? $states[ $job['state'] ] : 'grey' ) . '</td>';
+			// phpcs:enable
+			echo '<td data-col="waited"' . ( '' !== $late ? ' class="advcm-wait advcm-wait-' . esc_attr( $late ) . '" style="' . esc_attr( $wait_styles[ $late ] ) . '"' : '' ) . '>' . esc_html( null === $waited ? '' : ADVCM_Probe::duration( $waited ) ) . '</td>';
+			echo '<td data-col="took">' . esc_html( null === $took ? '' : ADVCM_Probe::duration( $took ) ) . '</td>';
+			echo '<td data-col="age">' . esc_html( self::oldest( $rows ) ) . '</td>';
+			echo '</tr>';
+
+			// A second row, so the details span the table; <details> opens it without JavaScript.
+			echo '<tr data-details="' . esc_attr( $job['id'] ) . '"><td colspan="8" style="padding-top:0">';
+			echo '<details' . ( ( $open === $job['id'] || $running ) ? ' open' : '' ) . '>';
+			echo '<summary>' . esc_html__( 'Details', 'advcm' ) . '</summary>';
+
+			self::render_job_details( $job, $rows, $running );
+
+			echo '</details></td></tr>';
+		}
+
+		echo '</tbody></table></div>';
 	}
 
 	/**
-	 * How long a clear took, and how long it waited: an automatic one from the first save that set
-	 * it off, one somebody asked for from the request to its first step — the number that showed
-	 * BMR's clears running hours late. "took" is empty while running.
+	 * What a job's row opens to: progress and the continue button while it runs, the pages it
+	 * refused, what set it off, every page with its measured cache age, and the steps.
+	 *
+	 * @param array   $job     Job.
+	 * @param array[] $rows    Its measurements.
+	 * @param bool    $running Whether it is running.
+	 * @return void
+	 */
+	private static function render_job_details( array $job, array $rows, $running ) {
+		if ( $running ) {
+			echo '<p><strong>' . esc_html( self::progress_line( $job ) ) . '</strong></p>';
+
+			if ( ADVCM_Runner::stuck( $job ) ) {
+				echo '<form method="post" action="' . esc_url( ADVCM_Controller::url() ) . '">';
+				wp_nonce_field( ADVCM_Controller::RESUME );
+				echo '<input type="hidden" name="action" value="' . esc_attr( ADVCM_Controller::RESUME ) . '" />';
+				echo '<input type="hidden" name="job" value="' . esc_attr( $job['id'] ) . '" />';
+				submit_button( __( 'Continue now, without the remaining pauses', 'advcm' ), 'secondary small', 'submit', false );
+				echo '</form>';
+			}
+		}
+
+		if ( ! empty( $job['refused'] ) ) {
+			echo '<p>' . esc_html( __( 'Not on this site, so not cleared:', 'advcm' ) . ' ' . implode( ', ', $job['refused'] ) ) . '</p>';
+		}
+
+		self::render_triggers( $job );
+
+		if ( 'all' !== $job['scope'] && ! empty( $job['urls'] ) ) {
+			$ages = array();
+
+			foreach ( $rows as $row ) {
+				$layers                       = self::layer_words( $row );
+				$ages[ (string) $row['url'] ] = self::age_words( $row ) . ( '—' !== $layers ? ' (' . $layers . ')' : '' );
+			}
+
+			echo '<ul style="list-style:disc;margin:6px 0 6px 20px">';
+
+			foreach ( $job['urls'] as $url ) {
+				/* translators: %s: an age. */
+				echo '<li><code>' . esc_html( $url ) . '</code>' . ( isset( $ages[ $url ] ) ? ' — ' . esc_html( sprintf( __( 'cache age %s', 'advcm' ), $ages[ $url ] ) ) : '' ) . '</li>';
+			}
+
+			echo '</ul>';
+
+			if ( ! empty( $job['not_measured'] ) ) {
+				/* translators: %d: pages. */
+				echo '<p class="description">' . esc_html( sprintf( _n( '%d page was not measured: a clear measures at most 10, within 20 seconds.', '%d pages were not measured: a clear measures at most 10, within 20 seconds.', (int) $job['not_measured'], 'advcm' ), (int) $job['not_measured'] ) ) . '</p>';
+			}
+		}
+
+		echo '<table class="widefat striped" style="margin-top:6px"><tbody>';
+
+		foreach ( $job['steps'] as $step ) {
+			// The same rule as Status: a layer that was not on the site when the clear was
+			// planned is not a row. A layer that was there at the plan and gone by its step
+			// still is — it says the site changed under the clear.
+			if ( 'skip' === $step['action'] && 'skipped' === $step['status'] && ADVCM_Runner::LEFT_OUT !== $step['message'] ) {
+				continue;
+			}
+
+			echo '<tr>';
+			echo '<td>' . esc_html( $step['stage'] . ' · ' . $step['label'] ) . '</td>';
+			echo '<td><strong>' . esc_html( $step['status'] ) . '</strong></td>';
+			echo '<td>' . esc_html( $step['message'] ) . '</td>';
+			echo '<td>' . esc_html( $step['ms'] ? $step['ms'] . ' ms' : '' ) . '</td>';
+			echo '</tr>';
+		}
+
+		echo '</tbody></table>';
+	}
+
+	/**
+	 * What a job cleared, short: the whole site, or its first two pages and how many more.
 	 *
 	 * @param array $job Job.
-	 * @return string " — took …", " — waited …", or both, or empty.
+	 * @return string
 	 */
-	private static function timings( array $job ) {
-		$out     = '';
-		$created = isset( $job['created'] ) ? (int) $job['created'] : 0;
+	private static function what( array $job ) {
+		if ( 'all' === $job['scope'] ) {
+			return __( 'Whole site', 'advcm' );
+		}
 
-		$first = 0;
+		$urls  = array_values( (array) $job['urls'] );
+		$paths = array();
+
+		foreach ( array_slice( $urls, 0, 2 ) as $url ) {
+			$parts   = wp_parse_url( (string) $url );
+			$path    = is_array( $parts ) && isset( $parts['path'] ) ? $parts['path'] : '/';
+			$paths[] = $path . ( is_array( $parts ) && isset( $parts['query'] ) ? '?' . $parts['query'] : '' );
+		}
+
+		/* translators: %d: pages. */
+		return implode( ', ', $paths ) . ( count( $urls ) > 2 ? ' ' . sprintf( __( '+%d more', 'advcm' ), count( $urls ) - 2 ) : '' );
+	}
+
+	/**
+	 * Every measurement, by job id: read once for the whole History.
+	 *
+	 * @return array job id => rows.
+	 */
+	private static function measured_by_job() {
+		$out = array();
+
+		foreach ( array_merge( ADVCM_Freshness::rows(), ADVCM_Freshness::rows( true ) ) as $row ) {
+			if ( isset( $row['job'] ) ) {
+				$out[ (string) $row['job'] ][] = $row;
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * The oldest copy a job's measurements found: empty when not measured, "unknown" when no
+	 * cache said.
+	 *
+	 * @param array[] $rows Measurements.
+	 * @return string
+	 */
+	private static function oldest( array $rows ) {
+		if ( empty( $rows ) ) {
+			return '';
+		}
+
+		$oldest = null;
+
+		foreach ( $rows as $row ) {
+			if ( isset( $row['age'] ) && null !== $row['age'] ) {
+				$oldest = null === $oldest ? (int) $row['age'] : max( $oldest, (int) $row['age'] );
+			}
+		}
+
+		return null === $oldest ? __( 'unknown', 'advcm' ) : ADVCM_Probe::duration( $oldest );
+	}
+
+	/**
+	 * How long a clear waited, in seconds, or null when it did not wait to speak of: an automatic
+	 * one from the first save that set it off, one somebody asked for from the request to its
+	 * first step that ran. A Fast clear runs in that request and shows nothing; a background one
+	 * WP-Cron ran late shows how late — the number that would have shown BMR's 8.5 hours.
+	 *
+	 * @param array $job Job.
+	 * @return int|null
+	 */
+	private static function waited( array $job ) {
+		$created = isset( $job['created'] ) ? (int) $job['created'] : 0;
+		$first   = 0;
 
 		foreach ( isset( $job['options']['triggers'] ) && is_array( $job['options']['triggers'] ) ? $job['options']['triggers'] : array() as $trigger ) {
 			if ( is_array( $trigger ) && ! empty( $trigger['at'] ) ) {
@@ -887,32 +1059,38 @@ final class ADVCM_Screen {
 		}
 
 		if ( $first > 0 && $created > $first ) {
-			/* translators: %s: a duration. */
-			$out .= ' — ' . sprintf( __( 'waited %s', 'advcm' ), ADVCM_Probe::duration( $created - $first ) );
-		} else {
-			// A clear somebody asked for: from the request to its first step that ran. A Fast clear
-			// runs in that request, so it shows nothing; a background one WP-Cron ran late shows how
-			// late — the number that would have shown BMR's 8.5 hours.
-			$ran = 0.0;
+			return $created - $first;
+		}
 
-			foreach ( isset( $job['steps'] ) && is_array( $job['steps'] ) ? $job['steps'] : array() as $step ) {
-				if ( is_array( $step ) && ! empty( $step['started'] ) ) {
-					$ran = 0.0 === $ran ? (float) $step['started'] : min( $ran, (float) $step['started'] );
-				}
-			}
+		$ran = 0.0;
 
-			if ( $ran > 0 && $created > 0 && $ran - $created >= self::WAIT_SHOWN ) {
-				/* translators: %s: a duration. */
-				$out .= ' — ' . sprintf( __( 'waited %s', 'advcm' ), ADVCM_Probe::duration( (int) ( $ran - $created ) ) );
+		foreach ( isset( $job['steps'] ) && is_array( $job['steps'] ) ? $job['steps'] : array() as $step ) {
+			if ( is_array( $step ) && ! empty( $step['started'] ) ) {
+				$ran = 0.0 === $ran ? (float) $step['started'] : min( $ran, (float) $step['started'] );
 			}
 		}
+
+		if ( $ran > 0 && $created > 0 && $ran - $created >= self::WAIT_SHOWN ) {
+			return (int) ( $ran - $created );
+		}
+
+		return null;
+	}
+
+	/**
+	 * How long a clear took, in seconds, or null while it runs.
+	 *
+	 * @param array $job Job.
+	 * @return int|null
+	 */
+	private static function took( array $job ) {
+		$created = isset( $job['created'] ) ? (int) $job['created'] : 0;
 
 		if ( ! empty( $job['finished'] ) && (int) $job['finished'] >= $created && $created > 0 ) {
-			/* translators: %s: a duration. */
-			$out .= ' — ' . sprintf( __( 'took %s', 'advcm' ), ADVCM_Probe::duration( (int) $job['finished'] - $created ) );
+			return (int) $job['finished'] - $created;
 		}
 
-		return $out;
+		return null;
 	}
 
 	/**
@@ -1236,6 +1414,7 @@ final class ADVCM_Screen {
 		echo '<input type="hidden" name="op" value="save" />';
 		echo '<input type="hidden" name="own_present" value="1" />';
 		echo '<input type="hidden" name="excluded_present" value="1" />';
+		echo '<input type="hidden" name="measure_present" value="1" />';
 
 		echo '<p><label><input type="checkbox" name="own_skip_unchanged" value="1"' . ( $settings['own_skip_unchanged'] ? ' checked' : '' ) . ' /> ';
 		echo esc_html__( 'Ignore saves that change nothing a visitor sees: title, content, excerpt, slug, status, password, date, parent and order all as they were.', 'advcm' ) . '</label></p>';
@@ -1258,6 +1437,11 @@ final class ADVCM_Screen {
 		) as $value => $label ) {
 			echo '<p style="margin:0 0 4px"><label><input type="radio" name="nitropack_default" value="' . esc_attr( $value ) . '"' . ( $value === $settings['nitropack_default'] ? ' checked' : '' ) . ' /> ' . esc_html( $label ) . '</label></p>';
 		}
+
+		echo '<h3>' . esc_html__( 'Cache age before a clear', 'advcm' ) . '</h3>';
+		echo '<p><label><input type="checkbox" name="measure_before_clear" value="1"' . ( $settings['measure_before_clear'] ? ' checked' : '' ) . ' /> ';
+		echo esc_html__( 'Before clearing some pages, ask each one how old its cached copy is, and keep the answer for the Freshness tab.', 'advcm' ) . '</label></p>';
+		echo '<p class="description">' . esc_html__( 'One request per page, as a visitor would make: at most 10 pages per clear, 5 seconds each, 20 seconds in all. Never for a whole-site clear. Only the caches this site has answer.', 'advcm' ) . '</p>';
 
 		if ( $hard ) {
 			submit_button( __( 'Save settings', 'advcm' ) );
@@ -1285,6 +1469,309 @@ final class ADVCM_Screen {
 		echo '<input type="hidden" name="op" value="' . esc_attr( $op ) . '" />';
 		submit_button( $label, $class, 'submit', false );
 		echo '</form> ';
+	}
+
+	/** Badge colours, from the WordPress admin palette. */
+	const BADGES = array(
+		'red'       => '#d63638',
+		'amber'     => '#996800',
+		'green'     => '#008a20',
+		'grey'      => '#646970',
+		'blue'      => '#2271b1',
+		'unchecked' => '#646970',
+	);
+
+	/**
+	 * A small coloured label.
+	 *
+	 * @param string $label Text.
+	 * @param string $color Key of BADGES.
+	 * @return string HTML.
+	 */
+	private static function badge( $label, $color ) {
+		$hex = isset( self::BADGES[ $color ] ) ? self::BADGES[ $color ] : self::BADGES['grey'];
+
+		return '<span style="display:inline-block;padding:1px 8px;border-radius:10px;color:#fff;background:' . esc_attr( $hex ) . ';font-size:12px;white-space:nowrap">' . esc_html( $label ) . '</span>';
+	}
+
+	/**
+	 * The Freshness tab: is a page old because a cache held it, or because its content is old?
+	 *
+	 * Three readings, each on its own guard: listings whose filter has matched nothing new for
+	 * weeks (a scan a person starts), how old each page's cache was when a clear cleared it, and
+	 * the pages people keep clearing by hand. All read-only; the only button starts the scan.
+	 *
+	 * @param bool $hard Unused: anybody who may clear may scan.
+	 * @return void
+	 */
+	private static function render_freshness( $hard ) {
+		echo '<p>' . esc_html__( 'A page can look old for two reasons: a cache kept an old copy, or the page itself has nothing new to show. Clearing fixes the first and does nothing for the second. This tab tells them apart.', 'advcm' ) . '</p>';
+
+		foreach ( array( 'render_listings', 'render_measured', 'render_often' ) as $part ) {
+			ADVCM_Safe::run(
+				'screen:' . $part,
+				function () use ( $part ) {
+					self::$part();
+				}
+			);
+		}
+	}
+
+	/**
+	 * Frozen listings: the scan's state, its button, and what it found.
+	 *
+	 * @return void
+	 */
+	private static function render_listings() {
+		$state = ADVCM_Listings::state();
+
+		echo '<h2>' . esc_html__( 'Listings with nothing new', 'advcm' ) . '</h2>';
+		echo '<p class="description">' . esc_html(
+			sprintf(
+				/* translators: 1: days, 2: days. */
+				__( 'Elementor post lists and loop grids that filter by category or tag, on every page and template. Red: the newest post the filter matches is over %1$d days old, or the filter can match nothing. Amber: from %2$d days. A clear does not help these: the page needs posts in that category or tag, or a different filter.', 'advcm' ),
+				ADVCM_Listings::FROZEN_DAYS,
+				ADVCM_Listings::STALE_DAYS
+			)
+		) . '</p>';
+
+		$running = $state['started'] && ! $state['done'];
+
+		if ( ! $state['started'] ) {
+			echo '<p>' . esc_html__( 'No scan yet.', 'advcm' ) . '</p>';
+		} elseif ( $running ) {
+			/* translators: 1: documents read, 2: in all, 3: how long ago, 4: person. */
+			$line = sprintf( __( 'Scanning: %1$d of %2$d documents read, started %3$s ago by %4$s.', 'advcm' ), $state['scanned'], $state['total'], ADVCM_Probe::duration( time() - $state['started'] ), self::who( $state['by'], '' ) );
+
+			if ( $state['next_at'] && time() - $state['next_at'] > ADVCM_Listings::LATE ) {
+				$line .= ' ' . __( 'WP-Cron is late on this site; while this tab is open it moves the scan along.', 'advcm' );
+			}
+
+			echo '<p>' . esc_html( $line ) . '</p>';
+		} else {
+			/* translators: 1: how long ago, 2: date, 3: person, 4: documents, 5: listings, 6: up to date. */
+			echo '<p>' . esc_html( sprintf( __( 'Last scan finished %1$s ago (%2$s UTC), started by %3$s: %4$d documents, %5$d listings, %6$d up to date.', 'advcm' ), ADVCM_Probe::duration( max( 0, time() - $state['done'] ) ), gmdate( 'Y-m-d H:i', $state['done'] ), self::who( $state['by'], '' ), $state['scanned'], $state['listings'], $state['green'] ) ) . '</p>';
+
+			if ( 0 === $state['total'] ) {
+				echo '<p class="description">' . esc_html__( 'This site has no published Elementor pages or templates, so there is nothing to check.', 'advcm' ) . '</p>';
+			}
+		}
+
+		if ( $state['skipped'] ) {
+			/* translators: %d: documents. */
+			echo '<p class="description">' . esc_html( sprintf( _n( '%d document stopped a run and was stepped over.', '%d documents stopped a run and were stepped over.', $state['skipped'], 'advcm' ), $state['skipped'] ) ) . '</p>';
+		}
+
+		if ( $state['dropped'] ) {
+			/* translators: 1: findings, 2: the cap. */
+			echo '<p class="description">' . esc_html( sprintf( __( '%1$d more findings are not kept: only the worst %2$d are.', 'advcm' ), $state['dropped'], ADVCM_Listings::LISTINGS_KEEP ) ) . '</p>';
+		}
+
+		echo '<form method="post" action="' . esc_url( ADVCM_Controller::url() ) . '">';
+		wp_nonce_field( ADVCM_Listings::ACTION );
+		echo '<input type="hidden" name="action" value="' . esc_attr( ADVCM_Listings::ACTION ) . '" />';
+		submit_button( $running ? __( 'Pick up the scan', 'advcm' ) : __( 'Scan listings', 'advcm' ), 'secondary', '', false );
+		echo ' <span class="description">' . esc_html__( 'Runs in the background, 20 documents at a time, and changes nothing.', 'advcm' ) . '</span></form>';
+
+		if ( empty( $state['findings'] ) ) {
+			return;
+		}
+
+		$labels = array(
+			'red'       => __( 'nothing new', 'advcm' ),
+			'amber'     => __( 'slowing', 'advcm' ),
+			'unchecked' => __( 'not checked', 'advcm' ),
+		);
+
+		// Stored in this order already; sorted again so a row written by an older version reads
+		// the same.
+		$findings = $state['findings'];
+		usort( $findings, array( 'ADVCM_Listings', 'compare' ) );
+
+		echo '<div style="overflow-x:auto;margin-top:12px"><table class="widefat striped"><thead><tr>';
+
+		foreach ( array( __( 'State', 'advcm' ), __( 'Page', 'advcm' ), __( 'Widget', 'advcm' ), __( 'Filter', 'advcm' ), __( 'Newest match', 'advcm' ), __( 'Days', 'advcm' ) ) as $head ) {
+			echo '<th>' . esc_html( $head ) . '</th>';
+		}
+
+		echo '</tr></thead><tbody>';
+
+		foreach ( $findings as $f ) {
+			$verdict = isset( $f['verdict'] ) ? (string) $f['verdict'] : 'red';
+			$title   = '' !== (string) $f['title'] ? (string) $f['title'] : '#' . (int) $f['doc'];
+			$page    = '' !== (string) $f['url'] ? '<a href="' . esc_url( $f['url'] ) . '">' . esc_html( $title ) . '</a>' : esc_html( __( 'Template:', 'advcm' ) . ' ' . $title );
+
+			$notes = array();
+
+			if ( ! empty( $f['broken'] ) ) {
+				$notes[] = __( 'broken filter: a term no longer exists', 'advcm' );
+			}
+
+			if ( ! empty( $f['cannot_match'] ) ) {
+				/* translators: %s: post type. */
+				$notes[] = sprintf( __( 'cannot match: %s posts do not have that taxonomy', 'advcm' ), $f['post_type'] );
+			}
+
+			if ( ! empty( $f['custom'] ) ) {
+				$notes[] = __( 'custom query, not checked', 'advcm' );
+			}
+
+			$widget = $f['type'] . ( null !== $f['per_page'] ? ', ' . sprintf( _n( '%d post', '%d posts', (int) $f['per_page'], 'advcm' ), (int) $f['per_page'] ) : '' );
+
+			if ( is_array( $f['newest'] ) ) {
+				$newest = esc_html( gmdate( 'Y-m-d', (int) $f['newest']['date'] ) ) . ' <a href="' . esc_url( home_url( '/?p=' . (int) $f['newest']['id'] ) ) . '">' . esc_html( $f['newest']['title'] ) . '</a>';
+			} else {
+				$newest = empty( $f['custom'] ) && empty( $f['broken'] ) && empty( $f['cannot_match'] ) ? esc_html__( 'no post matches', 'advcm' ) : '—';
+			}
+
+			echo '<tr><td>' . self::badge( isset( $labels[ $verdict ] ) ? $labels[ $verdict ] : $verdict, $verdict ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput -- badge() escapes.
+			echo '<td>' . $page . ' <span class="description">' . esc_html( $f['doc_type'] ) . '</span></td>'; // phpcs:ignore WordPress.Security.EscapeOutput -- built escaped above.
+			echo '<td>' . esc_html( $widget ) . '</td>';
+			echo '<td><code>' . esc_html( $f['filter'] ) . '</code>' . ( $notes ? '<br><span class="description">' . esc_html( implode( '; ', $notes ) ) . '</span>' : '' ) . '</td>';
+			echo '<td>' . $newest . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput -- built escaped above.
+			echo '<td>' . esc_html( null === $f['days'] ? '—' : (string) (int) $f['days'] ) . '</td></tr>';
+		}
+
+		echo '</tbody></table></div>';
+	}
+
+	/**
+	 * How old each page's cache was when a clear cleared it: the last 20, people's and automatic.
+	 *
+	 * @return void
+	 */
+	private static function render_measured() {
+		echo '<h2>' . esc_html__( 'Cache age at clear', 'advcm' ) . '</h2>';
+		echo '<p class="description">' . esc_html__( 'Before a clear of some pages, each page was asked how old its cached copy was. An old copy means a cache held the page; a young one means the page was already fresh and whatever looked old is the content. Only the caches this site has answer.', 'advcm' ) . '</p>';
+
+		if ( ! ADVCM_Settings::get()['measure_before_clear'] ) {
+			echo '<p class="description">' . esc_html__( 'Measuring is switched off in Settings.', 'advcm' ) . '</p>';
+		}
+
+		$rows = array_merge( ADVCM_Freshness::rows(), ADVCM_Freshness::rows( true ) );
+
+		usort(
+			$rows,
+			function ( $a, $b ) {
+				return (int) $b['at'] - (int) $a['at'];
+			}
+		);
+
+		$rows = array_slice( $rows, 0, 20 );
+
+		if ( empty( $rows ) ) {
+			echo '<p>' . esc_html__( 'No clear has been measured yet.', 'advcm' ) . '</p>';
+
+			return;
+		}
+
+		echo '<div style="overflow-x:auto"><table class="widefat striped"><thead><tr>';
+
+		foreach ( array( __( 'When (UTC)', 'advcm' ), __( 'Page', 'advcm' ), __( 'Who', 'advcm' ), __( 'Answer', 'advcm' ), __( 'Cache age', 'advcm' ), __( 'Each cache', 'advcm' ), __( 'NitroPack', 'advcm' ) ) as $head ) {
+			echo '<th>' . esc_html( $head ) . '</th>';
+		}
+
+		echo '</tr></thead><tbody>';
+
+		foreach ( $rows as $row ) {
+			echo '<tr><td>' . esc_html( gmdate( 'Y-m-d H:i', (int) $row['at'] ) ) . '</td>';
+			echo '<td><code>' . esc_html( (string) $row['url'] ) . '</code></td>';
+			echo '<td>' . esc_html( self::who( (int) $row['by'], (string) $row['source'] ) ) . '</td>';
+			echo '<td>' . esc_html( $row['code'] ? 'HTTP ' . (int) $row['code'] : __( 'no answer', 'advcm' ) ) . '</td>';
+			echo '<td>' . esc_html( self::age_words( $row ) ) . '</td>';
+			echo '<td>' . esc_html( self::layer_words( $row ) ) . '</td>';
+			echo '<td>' . esc_html( self::nitro_words( $row ) ) . '</td></tr>';
+		}
+
+		echo '</tbody></table></div>';
+	}
+
+	/**
+	 * A measured age in words.
+	 *
+	 * @param array $row Measurement.
+	 * @return string
+	 */
+	private static function age_words( array $row ) {
+		if ( null === $row['age'] ) {
+			return __( 'unknown', 'advcm' );
+		}
+
+		return ( 'at most' === $row['how'] ? __( 'at most', 'advcm' ) . ' ' : '' ) . ADVCM_Probe::duration( (int) $row['age'] );
+	}
+
+	/**
+	 * Each layer's age, as the layers said it.
+	 *
+	 * @param array $row Measurement.
+	 * @return string
+	 */
+	private static function layer_words( array $row ) {
+		$parts = array();
+
+		foreach ( isset( $row['ages'] ) && is_array( $row['ages'] ) ? $row['ages'] : array() as $layer => $seconds ) {
+			$parts[] = $layer . ' ' . ADVCM_Probe::duration( (int) $seconds );
+		}
+
+		return empty( $parts ) ? '—' : implode( ', ', $parts );
+	}
+
+	/**
+	 * NitroPack's side, on a site that has it.
+	 *
+	 * @param array $row Measurement.
+	 * @return string
+	 */
+	private static function nitro_words( array $row ) {
+		$parts = array();
+
+		if ( ! empty( $row['nitro_state'] ) ) {
+			$parts[] = 'NitroPack: ' . strtolower( (string) $row['nitro_state'] );
+		}
+
+		if ( ! empty( $row['nitro_copy'] ) && null !== $row['nitro_age'] ) {
+			/* translators: 1: fresh or stale, 2: duration. */
+			$parts[] = sprintf( __( 'copy %1$s, %2$s', 'advcm' ), $row['nitro_copy'], ADVCM_Probe::duration( (int) $row['nitro_age'] ) );
+		}
+
+		return empty( $parts ) ? '—' : implode( '; ', $parts );
+	}
+
+	/**
+	 * Pages people keep clearing by hand.
+	 *
+	 * @return void
+	 */
+	private static function render_often() {
+		echo '<h2>' . esc_html__( 'Cleared by hand, often', 'advcm' ) . '</h2>';
+		echo '<p class="description">' . esc_html__( 'Pages somebody cleared twice or more, among the last 100 measured. With no rule, an auto-clear rule could do it on publish. With a young cache age, the clear was not what the page needed.', 'advcm' ) . '</p>';
+
+		$often = ADVCM_Freshness::often_by_hand();
+
+		if ( empty( $often ) ) {
+			echo '<p>' . esc_html__( 'None.', 'advcm' ) . '</p>';
+
+			return;
+		}
+
+		echo '<div style="overflow-x:auto"><table class="widefat striped"><thead><tr>';
+
+		foreach ( array( __( 'Page', 'advcm' ), __( 'Clears', 'advcm' ), __( 'Latest (UTC)', 'advcm' ), __( 'Median cache age', 'advcm' ), __( 'Rule', 'advcm' ) ) as $head ) {
+			echo '<th>' . esc_html( $head ) . '</th>';
+		}
+
+		echo '</tr></thead><tbody>';
+
+		foreach ( $often as $page ) {
+			echo '<tr><td><code>' . esc_html( $page['url'] ) . '</code></td>';
+			/* translators: %d: clears. */
+			echo '<td>' . esc_html( sprintf( _n( '%d time', '%d times', $page['times'], 'advcm' ), $page['times'] ) ) . '</td>';
+			echo '<td>' . esc_html( gmdate( 'Y-m-d H:i', $page['last'] ) ) . '</td>';
+			echo '<td>' . esc_html( null === $page['median_age'] ? __( 'unknown', 'advcm' ) : ADVCM_Probe::duration( $page['median_age'] ) ) . '</td>';
+			echo '<td>' . esc_html( $page['has_rule'] ? __( 'a rule clears it', 'advcm' ) : __( 'no rule clears this page', 'advcm' ) ) . '</td></tr>';
+		}
+
+		echo '</tbody></table></div>';
 	}
 
 	/**

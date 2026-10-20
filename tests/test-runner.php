@@ -485,4 +485,58 @@ ADVCM_Runner::start( array( 'scope' => 'all' ) );
 
 check( 'a step is told how every step before it ended', array( 'first' => 'ok', 'gone' => 'skipped' ) === ( isset( $last->options['earlier'] ) ? $last->options['earlier'] : null ), json_encode( $last->options ) );
 
+// --------------------------------------------------------------- measured, once, first
+
+$asked = array();
+$host  = new Fake_Adapter(
+	'host',
+	ADVCM_Stages::HOST,
+	null,
+	function () use ( &$asked ) {
+		$asked[] = 'clear';
+
+		return array( 'status' => 'ok' );
+	}
+);
+
+ADVCM_Runner::use_adapters( array( $host ) );
+ADVCM_Freshness::use_prober(
+	function ( $url ) use ( &$asked ) {
+		$asked[] = 'measure ' . $url;
+
+		return 'no answer here';
+	}
+);
+
+$job = ADVCM_Runner::start( array( 'scope' => 'urls', 'urls' => array( 'https://example.test/a/' ) ) );
+
+check( 'a per-URL clear measures its pages before its first stage', array( 'measure https://example.test/a/', 'clear' ) === $asked, implode( ', ', $asked ) );
+check( 'and the job keeps that it did', ! empty( $job['measured'] ) );
+
+$asked = array();
+$job   = ADVCM_Runner::start( array( 'scope' => 'all' ) );
+
+check( 'a whole-site clear goes straight to its stages', array( 'clear' ) === $asked, implode( ', ', $asked ) );
+
+// A fatal while measuring (memory, a NitroPack fatal) must not measure again on every
+// continuation: the job is saved as measured before the first page is asked.
+$seen = null;
+ADVCM_Freshness::use_prober(
+	function () use ( &$seen ) {
+		foreach ( ADVCM_Jobs::all() as $stored ) {
+			if ( array( 'https://example.test/b/' ) === $stored['urls'] ) {
+				$seen = ! empty( $stored['measured'] );
+			}
+		}
+
+		return 'no answer here';
+	}
+);
+
+ADVCM_Runner::start( array( 'scope' => 'urls', 'urls' => array( 'https://example.test/b/' ) ) );
+
+check( 'a job is stored as measured before its first page is asked', true === $seen, var_export( $seen, true ) );
+
+advcm_test_no_network();
+
 finish();

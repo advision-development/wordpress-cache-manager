@@ -80,6 +80,146 @@ check( 'the last clear of a page is the newest job that cleared a page cache for
 check( 'a job for other pages does not count', 301 !== ADVCM_Probe::last_cleared( $url ) );
 check( 'nor one whose page caches failed', 201 !== ADVCM_Probe::last_cleared( $url ) );
 
+// ------------------------------------------------------------- WP Engine's own clock
+
+$r = ADVCM_Probe::read( $url, 200, $wpe_hit + array( 'x-cache-ctime' => (string) ( $now - 5000 ) ), 580, $now - 68, $now );
+
+check( 'x-cache-ctime is when the host cache stored the copy: the age, exactly', 5000 === $r['age']['seconds'] && 'exact' === $r['age']['how'], (string) $r['age']['seconds'] );
+check( 'and says where it came from', false !== strpos( $r['age']['source'], 'x-cache-ctime' ) );
+
+$r = ADVCM_Probe::read( $url, 200, $wpe_hit + array( 'x-cache-ctime' => (string) ( $now + 60 ) ), 580, null, $now );
+
+check( 'a ctime in the future is not believed', 'unknown' === $r['age']['how'] );
+
+$r = ADVCM_Probe::read( $url, 200, $wpe_hit + array( 'x-cache-ctime' => 'soon' ), 580, null, $now );
+
+check( 'nor one that is not a time', 'unknown' === $r['age']['how'] );
+
+$r = ADVCM_Probe::read( $url, 200, $wpe_hit + array( 'age' => '68', 'x-cache-ctime' => (string) ( $now - 5000 ) ), 580, null, $now );
+
+check( 'Age still wins: the layer in front answered first', 68 === $r['age']['seconds'] );
+
+// --------------------------------------------------------------- each layer's age
+
+$r = ADVCM_Probe::read( $url, 200, array( 'cf-cache-status' => 'HIT', 'age' => '120', 'x-cache' => 'HIT: 2', 'x-cache-ctime' => (string) ( $now - 5000 ) ), 90, null, $now );
+
+check( 'each layer that said exactly gets its own age', array( 'Cloudflare' => 120, 'host cache' => 5000 ) === $r['ages'] );
+
+$r = ADVCM_Probe::read( $url, 200, array( 'age' => '30' ), 90, null, $now );
+
+check( 'an Age with no Cloudflare is the cache in front', array( 'cache in front' => 30 ) === $r['ages'] );
+
+$r = ADVCM_Probe::read( $url, 200, $wpe_hit, 90, $now - 60, $now );
+
+check( 'and an "at most" is no layer\'s exact age', array() === $r['ages'] );
+
+// ---------------------------------------------------------- NitroPack, in the page
+
+$r = ADVCM_Probe::read( $url, 200, array(), 100, null, $now, "<script>window.NITROPACK_STATE='STALE';</script>" );
+
+check( 'a page NitroPack served stale says so in its HTML', 'STALE' === $r['nitropack_state'] );
+
+$r = ADVCM_Probe::read( $url, 200, array(), 100, null, $now, '<script>window.NITROPACK_STATE="FRESH";</script>' );
+
+check( 'and fresh', 'FRESH' === $r['nitropack_state'] );
+
+$r = ADVCM_Probe::read( $url, 200, $wpe_hit, 100, null, $now );
+
+check( 'a site without NitroPack has no NitroPack state', null === $r['nitropack_state'] );
+
+// --------------------------------------------------------- NitroPack, its own copy
+
+check( 'a site without NitroPack has no NitroPack copy', null === ADVCM_Probe::nitropack_copy( $url ) );
+
+/**
+ * Stands in for NitroPack's Pagecache: the paths it would use, and a record of every call, so the
+ * test can say the probe never asked it to do anything but name a file.
+ */
+class Stub_Pagecache {
+	public $dir;
+	public $invalidated = false;
+	public $calls       = array();
+
+	public function useInvalidated( $on ) {
+		$this->calls[]     = 'useInvalidated';
+		$this->invalidated = $on;
+	}
+
+	public function getUseInvalidated() {
+		return $this->invalidated;
+	}
+
+	public function getCachefilePath( $suffix = '' ) {
+		$this->calls[] = 'getCachefilePath';
+
+		return $this->dir . ( $this->invalidated ? '_i' : '' ) . '/page.html' . ( $suffix ? '.' . $suffix : '' );
+	}
+
+	public function hasCache() {
+		$this->calls[] = 'hasCache';
+
+		return true;
+	}
+}
+
+if ( true ) {
+	// Declared here, not at the top, so the line above ran on a site where it does not exist.
+	function get_nitropack_sdk( $site = null, $secret = null, $url = null ) {
+		if ( 'throw' === $GLOBALS['np_sdk'] ) {
+			throw new Error( 'NitroPack is half removed' );
+		}
+
+		return $GLOBALS['np_sdk'];
+	}
+}
+
+$dir = sys_get_temp_dir() . '/advcm-np-' . getmypid();
+@mkdir( $dir );
+@mkdir( $dir . '_i' );
+
+$cache      = new Stub_Pagecache();
+$cache->dir = $dir;
+
+$GLOBALS['np_sdk'] = (object) array( 'pageCache' => $cache );
+
+check( 'NitroPack with no copy of the page: none', null === ADVCM_Probe::nitropack_copy( $url ) );
+
+touch( $dir . '_i/page.html.stale', $now - 900 );
+
+$copy = ADVCM_Probe::nitropack_copy( $url );
+
+check( 'an invalidated copy is read as stale, with its file time', is_array( $copy ) && 'stale' === $copy['state'] && $now - 900 === $copy['at'] );
+
+touch( $dir . '/page.html.gz', $now - 300 );
+
+$copy = ADVCM_Probe::nitropack_copy( $url );
+
+check( 'a fresh copy wins over a stale one', is_array( $copy ) && 'fresh' === $copy['state'] && $now - 300 === $copy['at'] );
+check( 'the probe only asks for file names: hasCache() would rename files', ! in_array( 'hasCache', $cache->calls, true ) );
+check( 'and leaves NitroPack as it found it', false === $cache->invalidated );
+
+$cache->invalidated = true;
+ADVCM_Probe::nitropack_copy( $url );
+
+check( 'even when it found it reading invalidated copies', true === $cache->invalidated );
+
+$cache->invalidated = false;
+
+$GLOBALS['np_sdk'] = 'throw';
+
+check( 'NitroPack throwing is no copy, not an error', null === ADVCM_Probe::nitropack_copy( $url ) );
+
+$GLOBALS['np_sdk'] = null;
+
+check( 'nor is a NitroPack with no SDK yet', null === ADVCM_Probe::nitropack_copy( $url ) );
+
+foreach ( array( '/page.html.gz', '_i/page.html.stale' ) as $file ) {
+	@unlink( $dir . $file );
+}
+
+@rmdir( $dir );
+@rmdir( $dir . '_i' );
+
 // ------------------------------------------------------------------------------ words
 
 check( 'seconds read as seconds', '68 s' === ADVCM_Probe::duration( 68 ) );

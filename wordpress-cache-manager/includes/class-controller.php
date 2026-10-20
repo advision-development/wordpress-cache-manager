@@ -398,6 +398,12 @@ final class ADVCM_Controller {
 
 		try {
 			$moved = ADVCM_Runner::tick() + ADVCM_Auto::tick();
+
+			// Only from the Freshness tab, and ADVCM_Listings::tick() itself runs a batch only for a
+			// scan WP-Cron has left over 2 minutes late: on a site whose cron works, never.
+			if ( ! empty( $_POST['listings'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification -- verified above.
+				$moved += ADVCM_Listings::tick();
+			}
 		} catch ( Throwable $e ) {
 			ADVCM_Safe::report( 'wp_ajax_' . self::TICK, $e );
 			$moved = 0;

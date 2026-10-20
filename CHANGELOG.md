@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.0 — 2026-10-20
+
+On BMR the state pages' news carousels (`/usa/alabama/`) showed the same posts for months and were
+reported as a cache problem. It was not: the Elementor widget lists posts tagged `alabama`, and no
+post had been tagged `alabama` since 2025-12-31. Every clear rebuilt the same page. This release
+makes that visible, without touching content.
+
+- **A Freshness tab.** Listings with nothing new: a scan, started by a person and run in WP-Cron
+  batches, of every Elementor posts / loop-grid / loop-carousel widget that filters by term, with
+  the newest post it matches (red over 30 days or a filter that cannot match, amber from 7). Cache
+  age at clear: how old each page's cached copy was when a clear cleared it. Cleared by hand,
+  often: pages people keep clearing, the cache age at those clears, and whether a rule covers them.
+  Read-only; `advcm_listings`, `advcm_freshness`, `advcm_freshness_auto`, cron
+  `advcm_listings_scan`, admin-post `advcm_listings`.
+- **A clear of some pages measures them first**, once per job and before its first stage: at most
+  10 pages, 5 seconds each, 20 in all; never a whole-site clear. A setting switches it off.
+- **Exact cache ages.** The Cache age tab reads WP Engine's `x-cache-ctime`, NitroPack's state in
+  the page and the time of NitroPack's own copy — each only where the site has that layer.
+- **History as two tables**, with a badge per state, the wait highlighted, and the cache age each
+  clear found; each row opens to its steps and pages.
+
 ## 0.4.1 — 2026-10-20
 
 - **History says how long a clear somebody asked for waited**, not only an automatic one: from the

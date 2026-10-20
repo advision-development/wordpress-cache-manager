@@ -16,6 +16,9 @@
 #     into one clear run by the site's real WP-Cron, and a fault in the hook that never fails a save;
 #     a post only in a subcategory firing its parent's rule, an "any content" rule firing on a page
 #     and not on a builder template, History naming the posts, and the pause stopping a publish
+#   - since 0.5.0, the Freshness tab: an editor starts a listings scan, the site's WP-Cron runs
+#     it, and a seeded Elementor widget whose tag has only a 60-day-old post is listed red; a
+#     per-URL clear records how old its page's cache was; History is a table
 #   - WordPress Malware Quick Scan, installed from its public release, reports nothing about this
 #     plugin beyond the findings FOOTPRINT.md says to expect
 #
@@ -130,7 +133,7 @@ check_pages() {
 	curl -s -c "${jar}" -b "${jar}" -o /dev/null "${URL}/wp-login.php"
 	curl -s -c "${jar}" -b "${jar}" -o /dev/null --data-urlencode "log=ed" --data-urlencode "pwd=ed" -d "wp-submit=Log+In&testcookie=1" --data-urlencode "redirect_to=${URL}/wp-admin/" "${URL}/wp-login.php"
 
-	for path in "/" "/?p=1" "/wp-admin/" "/wp-admin/plugins.php" "/wp-admin/tools.php?page=advcm-cache" "/wp-admin/tools.php?page=advcm-cache&tab=clear" "/wp-admin/tools.php?page=advcm-cache&tab=check" "/wp-admin/tools.php?page=advcm-cache&tab=history" "/wp-admin/tools.php?page=advcm-cache&tab=auto" "/wp-admin/tools.php?page=advcm-cache&tab=settings" "/wp-admin/tools.php?page=advcm-cache&tab=nonsense"; do
+	for path in "/" "/?p=1" "/wp-admin/" "/wp-admin/plugins.php" "/wp-admin/tools.php?page=advcm-cache" "/wp-admin/tools.php?page=advcm-cache&tab=clear" "/wp-admin/tools.php?page=advcm-cache&tab=check" "/wp-admin/tools.php?page=advcm-cache&tab=history" "/wp-admin/tools.php?page=advcm-cache&tab=freshness" "/wp-admin/tools.php?page=advcm-cache&tab=auto" "/wp-admin/tools.php?page=advcm-cache&tab=settings" "/wp-admin/tools.php?page=advcm-cache&tab=nonsense"; do
 		local code body
 		body="$(curl -s -L -b "${jar}" -w '\n%{http_code}' "${URL}${path}")"
 		code="$(echo "${body}" | tail -1)"
@@ -405,7 +408,7 @@ PHP
 wpeval "${WORK}/auto-ran.php"
 
 history="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=history")"
-grep -q "UTC — Auto-clear — ${URL}/analysis/" <<< "${history}" && pass "History names it Auto-clear" || fail "History does not show the auto-clear as Auto-clear"
+grep -q 'Auto-clear</span></td><td data-col="what">/analysis/</td>' <<< "${history}" && pass "History names it Auto-clear, in its table" || fail "History does not show the auto-clear as Auto-clear: $(grep -oE '<tr data-job=.{0,400}' <<< "${history}" | head -1)"
 
 # The Auto-clear tab for an editor: the rule is there, the forms are not; the test form answers.
 auto_ed="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=auto")"
@@ -531,6 +534,69 @@ PHP
 wpeval "${WORK}/auto-fault.php"
 docker exec "${WP}" rm -f /var/www/html/wp-content/mu-plugins/advcm-smoke-fault.php
 check_pages "after auto-clear"
+
+# ------------------------------------------------------------------------ Freshness, 0.5.0
+
+# A listing nobody feeds: a page with an Elementor posts widget on a tag whose only post is 60
+# days old — the Alabama carousel on BMR, in small. Elementor stores the filter as
+# term_taxonomy_ids, so that is what is written here.
+cat > "${WORK}/frozen.php" <<'PHP'
+<?php
+$term = wp_insert_term( 'Frozen state', 'post_tag', array( 'slug' => 'frozen-state' ) );
+$old  = gmdate( 'Y-m-d H:i:s', time() - 60 * DAY_IN_SECONDS );
+wp_insert_post( array( 'post_title' => 'The last frozen news', 'post_status' => 'publish', 'post_date' => $old, 'post_date_gmt' => $old, 'tags_input' => array( 'frozen-state' ) ) );
+$data = array( array( 'id' => 'sec1', 'elType' => 'section', 'settings' => array(), 'elements' => array( array( 'id' => 'col1', 'elType' => 'column', 'settings' => array(), 'elements' => array(
+	array( 'id' => 'frozen1', 'elType' => 'widget', 'widgetType' => 'posts', 'settings' => array( 'posts_post_type' => 'post', 'posts_include' => array( 'terms' ), 'posts_include_term_ids' => array( (string) $term['term_taxonomy_id'] ), 'classic_posts_per_page' => '6' ), 'elements' => array() ),
+) ) ) ) );
+$page = wp_insert_post( array( 'post_type' => 'page', 'post_title' => 'Frozen state page', 'post_status' => 'publish' ) );
+update_post_meta( $page, '_elementor_data', wp_slash( wp_json_encode( $data ) ) );
+echo ( $term['term_taxonomy_id'] > 0 && $page > 0 ? 'PASS  ' : 'FAIL  ' ), 'a frozen listing is seeded (tt ', $term['term_taxonomy_id'], ', term ', $term['term_id'], ")\n";
+PHP
+wpeval "${WORK}/frozen.php"
+
+fresh_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=freshness")"
+scan_nonce="$(grep -oE 'name="_wpnonce" value="[a-f0-9]+" /><input type="hidden" name="_wp_http_referer" value="[^"]*" /><input type="hidden" name="action" value="advcm_listings"' <<< "${fresh_tab}" | head -1 | sed 's/.*name="_wpnonce" value="//; s/".*//')"
+curl -s -b "${jar}" -o /dev/null -d "action=advcm_listings&_wpnonce=${scan_nonce}" "${URL}/wp-admin/admin-post.php"
+started="$(wpcli wp option get advcm_listings --format=json 2>/dev/null | sed -n 's/.*"started":\([0-9]*\).*/\1/p')"
+[[ "${started}" =~ ^[1-9][0-9]*$ ]] && pass "an editor starts a listings scan from the Freshness tab" || fail "the scan did not start (nonce '${scan_nonce}')"
+
+# WP-Cron as WordPress runs it, until the scan says it is done.
+done_at=""
+for _ in $(seq 1 10); do
+	wpcli wp transient delete doing_cron >/dev/null 2>&1 || true
+	curl -s -o /dev/null "${URL}/wp-cron.php?doing_wp_cron"
+	done_at="$(wpcli wp option get advcm_listings --format=json 2>/dev/null | sed -n 's/.*"done":\([0-9]*\).*/\1/p')"
+	[[ "${done_at}" =~ ^[1-9][0-9]*$ ]] && break
+	sleep 1
+done
+[[ "${done_at}" =~ ^[1-9][0-9]*$ ]] && pass "the site's WP-Cron finishes the scan" || fail "the scan did not finish through WP-Cron: $(wpcli wp option get advcm_listings --format=json | head -c 300)"
+
+fresh_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=freshness")"
+if grep -q 'Frozen state page</a>' <<< "${fresh_tab}" && grep -q '<code>tag frozen-state</code>' <<< "${fresh_tab}" && grep -q 'nothing new</span>' <<< "${fresh_tab}" && grep -q 'The last frozen news</a>' <<< "${fresh_tab}"; then
+	pass "the Freshness tab lists the frozen listing, red, with its tag and its newest post"
+else
+	fail "the Freshness tab does not list the frozen listing: $(grep -oE 'Last scan[^<]{0,200}|Scanning[^<]{0,200}' <<< "${fresh_tab}" | head -2)"
+fi
+grep -qE '<td>ed</td><td>Listings scan started</td>' <<< "${fresh_tab}" && pass "and its change log names the editor who started it" || fail "the Freshness change log does not name the scan"
+
+# The fast one-page clear at the start measured its page before clearing it.
+cat > "${WORK}/measured.php" <<'PHP'
+<?php
+$rows = ADVCM_Freshness::rows();
+$home = null;
+foreach ( $rows as $row ) { if ( home_url( '/' ) === $row['url'] ) { $home = $row; } }
+echo ( $home && 200 === $home['code'] ? 'PASS  ' : 'FAIL  ' ), 'a per-URL clear measured its page first: ', $home ? 'HTTP ' . $home['code'] . ', age ' . var_export( $home['age'], true ) . ' (' . $home['how'] . ')' : count( $rows ) . ' rows, none for the home page', "\n";
+echo ( null === $home || empty( $home['nitro_copy'] ) ? 'PASS  ' : 'FAIL  ' ), "and on a site without NitroPack says nothing about NitroPack\n";
+PHP
+wpeval "${WORK}/measured.php"
+grep -q 'Cache age at clear' <<< "${fresh_tab}" && grep -q "<code>${URL}/</code>" <<< "${fresh_tab}" && pass "the Freshness tab lists that measurement" || fail "the Freshness tab does not list the measurement"
+
+history="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=history")"
+if [[ "$(grep -o 'class="widefat striped advcm-history"' <<< "${history}" | wc -l | tr -d ' ')" == "2" ]] && grep -q '<th>Cache age</th>' <<< "${history}"; then
+	pass "History is two tables, with a cache age column"
+else
+	fail "History is not the table"
+fi
 
 # --------------------------------------------------------------------- the security scanner
 
