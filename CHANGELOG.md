@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1 — 2026-10-20
+
+- **History says how long a clear somebody asked for waited**, not only an automatic one: from the
+  request to its first step that ran. A Fast clear runs in the request and shows nothing; a
+  Balanced or Careful clear that WP-Cron ran late shows how late (more than 5 seconds), so a clear
+  waiting hours, as BMR's did behind a flooded cron, is visible in History. It reads the time each
+  step already stored, so clears kept from before the update show it too.
+
 ## 0.4.0 — 2026-10-20
 
 After a day of 0.3.2 on BMR nobody could tell who had changed a rule, the editors using the plugin

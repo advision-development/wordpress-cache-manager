@@ -8,7 +8,7 @@ The design spec lives in the team's internal workspace, not in this public repos
 
 ## Status
 
-**0.4.0.** Tools → CacheManager, in six tabs — Status, Clear, Cache age, History, Auto-clear,
+**0.4.1.** Tools → CacheManager, in six tabs — Status, Clear, Cache age, History, Auto-clear,
 Settings — each with a box of its last changes, and the CacheManager menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
 time the screen opens: install a cache plugin later and it appears on the next load. Talking to Hawkeye is a later phase.
 
@@ -85,8 +85,10 @@ NitroPack skips its warm-up and says why; a warm-up that NitroPack answers with 
 - **History says what triggered each clear**: every rule in words, and up to ten posts per rule —
   title, ID, type, and whether it was published, updated or unpublished — with a count of the
   rest. The rules table shows each rule's last clear.
-- **History says how long**: each clear shows how long it *took*, and an automatic one how long
-  it *waited* after the first save that set it off.
+- **History says how long**: each clear shows how long it *took*, and how long it *waited*: an
+  automatic one from the first save that set it off, one somebody asked for from the request to its
+  first step (a Fast clear runs in the request and shows no wait; a background one WP-Cron ran late
+  shows how late).
 
 ## Settings
 
