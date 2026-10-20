@@ -391,6 +391,21 @@ final class ADVCM_Screen {
 			$rows[ __( 'Served from this copy', 'advcm' ) ] = sprintf( _n( '%d time', '%d times', $reading['hits'], 'advcm' ), $reading['hits'] );
 		}
 
+		// Both only on a site with NitroPack: elsewhere there is nothing to say and no row says it.
+		if ( null !== $reading['nitropack_state'] ) {
+			$rows[ __( 'NitroPack state in the page', 'advcm' ) ] = $reading['nitropack_state'];
+		}
+
+		$copy = ADVCM_Probe::nitropack_copy( $reading['url'] );
+
+		if ( null !== $copy ) {
+			$rows[ __( 'NitroPack copy', 'advcm' ) ] = 'fresh' === $copy['state']
+				/* translators: %s: how long ago. */
+				? sprintf( __( 'stored %s ago (fresh)', 'advcm' ), ADVCM_Probe::duration( max( 0, time() - $copy['at'] ) ) )
+				/* translators: %s: how long ago. */
+				: sprintf( __( 'stale, written %s ago — NitroPack serves it while it builds a new one', 'advcm' ), ADVCM_Probe::duration( max( 0, time() - $copy['at'] ) ) );
+		}
+
 		echo '<table class="widefat striped" style="max-width:900px"><tbody>';
 
 		foreach ( $rows as $label => $value ) {
