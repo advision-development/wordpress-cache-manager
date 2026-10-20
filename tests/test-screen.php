@@ -85,6 +85,14 @@ function sanitize_key( $key ) {
 	return preg_replace( '~[^a-z0-9_\-]~', '', strtolower( (string) $key ) );
 }
 
+function wp_unslash( $value ) {
+	return $value;
+}
+
+function sanitize_text_field( $text ) {
+	return trim( (string) $text );
+}
+
 function wp_create_nonce( $action = -1 ) {
 	return 'nonce-' . $action;
 }
@@ -256,6 +264,23 @@ check( 'a record shows who, what, and before → after', false !== strpos( $out,
 $source = file_get_contents( ADVCM_DIR . 'includes/class-screen.php' ) . file_get_contents( ADVCM_DIR . 'includes/class-auto.php' );
 
 check( 'no screen text still says administrators only', false === stripos( $source, 'administrators only' ) && false === strpos( $source, 'Only administrators can' ) );
+
+// ----------------------------------------------------------------- a lost clear
+
+// The plugin update that took an auto-clear's event on BMR was followed, a minute later, by
+// somebody opening this screen. Opening any tab now puts the clear back.
+$GLOBALS['options']['advcm_rules'] = array( 'r9' => array( 'post_type' => 'post', 'enabled' => true, 'urls' => array( 'https://example.test/x/' ) ) );
+add_option( ADVCM_Auto::MARK . 'r9', time() );
+wp_clear_scheduled_hook( ADVCM_Auto::FLUSH_HOOK );
+$_GET['tab'] = 'settings';
+screen_part( 'render' );
+unset( $_GET['tab'] );
+
+check( 'opening any tab puts back an auto-clear whose event was lost', false !== wp_next_scheduled( ADVCM_Auto::FLUSH_HOOK ) );
+
+delete_option( ADVCM_Auto::MARK . 'r9' );
+wp_clear_scheduled_hook( ADVCM_Auto::FLUSH_HOOK );
+unset( $GLOBALS['options']['advcm_rules'] );
 
 // -------------------------------------------------------------------- Freshness
 

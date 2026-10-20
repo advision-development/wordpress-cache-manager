@@ -108,6 +108,7 @@ $GLOBALS['filter_values']   = array();
 $GLOBALS['site_transients'] = array();
 $GLOBALS['hooks']           = array();
 
+require __DIR__ . '/store-stubs.php';
 require __DIR__ . '/bootstrap.php';
 
 define( 'ADVCM_FILE', ADVCM_DIR . 'wordpress-cache-manager.php' );
@@ -767,5 +768,17 @@ check(
 	'blocked' === ADVCM_Updater::apply_requested( '9.9.9' ),
 	'it stays behind and blockers() says why'
 );
+
+// ------------------------------------------------------- after an update, what was lost
+
+// Updating a plugin switches it off while its files change; a WP-Cron run in that moment takes
+// this plugin's events with nothing listening. The update's end puts a waiting clear back.
+$GLOBALS['options']['advcm_rules']       = array( 'r9' => array( 'post_type' => 'post', 'enabled' => true, 'urls' => array( 'https://example.test/x/' ) ) );
+$GLOBALS['options']['advcm_auto_r9']     = time();
+ADVCM_Updater::forget( null, array( 'type' => 'plugin', 'action' => 'update' ) );
+
+// This suite's wp_next_scheduled() keys events by hook alone; the store stubs schedule by hook and
+// arguments, so the event is looked for under that key.
+check( 'a plugin update ends by putting back an auto-clear whose event it took', isset( $GLOBALS['scheduled']['advcm_auto_flush[]'] ) );
 
 finish();

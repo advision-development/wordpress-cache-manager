@@ -806,6 +806,27 @@ final class ADVCM_Auto {
 	}
 
 	/**
+	 * Put back a clear whose event was lost.
+	 *
+	 * Measured on BMR on 2026-10-20: updating this plugin switches it off for a few seconds, and a
+	 * WP-Cron run in those seconds takes the clear's event with nothing listening. The rule's mark
+	 * stayed and its clear waited 10 minutes for the next save; on a quiet site, hours. Called
+	 * when a screen of this plugin opens, from its tick and after an update — never in a save,
+	 * where a mark already schedules its clear.
+	 *
+	 * @return int 1 when a clear was scheduled, 0 otherwise.
+	 */
+	public static function rescue() {
+		if ( false !== wp_next_scheduled( self::FLUSH_HOOK ) || empty( self::waiting() ) ) {
+			return 0;
+		}
+
+		self::schedule();
+
+		return 1;
+	}
+
+	/**
 	 * When the next clear is due, or 0.
 	 *
 	 * @return int

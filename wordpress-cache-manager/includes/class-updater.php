@@ -472,6 +472,10 @@ class ADVCM_Updater {
 		}
 
 		delete_site_transient( self::CACHE );
+
+		// A plugin update switches the plugin off while its files change; a WP-Cron run then takes
+		// this plugin's events with nothing listening. Put back what was waiting.
+		ADVCM_Controller::rescue();
 	}
 
 	/**

@@ -292,6 +292,25 @@ $GLOBALS['options'] = array();
 
 check( 'with no scan there is nothing for it to do', 0 === ADVCM_Listings::tick() );
 
+// ------------------------------------------------------------------- a lost event
+
+$GLOBALS['options'] = array();
+ADVCM_Listings::start( 7 );
+wp_clear_scheduled_hook( ADVCM_Listings::HOOK );
+
+check( 'a scan whose event was just taken is not touched: its run may be starting', 0 === ADVCM_Listings::rescue() && false === wp_next_scheduled( ADVCM_Listings::HOOK ) );
+
+$state            = get_option( ADVCM_Listings::OPTION );
+$state['next_at'] = time() - ADVCM_Listings::LATE - 1;
+update_option( ADVCM_Listings::OPTION, $state, false );
+
+check( 'one with no event and nothing running for over 2 minutes is put back on the schedule', 1 === ADVCM_Listings::rescue() && false !== wp_next_scheduled( ADVCM_Listings::HOOK ) );
+check( 'once', 0 === ADVCM_Listings::rescue() );
+
+$GLOBALS['options'] = array();
+
+check( 'with no scan, nothing', 0 === ADVCM_Listings::rescue() );
+
 // ---------------------------------------------------------------------- the caps
 
 $GLOBALS['docs'] = array();

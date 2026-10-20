@@ -136,6 +136,10 @@ final class ADVCM_Screen {
 			wp_die( esc_html__( 'You are not allowed to clear the cache on this site.', 'advcm' ) );
 		}
 
+		// Before anything is shown: an auto-clear whose event a plugin update took runs again,
+		// rather than waiting for the next save.
+		ADVCM_Controller::rescue();
+
 		$hard   = current_user_can( ADVCM_Capabilities::HARD );
 		$open   = isset( $_GET['advcm_job'] ) ? sanitize_text_field( wp_unslash( $_GET['advcm_job'] ) ) : ''; // phpcs:ignore
 		$notice = get_transient( 'advcm_notice_' . get_current_user_id() );

@@ -387,6 +387,27 @@ final class ADVCM_Controller {
 	}
 
 	/**
+	 * Put back background work whose WP-Cron event was lost — an auto-clear waiting on its mark,
+	 * a listings scan half done.
+	 *
+	 * Updating this plugin switches it off for a few seconds, and a WP-Cron run in those seconds
+	 * takes the event with nothing listening (measured on BMR on 2026-10-20: a clear waited 10
+	 * minutes for the next save to schedule it again). Called when a screen of this plugin opens,
+	 * from its tick, and after a plugin update — never in a post save or a page view.
+	 *
+	 * @return int How many were put back.
+	 */
+	public static function rescue() {
+		$put_back = 0;
+
+		foreach ( array( array( 'ADVCM_Auto', 'rescue' ), array( 'ADVCM_Listings', 'rescue' ) ) as $call ) {
+			$put_back += (int) ADVCM_Safe::run( 'rescue', $call, 0 );
+		}
+
+		return $put_back;
+	}
+
+	/**
 	 * Move due background jobs, for the screen's own refresh.
 	 *
 	 * @return void
@@ -397,7 +418,7 @@ final class ADVCM_Controller {
 		}
 
 		try {
-			$moved = ADVCM_Runner::tick() + ADVCM_Auto::tick();
+			$moved = ADVCM_Runner::tick() + ADVCM_Auto::tick() + self::rescue();
 
 			// Only from the Freshness tab, and ADVCM_Listings::tick() itself runs a batch only for a
 			// scan WP-Cron has left over 2 minutes late: on a site whose cron works, never.
