@@ -164,9 +164,40 @@ final class ADVCM_Controller {
 			self::back( '', $busy );
 		}
 
+		self::record_start( $request );
+
 		$job = ADVCM_Runner::start( $request );
 
 		self::back( $job['id'], '' );
+	}
+
+	/**
+	 * Record a clear somebody started, in words: what, how, and the choices with a cost.
+	 *
+	 * @param array $request The request.
+	 * @return void
+	 */
+	private static function record_start( array $request ) {
+		$what = 'urls' === $request['scope']
+			/* translators: %d: how many pages. */
+			? sprintf( _n( '%d page', '%d pages', count( $request['urls'] ), 'advcm' ), count( $request['urls'] ) )
+			: __( 'the whole site', 'advcm' );
+
+		$how = array( ADVCM_Modes::get( $request['mode'] )['label'] );
+
+		if ( ! empty( $request['options']['except'] ) ) {
+			$how[] = __( 'NitroPack left as it is', 'advcm' );
+		} elseif ( isset( $request['options']['nitropack_mode'] ) && 'purge' === $request['options']['nitropack_mode'] && 'all' === $request['scope'] ) {
+			$how[] = __( 'NitroPack purged in full', 'advcm' );
+		}
+
+		if ( ! empty( $request['options']['override_hold'] ) ) {
+			$how[] = __( 'builder hold overridden', 'advcm' );
+		}
+
+		$urls = 'urls' === $request['scope'] ? ': ' . implode( ' ', array_map( function ( $url ) { return (string) wp_parse_url( $url, PHP_URL_PATH ); }, array_slice( $request['urls'], 0, 5 ) ) ) : '';
+
+		ADVCM_Log::add( 'clear', 'started', sprintf( '%s (%s)%s', $what, implode( ', ', $how ), $urls ) );
 	}
 
 	/**
@@ -348,6 +379,9 @@ final class ADVCM_Controller {
 		}
 
 		ADVCM_Runner::resume_now( $id );
+
+		/* translators: %s: job id. */
+		ADVCM_Log::add( 'history', 'resumed', sprintf( __( 'Finished job %s by hand, without its remaining pauses', 'advcm' ), $id ) );
 
 		self::back( $id, '' );
 	}

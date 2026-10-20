@@ -157,6 +157,7 @@ final class ADVCM_Screen {
 
 		$sections = array(
 			'status'  => function () {
+				self::record_version();
 				self::render_last_error();
 				self::render_loopback();
 				self::render_backlog();
@@ -331,6 +332,9 @@ final class ADVCM_Screen {
 			return;
 		}
 
+		// A reading is a link somebody can reload; a reload within ten minutes is not a new probe.
+		ADVCM_Log::add_once( 'check', 'probe', substr( $asked, 0, 2048 ), 10 * MINUTE_IN_SECONDS );
+
 		$reading = ADVCM_Probe::url( substr( $asked, 0, 2048 ) );
 
 		if ( is_string( $reading ) ) {
@@ -378,6 +382,31 @@ final class ADVCM_Screen {
 		}
 
 		echo '</tbody></table>';
+	}
+
+	/**
+	 * Record that this plugin's version changed since the Status tab last looked.
+	 *
+	 * Most updates are WordPress's own auto-update, inside WP-Cron, with nobody pressing anything,
+	 * and the upgrader's hooks run in the old version's code — so the change is noticed here, the
+	 * first time somebody opens Status afterwards, and recorded as nobody's. A site that never
+	 * recorded a version only starts counting.
+	 *
+	 * @return void
+	 */
+	public static function record_version() {
+		$seen = ADVCM_Settings::get()['version_seen'];
+
+		if ( ADVCM_VERSION === $seen ) {
+			return;
+		}
+
+		if ( '' !== $seen ) {
+			/* translators: 1: version before, 2: version now. */
+			ADVCM_Log::add( 'status', 'updated', sprintf( __( 'CacheManager updated from %1$s to %2$s', 'advcm' ), $seen, ADVCM_VERSION ), $seen, ADVCM_VERSION, false );
+		}
+
+		ADVCM_Settings::set_version_seen( ADVCM_VERSION );
 	}
 
 	/**

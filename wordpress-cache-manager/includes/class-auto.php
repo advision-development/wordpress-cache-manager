@@ -1098,12 +1098,66 @@ final class ADVCM_Auto {
 	 */
 	public static function save() {
 		if ( ! current_user_can( ADVCM_Capabilities::HARD ) ) {
-			wp_die( esc_html__( 'Only administrators can change auto-clear rules.', 'advcm' ), '', array( 'response' => 403 ) );
+			wp_die( esc_html__( 'You are not allowed to change auto-clear rules.', 'advcm' ), '', array( 'response' => 403 ) );
 		}
 
 		check_admin_referer( self::SAVE );
 
-		self::back( self::change( wp_unslash( $_POST ) ) ); // phpcs:ignore WordPress.Security.NonceVerification -- verified above.
+		$input = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification -- verified above.
+		$op    = isset( $input['op'] ) && is_string( $input['op'] ) ? $input['op'] : '';
+
+		// The pause and own-page are settings since 0.4.0: switched, and recorded, there.
+		if ( in_array( $op, array( 'pause', 'resume', 'own_on', 'own_off' ), true ) ) {
+			self::back( ADVCM_Settings::save_form( array( 'op' => $op ) ) );
+		}
+
+		$before  = self::rules();
+		$refusal = self::change( $input );
+
+		if ( '' === $refusal ) {
+			self::record( $op, $input, $before );
+		}
+
+		self::back( $refusal );
+	}
+
+	/**
+	 * Record a rule change in words.
+	 *
+	 * @param string $op     add, enable, disable, delete.
+	 * @param array  $input  The form.
+	 * @param array  $before The rules before the change.
+	 * @return void
+	 */
+	private static function record( $op, array $input, array $before ) {
+		$after = self::rules();
+		$id    = isset( $input['rule'] ) && is_string( $input['rule'] ) ? $input['rule'] : '';
+
+		if ( 'add' === $op ) {
+			$new = array_diff_key( $after, $before );
+			$id  = (string) key( $new );
+		}
+
+		$rule = isset( $after[ $id ] ) ? $after[ $id ] : ( isset( $before[ $id ] ) ? $before[ $id ] : null );
+
+		if ( null === $rule ) {
+			return;
+		}
+
+		$actions = array(
+			'add'     => array( 'rule_added', '', 'on' ),
+			'enable'  => array( 'rule_on', 'off', 'on' ),
+			'disable' => array( 'rule_off', 'on', 'off' ),
+			'delete'  => array( 'rule_deleted', $rule['enabled'] ? 'on' : 'off', '' ),
+		);
+
+		if ( ! isset( $actions[ $op ] ) ) {
+			return;
+		}
+
+		$paths = implode( ' ', array_map( function ( $url ) { return (string) wp_parse_url( $url, PHP_URL_PATH ); }, $rule['urls'] ) );
+
+		ADVCM_Log::add( 'auto', $actions[ $op ][0], sprintf( '%s → %s', self::describe( $rule ), $paths ), $actions[ $op ][1], $actions[ $op ][2] );
 	}
 
 	/**

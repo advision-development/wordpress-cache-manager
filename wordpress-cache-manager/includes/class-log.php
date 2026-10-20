@@ -51,22 +51,24 @@ final class ADVCM_Log {
 	 * @param string $summary One line a person reads.
 	 * @param string $before  The value before, when this changed one.
 	 * @param string $after   The value after.
+	 * @param bool   $person  False for something nobody did, such as WordPress updating this
+	 *                        plugin on its own: recorded with no user.
 	 * @return void
 	 */
-	public static function add( $section, $action, $summary, $before = '', $after = '' ) {
+	public static function add( $section, $action, $summary, $before = '', $after = '', $person = true ) {
 		try {
 			if ( ! in_array( $section, self::SECTIONS, true ) ) {
 				return;
 			}
 
-			$user = function_exists( 'wp_get_current_user' ) ? wp_get_current_user() : null;
+			$user = $person && function_exists( 'wp_get_current_user' ) ? wp_get_current_user() : null;
 			$log  = self::all();
 
 			array_unshift(
 				$log[ $section ],
 				array(
 					'at'      => time(),
-					'user'    => (int) get_current_user_id(),
+					'user'    => $person ? (int) get_current_user_id() : 0,
 					// The login as it is now, so a record still reads after the account is gone.
 					'login'   => is_object( $user ) && isset( $user->user_login ) ? (string) $user->user_login : '',
 					'section' => $section,

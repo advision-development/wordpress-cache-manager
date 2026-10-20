@@ -558,6 +558,8 @@ class ADVCM_Updater {
 		delete_site_transient( self::CACHE );
 		self::release( true );
 
+		ADVCM_Log::add( 'status', 'release_check', __( 'Checked GitHub for a new release', 'advcm' ) );
+
 		// WordPress's own list, or the row keeps showing what it decided this morning.
 		delete_site_transient( 'update_plugins' );
 
