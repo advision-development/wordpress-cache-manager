@@ -9,9 +9,12 @@
  * - `advcm_purge` — purge a URL, purge the site, see the status screen. Editors and up
  *   (`edit_others_posts`), because the people asking for a purge in the tickets are the people
  *   publishing, and a button they cannot press is a ticket for a developer.
- * - `advcm_purge_hard` — the two things with a cost somebody should own: a full NitroPack purge
- *   (every page un-optimized until rebuilt) and overriding the hold after builder CSS failed.
- *   Administrators (`manage_options`).
+ * - `advcm_purge_hard` — the things with a cost somebody should own: a full NitroPack purge
+ *   (every page un-optimized until rebuilt), overriding the hold after builder CSS failed,
+ *   auto-clear rules and settings. Since 0.4.0 the same people as `advcm_purge` (the owner's
+ *   decision, 2026-10-20): the change log names whoever used it. A site can take it back with
+ *   `advcm_purge_hard_base_capability`. Choosing layers is not part of it: that stays
+ *   `manage_options` (ADVCM_Controller::handle()).
  *
  * Both are filterable, and the menu and the page ask for the same one — another settings page
  * shipped with the menu on `read` and the page on `manage_options`, so everybody saw an item
@@ -53,7 +56,7 @@ final class ADVCM_Capabilities {
 	public static function bases() {
 		return array(
 			self::PURGE => (string) apply_filters( 'advcm_purge_base_capability', 'edit_others_posts' ),
-			self::HARD  => (string) apply_filters( 'advcm_purge_hard_base_capability', 'manage_options' ),
+			self::HARD  => (string) apply_filters( 'advcm_purge_hard_base_capability', 'edit_others_posts' ),
 		);
 	}
 

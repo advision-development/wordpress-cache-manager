@@ -640,7 +640,7 @@ final class ADVCM_Screen {
 			);
 
 			if ( $hard ) {
-				$choices['purge'] = array( __( 'Purge', 'advcm' ), __( 'every page is served un-optimized until NitroPack rebuilds it, which on a large site takes hours. Administrators only.', 'advcm' ) );
+				$choices['purge'] = array( __( 'Purge', 'advcm' ), __( 'every page is served un-optimized until NitroPack rebuilds it, which on a large site takes hours.', 'advcm' ) );
 			}
 
 			echo '<fieldset style="margin:8px 0"><legend><strong>' . esc_html__( 'NitroPack', 'advcm' ) . '</strong></legend>';
