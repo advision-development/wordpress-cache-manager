@@ -148,9 +148,10 @@ From the adversarial review of 2026-10-01; each has a test or a workflow check.
 
 - **Releases install themselves on every site**, so the release path is the attack surface: the
   workflow builds only a tag on `main`, pins every action to a commit, keeps `persist-credentials`
-  off, builds read-only, and publishes from a separate job. **Still the owner's to set in GitHub:**
-  a ruleset limiting who may create `v*` tags, and a protected `release` environment with required
-  reviewers on the publish job. Signing the zip is the next step beyond those.
+  off, builds read-only, and publishes from a separate job. **Set in GitHub on 2026-10-21:** a
+  ruleset on `main` (pull request, CI on 7.4/8.3/8.4, no force push or deletion, no bypass), one on
+  `v*` tags (only admins create), immutable releases, and a `release` environment whose required
+  reviewers are the admins — the publish job waits for one. Signing the zip is the next step.
 - **The package URL must match the release's exact shape** (`/releases/download/v<ver>/<repo>-<ver>.zip`,
   same tag as the release). A literal `..` check was bypassed by `%2e%2e`.
 - **Nothing reachable logged out.** admin-post and `wp_ajax_` only, each with capability and nonce.
@@ -187,4 +188,5 @@ the body carries the why, **no trailers**. Branches `type/kebab-case`, through a
 ## Releasing
 
 Bump the header `Version:` and `ADVCM_VERSION` together, CHANGELOG entry, merge, push the tag.
-The workflow does the rest. **Push the tag and stop.**
+The workflow builds it, then **waits for an admin to approve** the publish job (Actions → the
+run → Review deployments). **Push the tag and stop**; the owner approves.

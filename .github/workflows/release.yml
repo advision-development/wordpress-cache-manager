@@ -88,6 +88,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
 
+    # Waits for an administrator's approval in the repository's `release` environment (required
+    # reviewers: the admins; deployments only from v* tags). Every site offers what this publishes
+    # as an update, so a release is a human decision, not only a tag.
+    environment: release
+
     # The only job that can write, and all it runs is GitHub's own artifact download and the gh
     # CLI that ships on the runner.
     permissions:
