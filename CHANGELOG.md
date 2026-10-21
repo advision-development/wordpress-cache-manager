@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.0 — 2026-10-21
+
+Feedback on the NitroPack tab: the post lookup was at the bottom, and there was no way to look a
+page up by its address there.
+
+- **Look up a page**, first on the tab: any address of this site shows NitroPack's copy on every
+  device (created, lives until, state), its tags, what would rebuild it and Clear this page — read
+  from this server, without requesting the page. A link leads to the full Inspect a page.
+- **Pages showing a post** comes second, above the summary and the list, labelled "Post ID or URL"
+  (it always took a URL; it did not say so). Enter looks it up.
+
 ## 0.7.0 — 2026-10-21
 
 - **Clear this page** on each oldest copy of the NitroPack tab and on Inspect a page: seeing a
