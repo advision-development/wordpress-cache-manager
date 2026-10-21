@@ -8,7 +8,7 @@ The design spec lives in the team's internal workspace, not in this public repos
 
 ## Status
 
-**0.5.2.** Tools → CacheManager, in seven tabs — Status, Clear, Cache age, History, Freshness,
+**0.5.3.** Tools → CacheManager, in seven tabs — Status, Clear, Cache age, History, Freshness,
 Auto-clear, Settings — each with a box of its last changes, and the CacheManager menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
 time the screen opens: install a cache plugin later and it appears on the next load. Talking to Hawkeye is a later phase.
 
@@ -226,6 +226,13 @@ verified by the plugin, is the step that removes GitHub from the trust.
                           # still answering, and WordPress Malware Quick Scan run against it
 PHP=7.4 ./tests/smoke.sh  # the same on the floor the header claims
 ```
+
+**Updating a site.** The plugin offers each release on the Plugins screen within 12 hours and
+installs it by itself where WordPress runs automatic plugin updates. **WP Engine does not** (its
+installs have no `wp_maybe_auto_update` event), so on BMR and OddsTrader a person presses Update.
+After an update, Status records "CacheManager updated from X to Y"; a clear that was waiting during
+it is put back the first time a CacheManager screen opens. To go back, install the previous
+release's zip over it, or deactivate the plugin; settings and rules are kept.
 
 Releasing: bump `Version:` in the header **and** `ADVCM_VERSION`, add the CHANGELOG entry, merge,
 then push a `v<version>` tag. The workflow checks the tag against both strings, builds and

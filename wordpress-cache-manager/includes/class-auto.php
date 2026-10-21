@@ -22,10 +22,11 @@
  *   job, so a burst of twenty posts is one clear of `/analysis/`, not twenty.
  * - **Only the URLs a rule names**, filtered to this site's own like any per-URL clear, and never
  *   the whole site. A rule cannot ask for anything a person pressing "Clear these pages" could not.
- * - **NitroPack is invalidated, not purged, by default.** An auto-clear runs every time the
- *   editorial team publishes; a purge would serve the listing un-optimized after each one. A rule
- *   may ask for a purge.
- * - **Rules are written by administrators** (`advcm_purge_hard`). Anyone who can clear may read
+ * - **NitroPack: each rule says purge or invalidate.** A new rule starts with the choice in
+ *   Settings, purge by default since 0.3.2: an invalidated listing kept serving its old copy for
+ *   18 hours on BMR. Purge shows the new list at once, un-optimized for a few minutes.
+ * - **Rules are written by whoever holds `advcm_purge_hard`** — editors and administrators since
+ *   0.4.0, through the rules form, with the change log naming them. Anyone who can clear may read
  *   them and test a post against them.
  * - **`wp_after_insert_post`, not `transition_post_status`.** The block editor saves through REST,
  *   which sets a post's terms *after* the status transition, so a rule matching on a category
@@ -35,9 +36,9 @@
  * - **A clear says what triggered it.** The mark carries the posts that set it off — the first
  *   MAX_POSTS of them and a count of the rest — and the job keeps them, so History answers "why
  *   was /analysis/ cleared at 10:42" without anybody reading the editorial log.
- * - **Only the admin form writes `advcm_rules`.** What the cron learns about a rule — when it
- *   last fired — goes to `advcm_rules_last`, a row of its own: a cron writing the rules row while
- *   an administrator edits it would put back a rule they had just deleted.
+ * - **Only the rules and settings forms write `advcm_rules`.** What the cron learns about a rule —
+ *   when it last fired — goes to `advcm_rules_last`, a row of its own: a cron writing the rules
+ *   row while somebody edits it would put back a rule they had just deleted.
  * - **One switch pauses every rule** (`advcm_rules_paused`), read only once a rule is on, so a
  *   site with none still pays one option read per save.
  *

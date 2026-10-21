@@ -98,6 +98,10 @@ function wp_nonce_url( $url, $action = -1 ) {
 	return $url . '&_wpnonce=nonce-' . $action;
 }
 
+function wp_verify_nonce( $nonce, $action = -1 ) {
+	return 'nonce-' . $action === $nonce ? 1 : false;
+}
+
 function wp_unslash( $value ) {
 	return $value;
 }
@@ -469,5 +473,17 @@ $log = screen_part( 'render_log', array( 'auto' ) );
 check( 'a change with nothing before reads as new, not "→ on"', false !== strpos( $log, '<td>new: on</td>' ) && false === strpos( $log, '<td> → on</td>' ) );
 check( 'one with nothing after reads as removed, not "on →"', false !== strpos( $log, '<td>removed (was on)</td>' ) && false === strpos( $log, '<td>on → </td>' ) );
 check( 'and a change of value still reads before → after', false !== strpos( $log, '<td>on → off</td>' ) );
+
+// --------------------------------------------- a refused check is not recorded (2026-10-21)
+
+// Seen in the manual's screenshots: a cache-age check of /wp-login.php, refused, still appeared
+// under Last changes as a probe. The README says refusals are not recorded.
+$GLOBALS['options'][ ADVCM_Log::OPTION ] = array();
+$_GET['advcm_probe']                      = '/wp-login.php';
+$_GET['_wpnonce']                         = 'nonce-' . ADVCM_Screen::PROBE;
+$probe                                    = screen_part( 'render_probe' );
+unset( $_GET['advcm_probe'], $_GET['_wpnonce'] );
+
+check( 'a refused cache-age check says why, and is not recorded as a probe', false !== strpos( $probe, 'That is not a page on this site.' ) && array() === ADVCM_Log::recent( 'check' ) );
 
 finish();
