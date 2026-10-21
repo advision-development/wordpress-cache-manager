@@ -136,11 +136,18 @@ final class ADVCM_Optimizer_Index {
 	}
 
 	/**
-	 * A device's last finished list, oldest first, each with its URL ('' when unidentified) and
-	 * when it lives until (estimated, from the expiry in force now).
+	 * A device's last finished list, each copy re-read from disk now, oldest first, with its URL
+	 * ('' when unidentified) and when it lives until (estimated, from the expiry in force now).
+	 *
+	 * The scan is a snapshot up to EVERY seconds old, and the pages cleared most often are the
+	 * ones it would get wrong: on BMR on 2026-10-21 /analysis/ was listed 16 hours old while an
+	 * auto-clear had rebuilt it minutes before. So each kept copy is read again when shown (two
+	 * folders at most, file times only): one rebuilt since says `rebuilt` with its new time and
+	 * sorts by it, one gone says `cleared`, with no time, last.
 	 *
 	 * @param string $device Device.
-	 * @return array[] folder, created, invalidated, stale, ref, url, lives_until.
+	 * @return array[] folder, created (int|null), invalidated, stale, ref, url, lives_until,
+	 *                 since_scan ('' | rebuilt | cleared).
 	 */
 	public static function rows( $device ) {
 		$state = self::state();
@@ -150,19 +157,82 @@ final class ADVCM_Optimizer_Index {
 		}
 
 		$expire = ADVCM_Optimizer_Nitropack::expire()['expire'];
+		$dir    = ADVCM_Optimizer_Nitropack::device_dir( $device );
 		$out    = array();
 
 		foreach ( $state['rows'][ $device ] as $row ) {
-			if ( ! is_array( $row ) || ! isset( $row['created'] ) ) {
+			if ( ! is_array( $row ) || ! isset( $row['created'], $row['folder'] ) ) {
 				continue;
 			}
 
+			$row['since_scan'] = '';
+
+			if ( '' !== $dir ) {
+				$row = self::recheck( $row, $dir );
+			}
+
 			$row['url']         = self::url( isset( $row['ref'] ) ? (string) $row['ref'] : '' );
-			$row['lives_until'] = $expire > 0 ? (int) $row['created'] + $expire : null;
+			$row['lives_until'] = $expire > 0 && null !== $row['created'] ? (int) $row['created'] + $expire : null;
 			$out[]              = $row;
 		}
 
+		usort(
+			$out,
+			function ( $a, $b ) {
+				if ( $a['created'] === $b['created'] ) {
+					return strcmp( (string) $a['folder'], (string) $b['folder'] );
+				}
+
+				// A copy cleared since the scan has no time: last.
+				if ( null === $a['created'] || null === $b['created'] ) {
+					return null === $a['created'] ? 1 : -1;
+				}
+
+				return $a['created'] < $b['created'] ? -1 : 1;
+			}
+		);
+
 		return $out;
+	}
+
+	/**
+	 * One kept copy as it is on disk now: the page's folder first, then its invalidated one.
+	 *
+	 * @param array  $row A row of the list.
+	 * @param string $dir The device's folder.
+	 * @return array
+	 */
+	private static function recheck( array $row, $dir ) {
+		try {
+			$hash = self::hash( (string) $row['folder'] );
+			$live = ADVCM_Optimizer_Nitropack::newest( $dir . '/' . $hash );
+			$inv  = 0;
+
+			if ( null === $live ) {
+				$live = ADVCM_Optimizer_Nitropack::newest( $dir . '/' . $hash . '_i' );
+				$inv  = 1;
+			}
+
+			if ( null === $live ) {
+				$row['since_scan'] = 'cleared';
+				$row['created']    = null;
+
+				return $row;
+			}
+
+			if ( (int) $live['at'] !== (int) $row['created'] ) {
+				$row['since_scan'] = 'rebuilt';
+			}
+
+			$row['created']     = (int) $live['at'];
+			$row['invalidated'] = $inv;
+			$row['stale']       = $live['stale'] ? 1 : 0;
+		} catch ( Throwable $e ) {
+			// As the scan read it.
+			return $row;
+		}
+
+		return $row;
 	}
 
 	/**

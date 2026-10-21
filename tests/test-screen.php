@@ -555,6 +555,7 @@ check( 'the lookups\' inspect link is built from a raw address, the URL last', 0
 check( 'the expiry in force', false !== strpos( $out, '24 h' ) );
 check( 'the oldest copies, with an inspect link for a named page', false !== strpos( $out, 'tab=check' ) && false !== strpos( $out, 'advcm_probe=' . rawurlencode( home_url( '/' ) ) ) && false !== strpos( $out, 'nonce-' . ADVCM_Screen::PROBE ) );
 check( 'an unidentified page says so', false !== strpos( $out, 'unidentified page' ) );
+check( 'a copy gone from disk since the scan says so, with no 1970 date', false !== strpos( $out, 'cleared since the scan' ) && false === strpos( $out, '1970-' ) );
 check( 'invalidated and lives until (estimated)', false !== strpos( $out, 'invalidated' ) && false !== strpos( $out, 'Lives until' ) );
 check( 'a refresh form, posted with its nonce', false !== strpos( $out, 'value="' . ADVCM_Optimizer::REFRESH . '"' ) && false !== strpos( $out, 'nonce-' . ADVCM_Optimizer::REFRESH ) );
 check( 'pages showing a post ask the lookup after the page loads', false !== strpos( $out, ADVCM_Optimizer::LOOKUP ) && false !== strpos( $out, 'nonce-' . ADVCM_Optimizer::LOOKUP ) && false !== strpos( $out, '"tagged"' ) );

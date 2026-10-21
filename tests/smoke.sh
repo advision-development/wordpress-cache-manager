@@ -735,6 +735,11 @@ done
 opt_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=optimizer")"
 grep -q "<code>${URL}/</code></a>" <<< "${opt_tab}" && grep -qE 'tab=check[^"]*advcm_probe=' <<< "${opt_tab}" && pass "the oldest copies are named from the site's URLs, each linked to Inspect a page" || fail "the oldest copies are not listed: $(grep -oE 'Oldest copies.{0,400}' <<< "${opt_tab}" | head -1)"
 
+# A copy rebuilt after the scan: the list re-reads it, rather than showing the scan's old age.
+wpcli wp eval 'touch( WP_CONTENT_DIR . "/cache/advcm-smoke-np/desktop/" . md5( home_url( "/" ) ) . "/ssl-0.html", time() - 30 );' >/dev/null
+rebuilt_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=optimizer")"
+grep -q 'rebuilt since the scan' <<< "${rebuilt_tab}" && pass "a copy rebuilt since the scan is shown with its new time, marked" || fail "the oldest copies still show the scan's age for a rebuilt copy"
+
 look_nonce="$(grep -oE 'd.append\("action","advcm_optimizer_lookup"\);d.append\("_ajax_nonce","[a-f0-9]+"' <<< "${opt_tab}" | head -1 | sed 's/.*"_ajax_nonce","//; s/"$//')"
 summary="$(curl -s -b "${jar}" -d "action=advcm_optimizer_lookup&_ajax_nonce=${look_nonce}&kind=summary" "${URL}/wp-admin/admin-ajax.php")"
 grep -q '"pending":6' <<< "${summary}" && grep -q 'Updated Post Smoke' <<< "${summary}" && pass "the summary is asked after the page loads: pages waiting to rebuild, the last purge, its HTML stripped" || fail "the summary lookup did not answer: ${summary:0:300}"

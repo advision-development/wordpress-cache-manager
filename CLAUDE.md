@@ -133,7 +133,8 @@ These are requirements, not preferences. Each was either asked for explicitly or
   minute per person, a failed lookup not cached. Never in a page view, a save or WP-Cron.
 - **The oldest-copies index is bounded**: `advcm_optimizer_index`, 100 copies per device for the
   last list and 100 for the one being built, references (`p:`, `t:`, `home`) not URLs; worst case
-  asserted under 150 KB (94 KB). WP-Cron every 6 hours, 1,000 folders / 2 s a run, lock naming the
+  asserted under 150 KB (94 KB). Each kept copy is re-read from disk when the list is shown
+  (the scan is a snapshot; the most-cleared pages are the ones it gets wrong). WP-Cron every 6 hours, 1,000 folders / 2 s a run, lock naming the
   folder, rescued like the listings scan.
 - **"Any content" never covers revisions, auto-drafts or menu items**, whatever
   `advcm_auto_excluded_post_types` returns, and a filter answer that is not a list of post type
