@@ -561,6 +561,31 @@ check( 'a copy gone from disk since the scan says so, with no 1970 date', false 
 check( 'invalidated and lives until (estimated)', false !== strpos( $out, 'invalidated' ) && false !== strpos( $out, 'Lives until' ) );
 check( 'a refresh form, posted with its nonce', false !== strpos( $out, 'value="' . ADVCM_Optimizer::REFRESH . '"' ) && false !== strpos( $out, 'nonce-' . ADVCM_Optimizer::REFRESH ) );
 check( 'pages showing a post ask the lookup after the page loads', false !== strpos( $out, ADVCM_Optimizer::LOOKUP ) && false !== strpos( $out, 'nonce-' . ADVCM_Optimizer::LOOKUP ) && false !== strpos( $out, '"tagged"' ) );
+
+// Feedback of 2026-10-21: the post lookup moved to the top, and a page can be looked up by URL.
+check( 'the lookups come first, before the summary and the list', strpos( $out, 'Pages showing a post' ) < strpos( $out, 'Site summary' ) && strpos( $out, 'Look up a page' ) < strpos( $out, 'Site summary' ) );
+check( 'the post lookup says it takes an ID or a URL', false !== strpos( $out, 'Post ID or URL' ) && 1 === preg_match( '~id="advcm-tagged-value"[^>]*placeholder="[^"]*https?://~', $out ) );
+check( 'a page is looked up by URL through a form with its nonce', false !== strpos( $out, 'name="advcm_page"' ) && false !== strpos( $out, 'nonce-' . ADVCM_Screen::PAGE ) && false !== strpos( $out, 'name="tab" value="optimizer"' ) );
+check( 'with nothing asked, no page is shown', false === strpos( $out, 'NitroPack, per device' ) );
+
+$_GET['advcm_page'] = '/usa/texas/';
+$_GET['_wpnonce']   = 'nonce-' . ADVCM_Screen::PAGE;
+$asked              = screen_part( 'render_optimizer', array( true ) );
+
+check( 'a page asked for: its copies per device, its tags and Clear this page, above the summary', false !== strpos( $asked, 'NitroPack, per device' ) && strpos( $asked, 'NitroPack, per device' ) < strpos( $asked, 'Site summary' ) && false !== strpos( $asked, 'name="urls" value="https://example.test/usa/texas/"' ) );
+check( 'with a link to the full inspection', false !== strpos( $asked, 'tab=check' ) && false !== strpos( $asked, 'advcm_probe=' . rawurlencode( 'https://example.test/usa/texas/' ) ) );
+
+$_GET['advcm_page'] = 'https://elsewhere.test/x/';
+$asked              = screen_part( 'render_optimizer', array( true ) );
+
+check( 'an address on another site is refused, nothing read', false !== strpos( $asked, 'That is not a page on this site.' ) && false === strpos( $asked, 'NitroPack, per device' ) );
+
+$_GET['advcm_page'] = '/usa/texas/';
+$_GET['_wpnonce']   = 'nope';
+
+check( 'without its nonce, nothing is shown', false === strpos( screen_part( 'render_optimizer', array( true ) ), 'NitroPack, per device' ) );
+
+unset( $_GET['advcm_page'], $_GET['_wpnonce'] );
 check( 'each part of the tab on its own guard', 3 <= substr_count( file_get_contents( ADVCM_DIR . 'includes/class-screen.php' ), "'screen:optimizer:" ) );
 
 $GLOBALS['options'][ ADVCM_Optimizer_Index::OPTION ] = array();

@@ -560,6 +560,7 @@ final class ADVCM_Screen {
 							__( 'Copies are read from the files NitroPack keeps on this server, in the folders its own code names: only their times, nothing is opened or changed.', 'advcm' ),
 							/* translators: 1: how many, 2: folders per run. */
 							sprintf( __( 'Oldest copies: every 6 hours WP-Cron reads NitroPack\'s folders, %2$d at a time, and keeps the %1$d oldest per device; then names them from this site\'s own addresses. Refresh now starts a new scan; it runs in the background.', 'advcm' ), ADVCM_Optimizer_Index::KEEP, ADVCM_Optimizer_Index::BATCH ),
+							__( 'Look up a page: any address of this site, NitroPack\'s copy of it on every device — when made, until when it lives — its tags, what would rebuild it, and Clear this page. Read from this server, without requesting the page; Inspect a page does the same and also asks the page.', 'advcm' ),
 							__( 'The summary and Pages showing a post ask NitroPack\'s service, a few seconds each. The answers are kept 10 minutes; each person can look up 10 a minute.', 'advcm' ),
 						),
 						__( 'What it shows', 'advcm' )  => array(
@@ -2450,6 +2451,22 @@ final class ADVCM_Screen {
 	 * @return void
 	 */
 	private static function render_optimizer( $hard ) {
+		// The lookups first: they are what a person comes with ("is this page old?", "is my post
+		// on its hubs yet?"); the summary and the list are for a look around.
+		ADVCM_Safe::run(
+			'screen:optimizer:page',
+			function () {
+				self::render_optimizer_page();
+			}
+		);
+
+		ADVCM_Safe::run(
+			'screen:optimizer:tagged',
+			function () {
+				self::render_optimizer_tagged();
+			}
+		);
+
 		ADVCM_Safe::run(
 			'screen:optimizer:summary',
 			function () {
@@ -2463,13 +2480,51 @@ final class ADVCM_Screen {
 				self::render_optimizer_oldest();
 			}
 		);
+	}
 
-		ADVCM_Safe::run(
-			'screen:optimizer:tagged',
-			function () {
-				self::render_optimizer_tagged();
-			}
-		);
+	/** The nonce action for looking up a page on the NitroPack tab. */
+	const PAGE = 'advcm_optimizer_page';
+
+	/**
+	 * Look up a page by its address: NitroPack's copies of it on every device, its tags, what
+	 * would rebuild it and Clear this page — Inspect a page's NitroPack part, read from disk
+	 * without requesting the page. A GET form with a nonce, so the answer is a link a person can
+	 * reload; it reads, and the tags are a rate-limited, cached lookup.
+	 *
+	 * @return void
+	 */
+	private static function render_optimizer_page() {
+		// phpcs:disable WordPress.Security.NonceVerification -- verified below before anything is read.
+		$asked = isset( $_GET['advcm_page'] ) ? trim( wp_unslash( (string) $_GET['advcm_page'] ) ) : '';
+		$valid = '' !== $asked && isset( $_GET['_wpnonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ), self::PAGE );
+		// phpcs:enable
+
+		echo '<h2>' . esc_html__( 'Look up a page', 'advcm' ) . '</h2>';
+		echo '<form method="get" action="' . esc_url( admin_url( 'tools.php' ) ) . '">';
+		echo '<input type="hidden" name="page" value="' . esc_attr( self::SLUG ) . '" />';
+		echo '<input type="hidden" name="tab" value="optimizer" />';
+		wp_nonce_field( self::PAGE, '_wpnonce', false );
+		echo '<p><label for="advcm-page-value">' . esc_html__( 'Page URL', 'advcm' ) . '</label> <input type="text" id="advcm-page-value" name="advcm_page" class="regular-text code" placeholder="' . esc_attr( home_url( '/a-hub-page/' ) ) . '" value="' . esc_attr( $asked ) . '" /> ';
+		submit_button( __( 'Look up', 'advcm' ), 'secondary', '', false );
+		echo '</p><p class="description">' . esc_html__( 'Any page of this site: how old NitroPack\'s copy is on each device, until when it lives, its tags and what would rebuild it. Read from this server; the page itself is not requested.', 'advcm' ) . '</p></form>';
+
+		if ( ! $valid ) {
+			return;
+		}
+
+		$parsed = ADVCM_Urls::parse( array( substr( $asked, 0, ADVCM_Urls::MAX_LENGTH ) ), home_url() );
+
+		if ( empty( $parsed['accepted'] ) ) {
+			echo '<div class="notice notice-warning inline"><p>' . esc_html__( 'That is not a page on this site.', 'advcm' ) . '</p></div>';
+
+			return;
+		}
+
+		$url = $parsed['accepted'][0];
+
+		echo '<p><code>' . esc_html( $url ) . '</code> — <a href="' . esc_url( self::inspect_url( $url ) ) . '">' . esc_html__( 'Inspect it across every layer', 'advcm' ) . '</a></p>';
+
+		self::render_inspect_optimizer( $url );
 	}
 
 	/**
@@ -2604,13 +2659,13 @@ final class ADVCM_Screen {
 	 */
 	private static function render_optimizer_tagged() {
 		echo '<h2>' . esc_html__( 'Pages showing a post', 'advcm' ) . '</h2>';
-		echo '<p class="description">' . esc_html__( 'A post ID or its address: the pages NitroPack says show it, and when each device\'s copy of them was made — whether a change to the post is on those pages yet. At most 50 pages; the answer is kept 10 minutes.', 'advcm' ) . '</p>';
-		echo '<p><input type="text" id="advcm-tagged-value" class="regular-text code" placeholder="12345" /> <button type="button" class="button" id="advcm-tagged-go">' . esc_html__( 'Look up', 'advcm' ) . '</button></p>';
+		echo '<p class="description">' . esc_html__( 'A post\'s ID, or its address: the pages NitroPack says show it, and when each device\'s copy of them was made — whether a change to the post is on those pages yet. At most 50 pages; the answer is kept 10 minutes.', 'advcm' ) . '</p>';
+		echo '<p><label for="advcm-tagged-value">' . esc_html__( 'Post ID or URL', 'advcm' ) . '</label> <input type="text" id="advcm-tagged-value" class="regular-text code" placeholder="' . esc_attr( sprintf( /* translators: %s: an example address. */ __( '12345 or %s', 'advcm' ), home_url( '/a-post/' ) ) ) . '" /> <button type="button" class="button" id="advcm-tagged-go">' . esc_html__( 'Look up', 'advcm' ) . '</button></p>';
 		echo '<div id="advcm-tagged-out"></div>';
 
 		self::lookup_script();
 
-		echo '<script>document.getElementById("advcm-tagged-go").addEventListener("click",function(){var v=document.getElementById("advcm-tagged-value").value.trim();if(v){advcmLookup(' . wp_json_encode( 'tagged' ) . ',v,document.getElementById("advcm-tagged-out"));}});</script>';
+		echo '<script>(function(){var go=function(){var v=document.getElementById("advcm-tagged-value").value.trim();if(v){advcmLookup(' . wp_json_encode( 'tagged' ) . ',v,document.getElementById("advcm-tagged-out"));}};document.getElementById("advcm-tagged-go").addEventListener("click",go);document.getElementById("advcm-tagged-value").addEventListener("keydown",function(e){if("Enter"===e.key){e.preventDefault();go();}});})();</script>';
 	}
 
 	/**

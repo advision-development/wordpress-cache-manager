@@ -765,6 +765,10 @@ grep -qE '<td>ed</td><td>Oldest copies scan started</td>' <<< "${opt_tab}" && pa
 inspect="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=check&advcm_probe=%2F&_wpnonce=${check_nonce}")"
 grep -q '>NitroPack, per device</h3>' <<< "${inspect}" && grep -q '<td>desktop</td><td>fresh</td>' <<< "${inspect}" && grep -q '>What would rebuild it</h3>' <<< "${inspect}" && pass "Inspect a page shows NitroPack's copy per device and what would rebuild it" || fail "Inspect a page has no NitroPack section"
 
+page_nonce="$(grep -oE 'name="_wpnonce" value="[a-f0-9]+" /><p><label for="advcm-page-value"' <<< "${opt_tab}" | head -1 | sed 's/.*value="//; s/".*//')"
+page_look="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=optimizer&advcm_page=%2F&_wpnonce=${page_nonce}")"
+grep -q '>NitroPack, per device</h3>' <<< "${page_look}" && grep -q '<td>desktop</td>' <<< "${page_look}" && grep -q 'Clear this page' <<< "${page_look}" && pass "Look up a page shows the home page's copies per device, with Clear this page" || fail "Look up a page did not show the page (nonce '${page_nonce}')"
+
 docker exec "${WP}" rm -rf /var/www/html/wp-content/mu-plugins/advcm-smoke-nitropack.php /var/www/html/wp-content/cache/advcm-smoke-np
 check_pages "after NitroPack was removed"
 opt_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=optimizer")"

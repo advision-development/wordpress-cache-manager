@@ -8,7 +8,7 @@ The design spec lives in the team's internal workspace, not in this public repos
 
 ## Status
 
-**0.7.0.** Tools → CacheManager, in seven tabs — Status, Clear, Inspect a page, History,
+**0.8.0.** Tools → CacheManager, in seven tabs — Status, Clear, Inspect a page, History,
 Freshness, Auto-clear, Settings, and an eighth, NitroPack, on a site with NitroPack — each with a box of its last changes, and the CacheManager menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
 time the screen opens: install a cache plugin later and it appears on the next load. Talking to Hawkeye is a later phase.
 
@@ -79,6 +79,9 @@ purges by itself or changes a NitroPack setting. Since 0.7.0 each oldest copy, a
 has **Clear this page**: that one page cleared in every layer, Fast, NitroPack purged, through the
 Clear tab's own action — the same nonce, page-clear limits, History and Last changes.
 
+- **Look up a page** (since 0.8.0, first on the tab): any address of this site → NitroPack's copy
+  on every device (created, lives until, state), its tags, what would rebuild it and Clear this
+  page. Read from this server without requesting the page; a link leads to the full Inspect a page.
 - **Site summary**: copies per device and how many are invalidated (counted on disk), pages
   waiting to rebuild and the last purge — when, which page or tag, why (NitroPack keeps only the
   last) — from NitroPack's API, and the expiry in force. Cached 10 minutes.
@@ -90,7 +93,7 @@ Clear tab's own action — the same nonce, page-clear limits, History and Last c
   copy rebuilt since the scan shows its new time, marked "rebuilt since the scan", and one purged
   since says "cleared since the scan". The first scan is scheduled when a CacheManager screen opens; *Refresh now*
   starts one. 500 folders took 0.68 s on BMR.
-- **Pages showing a post**: a post ID or address → the pages NitroPack says show it (at most 50),
+- **Pages showing a post** (second on the tab since 0.8.0): a post ID or URL → the pages NitroPack says show it (at most 50),
   each device's copy time: is the change on those pages yet?
 
 Everything NitroPack's API answers (2 to 2.5 s a call on BMR) is asked only when a person asks,
