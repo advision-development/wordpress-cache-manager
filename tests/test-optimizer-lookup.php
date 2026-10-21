@@ -22,6 +22,12 @@ function set_transient( $name, $value, $ttl = 0 ) {
 	return true;
 }
 
+function delete_transient( $name ) {
+	unset( $GLOBALS['transients'][ $name ] );
+
+	return true;
+}
+
 function current_user_can( $cap ) {
 	return $GLOBALS['can'];
 }
@@ -101,7 +107,7 @@ require __DIR__ . '/store-stubs.php';
 require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/stubs-nitropack.php';
 
-foreach ( array( 'safe', 'urls', 'capabilities', 'optimizer-nitropack', 'optimizer' ) as $class ) {
+foreach ( array( 'safe', 'urls', 'capabilities', 'log', 'optimizer-nitropack', 'optimizer-index', 'optimizer' ) as $class ) {
 	load_class( $class );
 }
 
@@ -317,7 +323,21 @@ check( 'registered for logged-in people only', in_array( 'wp_ajax_advcm_optimize
 	return $GLOBALS['hooks'];
 } )(), true ) && ! in_array( 'wp_ajax_nopriv_advcm_optimizer_lookup', $GLOBALS['hooks'], true ) );
 
+check( 'and Refresh now, through admin-post', in_array( 'admin_post_advcm_optimizer_refresh', $GLOBALS['hooks'], true ) );
+
+// ------------------------------------------------------------------------- refresh now
+
+$GLOBALS['transients'][ ADVCM_Optimizer::SUMMARY ] = array( 'at' => 1 );
+$GLOBALS['options'][ ADVCM_Log::OPTION ]           = array();
+
+check( 'Refresh now starts the oldest-copies scan and asks the summary again', '' === ADVCM_Optimizer::refresh( 7 ) && false !== wp_next_scheduled( ADVCM_Optimizer_Index::HOOK ) && ! isset( $GLOBALS['transients'][ ADVCM_Optimizer::SUMMARY ] ) );
+check( 'and is recorded under the Optimizer tab\'s Last changes', 1 === count( ADVCM_Log::recent( 'optimizer' ) ) );
+check( 'pressed again while it runs: refused, not recorded twice', '' !== ADVCM_Optimizer::refresh( 7 ) && 1 === count( ADVCM_Log::recent( 'optimizer' ) ) );
+
 ADVCM_Optimizer_Nitropack::use_sdk( null );
+
+check( 'without NitroPack: refused with why', ADVCM_Optimizer_Nitropack::why_not() === ADVCM_Optimizer::refresh( 7 ) );
+
 exec( 'rm -rf ' . escapeshellarg( $dir ) );
 
 finish();

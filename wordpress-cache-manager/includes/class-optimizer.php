@@ -27,6 +27,9 @@ final class ADVCM_Optimizer {
 	/** The ajax action and nonce. */
 	const LOOKUP = 'advcm_optimizer_lookup';
 
+	/** The admin-post action and nonce of "Refresh now". */
+	const REFRESH = 'advcm_optimizer_refresh';
+
 	/** The summary's transient. */
 	const SUMMARY = 'advcm_optimizer_summary';
 
@@ -61,6 +64,73 @@ final class ADVCM_Optimizer {
 	 */
 	public static function register() {
 		ADVCM_Safe::action( 'wp_ajax_' . self::LOOKUP, array( __CLASS__, 'handle_lookup' ) );
+		ADVCM_Safe::action( 'admin_post_' . self::REFRESH, array( __CLASS__, 'guarded_refresh' ) );
+	}
+
+	/**
+	 * "Refresh now": the summary asked again, and the oldest-copies scan started (it runs in
+	 * WP-Cron; this only schedules it). Recorded under Last changes.
+	 *
+	 * @param int $user Who asked.
+	 * @return string Empty when done, else why not.
+	 */
+	public static function refresh( $user ) {
+		delete_transient( self::SUMMARY );
+
+		$was     = ADVCM_Optimizer_Index::state();
+		$refusal = ADVCM_Optimizer_Index::start( (int) $user );
+
+		if ( '' === $refusal ) {
+			$resumed = $was['started'] && ! $was['done'];
+
+			ADVCM_Log::add( 'optimizer', $resumed ? 'scan_resumed' : 'scan', $resumed ? __( 'Oldest copies scan picked up where it stopped', 'advcm' ) : __( 'Oldest copies scan started', 'advcm' ) );
+		}
+
+		return $refusal;
+	}
+
+	/**
+	 * The refresh button's handler, guarded.
+	 *
+	 * @return void
+	 */
+	public static function guarded_refresh() {
+		try {
+			self::handle_refresh();
+		} catch ( Throwable $e ) {
+			ADVCM_Safe::report( 'admin_post_' . self::REFRESH, $e );
+			self::back( __( 'The refresh could not start because of an error in this plugin. It has been written to the PHP error log.', 'advcm' ) );
+		}
+	}
+
+	/**
+	 * Refresh: anybody who may clear, with a nonce. Reading changes nothing.
+	 *
+	 * @return void
+	 */
+	public static function handle_refresh() {
+		if ( ! current_user_can( ADVCM_Capabilities::PURGE ) ) {
+			wp_die( esc_html__( 'You are not allowed to refresh this.', 'advcm' ), '', array( 'response' => 403 ) );
+		}
+
+		check_admin_referer( self::REFRESH );
+
+		self::back( self::refresh( get_current_user_id() ) );
+	}
+
+	/**
+	 * Back to the Optimizer tab, with the refusal if there was one.
+	 *
+	 * @param string $notice Refusal.
+	 * @return void
+	 */
+	private static function back( $notice ) {
+		if ( '' !== $notice ) {
+			set_transient( 'advcm_notice_' . get_current_user_id(), $notice, 60 );
+		}
+
+		wp_safe_redirect( ADVCM_Screen::tab_url( 'optimizer' ) );
+		exit;
 	}
 
 	/**

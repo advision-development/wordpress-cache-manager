@@ -193,6 +193,9 @@ final class ADVCM_Screen {
 			'freshness' => function () use ( $hard ) {
 				self::render_freshness( $hard );
 			},
+			'optimizer' => function () use ( $hard ) {
+				self::render_optimizer( $hard );
+			},
 			'auto'    => function () use ( $hard ) {
 				self::render_auto( $hard );
 			},
@@ -246,7 +249,7 @@ final class ADVCM_Screen {
 	private static function current_tab( $open, $notice ) {
 		$asked = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification -- choosing a tab changes nothing.
 
-		if ( in_array( $asked, self::TABS, true ) ) {
+		if ( in_array( $asked, self::tabs(), true ) ) {
 			return $asked;
 		}
 
@@ -255,6 +258,32 @@ final class ADVCM_Screen {
 		}
 
 		return $notice ? 'clear' : 'status';
+	}
+
+	/**
+	 * The tabs this site has, in order: the Optimizer tab only where an optimizer the plugin can
+	 * read is installed, after Freshness.
+	 *
+	 * @return string[]
+	 */
+	public static function tabs() {
+		$tabs = self::TABS;
+
+		if ( ADVCM_Safe::run( 'screen:tabs', array( 'ADVCM_Optimizer_Nitropack', 'available' ), false ) ) {
+			array_splice( $tabs, array_search( 'freshness', $tabs, true ) + 1, 0, array( 'optimizer' ) );
+		}
+
+		return $tabs;
+	}
+
+	/**
+	 * Inspect a page's address for a URL: a reading somebody can reload, with its nonce.
+	 *
+	 * @param string $url URL.
+	 * @return string
+	 */
+	public static function inspect_url( $url ) {
+		return wp_nonce_url( self::tab_url( 'check' ) . '&advcm_probe=' . rawurlencode( (string) $url ), self::PROBE );
 	}
 
 	/**
@@ -277,16 +306,17 @@ final class ADVCM_Screen {
 		$labels = array(
 			'status'  => __( 'Status', 'advcm' ),
 			'clear'   => __( 'Clear', 'advcm' ),
-			'check'   => __( 'Cache age', 'advcm' ),
+			'check'   => __( 'Inspect a page', 'advcm' ),
 			'history' => __( 'History', 'advcm' ),
 			'freshness' => __( 'Freshness', 'advcm' ),
+			'optimizer' => __( 'Optimizer', 'advcm' ),
 			'auto'     => __( 'Auto-clear', 'advcm' ),
 			'settings' => __( 'Settings', 'advcm' ),
 		);
 
 		echo '<nav class="nav-tab-wrapper" style="margin-bottom:12px">';
 
-		foreach ( self::TABS as $tab ) {
+		foreach ( self::tabs() as $tab ) {
 			echo '<a href="' . esc_url( self::tab_url( $tab ) ) . '" class="nav-tab' . ( $current === $tab ? ' nav-tab-active' : '' ) . '">' . esc_html( $labels[ $tab ] ) . '</a>';
 		}
 
@@ -428,8 +458,14 @@ final class ADVCM_Screen {
 					$legend[ __( 'NitroPack copy', 'advcm' ) ]             = __( 'when NitroPack stored its own copy of the page.', 'advcm' );
 				}
 
+				if ( $nitropack ) {
+					$legend[ __( 'NitroPack, per device', 'advcm' ) ] = __( 'each device\'s copy (desktop, mobile, tablet): fresh, stale, invalidated or no copy, when it was made and until when it lives (estimated from the expiry in force).', 'advcm' );
+					$legend[ __( 'Its tags', 'advcm' ) ]              = __( 'what NitroPack tied the page to, asked of NitroPack after the page has loaded: the posts it shows (newest first), the page itself, terms, authors and its page type.', 'advcm' );
+					$legend[ __( 'What would rebuild it', 'advcm' ) ] = __( 'what makes NitroPack build a new copy, and whether a new post would — only when an auto-clear rule names the page.', 'advcm' );
+				}
+
 				return array(
-					'what'  => __( 'Ask one page how old its cached copy is, as a visitor would get it. Nothing is cleared.', 'advcm' ),
+					'what'  => $nitropack ? __( 'Inspect one page: what each cache in front of it answered, and NitroPack\'s copy on every device, its tags and what would rebuild it. Nothing is cleared.', 'advcm' ) : __( 'Inspect one page: how old its cached copy is, as a visitor would get it, and what each cache in front of it answered. Nothing is cleared.', 'advcm' ),
 					'parts' => array(
 						__( 'When to use it', 'advcm' ) => array(
 							__( 'When somebody says a page looks old: an old copy means a cache held it and clearing helps; a young copy means the page itself has nothing new, and clearing will not change it.', 'advcm' ),
@@ -504,6 +540,38 @@ final class ADVCM_Screen {
 						),
 						__( 'Limits', 'advcm' )         => array(
 							__( 'Ages come only from the caches this site has and only from clears of some pages. The scan reads Elementor lists only, and does not say which pages use a template. Lists by author are judged by their categories and tags alone.', 'advcm' ),
+						),
+					),
+				);
+
+			case 'optimizer':
+				return array(
+					'what'  => __( 'What NitroPack keeps for this site: how many optimized copies, which have lived longest, and which pages show a post. It only shows: it never purges, invalidates or changes a NitroPack setting.', 'advcm' ),
+					'parts' => array(
+						__( 'When to use it', 'advcm' ) => array(
+							__( 'Before flushing NitroPack because a change does not show: look up the post under Pages showing a post, or inspect the page. If its copy is older than the change, clear that page; a whole-site flush leaves every page un-optimized while NitroPack rebuilds them.', 'advcm' ),
+							__( 'Now and then, to see which copies have lived longest and whether a rule should clear those pages.', 'advcm' ),
+						),
+						__( 'How it works', 'advcm' )   => array(
+							__( 'Copies are read from the files NitroPack keeps on this server, in the folders its own code names: only their times, nothing is opened or changed.', 'advcm' ),
+							/* translators: 1: how many, 2: folders per run. */
+							sprintf( __( 'Oldest copies: every 6 hours WP-Cron reads NitroPack\'s folders, %2$d at a time, and keeps the %1$d oldest per device; then names them from this site\'s own addresses. Refresh now starts a new scan; it runs in the background.', 'advcm' ), ADVCM_Optimizer_Index::KEEP, ADVCM_Optimizer_Index::BATCH ),
+							__( 'The summary and Pages showing a post ask NitroPack\'s service, a few seconds each. The answers are kept 10 minutes; each person can look up 10 a minute.', 'advcm' ),
+						),
+						__( 'What it shows', 'advcm' )  => array(
+							__( 'Devices', 'advcm' )            => __( 'NitroPack keeps a copy per device type: desktop, mobile, tablet. Each is rebuilt on its own.', 'advcm' ),
+							__( 'Created', 'advcm' )            => __( 'when NitroPack made the copy (UTC).', 'advcm' ),
+							__( 'Lives until', 'advcm' )        => __( 'created plus the expiry in force, an estimate: past it, NitroPack builds a new copy on the next visit.', 'advcm' ),
+							__( 'Fresh', 'advcm' )              => __( 'the copy NitroPack serves now.', 'advcm' ),
+							__( 'Stale', 'advcm' )              => __( 'an old copy NitroPack keeps serving for a few minutes while it builds the new one.', 'advcm' ),
+							__( 'Invalidated', 'advcm' )        => __( 'marked out of date by a purge or a post update; NitroPack serves it until the new copy is ready.', 'advcm' ),
+							__( 'unidentified page', 'advcm' )  => __( 'a copy no address of this site matches: one with a query string, or of a page since deleted.', 'advcm' ),
+							__( 'Waiting to rebuild', 'advcm' ) => __( 'pages queued at NitroPack for a new copy.', 'advcm' ),
+							__( 'Last purge', 'advcm' )         => __( 'NitroPack\'s last purge: when, which page or tag, and why. NitroPack keeps only the last one.', 'advcm' ),
+							__( 'Rule', 'advcm' )               => __( 'whether an auto-clear rule names the page, so a new post clears it.', 'advcm' ),
+						),
+						__( 'Limits', 'advcm' )         => array(
+							__( 'Only the oldest copies are kept, never a list of every page. Times are the files\' own; expiry is NitroPack\'s setting now, so a copy made under another setting may live differently. Pages showing a post lists at most 50 pages.', 'advcm' ),
 						),
 					),
 				);
@@ -624,7 +692,7 @@ final class ADVCM_Screen {
 		$valid = '' !== $asked && isset( $_GET['_wpnonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ), self::PROBE );
 		// phpcs:enable
 
-		echo '<h2>' . esc_html__( 'How old is a page\'s cache', 'advcm' ) . '</h2>';
+		echo '<h2>' . esc_html__( 'Inspect a page', 'advcm' ) . '</h2>';
 		echo '<form method="get" action="' . esc_url( admin_url( 'tools.php' ) ) . '">';
 		echo '<input type="hidden" name="page" value="' . esc_attr( self::SLUG ) . '" />';
 		echo '<input type="hidden" name="tab" value="check" />';
@@ -704,6 +772,150 @@ final class ADVCM_Screen {
 		}
 
 		echo '</tbody></table>';
+
+		// NitroPack's side, on its own guard: a fault there never takes the reading above.
+		$url = $reading['url'];
+
+		ADVCM_Safe::run(
+			'screen:inspect',
+			function () use ( $url ) {
+				self::render_inspect_optimizer( $url );
+			}
+		);
+	}
+
+	/**
+	 * Inspect a page, NitroPack's side: each device's copy, its tags (asked after the page has
+	 * loaded) and what would rebuild it. Nothing on a site without NitroPack.
+	 *
+	 * @param string $url URL.
+	 * @return void
+	 */
+	private static function render_inspect_optimizer( $url ) {
+		if ( ! ADVCM_Optimizer_Nitropack::available() ) {
+			return;
+		}
+
+		$copies = ADVCM_Optimizer_Nitropack::copies( $url );
+		$now    = time();
+		$until  = null;
+
+		echo '<h3>' . esc_html__( 'NitroPack, per device', 'advcm' ) . '</h3>';
+		echo '<table class="widefat striped" style="max-width:900px"><thead><tr>';
+
+		foreach ( array( __( 'Device', 'advcm' ), __( 'Copy', 'advcm' ), __( 'Created (UTC)', 'advcm' ), __( 'Age', 'advcm' ), __( 'Lives until (UTC, estimated)', 'advcm' ) ) as $head ) {
+			echo '<th>' . esc_html( $head ) . '</th>';
+		}
+
+		echo '</tr></thead><tbody>';
+
+		foreach ( $copies as $device => $copy ) {
+			$made = null !== $copy['created'];
+
+			if ( null !== $copy['lives_until'] && ( null === $until || $copy['lives_until'] < $until ) ) {
+				$until = $copy['lives_until'];
+			}
+
+			echo '<tr><td>' . esc_html( $device ) . '</td>';
+			echo '<td>' . esc_html( self::copy_words( $copy['state'] ) ) . '</td>';
+			echo '<td>' . esc_html( $made ? gmdate( 'Y-m-d H:i', $copy['created'] ) : '—' ) . '</td>';
+			echo '<td>' . esc_html( $made ? ADVCM_Probe::duration( max( 0, $now - $copy['created'] ) ) : '—' ) . '</td>';
+			echo '<td>' . esc_html( null !== $copy['lives_until'] ? self::until_words( $copy['lives_until'] ) : '—' ) . '</td></tr>';
+		}
+
+		echo '</tbody></table>';
+
+		echo '<h3>' . esc_html__( 'Its tags', 'advcm' ) . '</h3>';
+		echo '<p class="description">' . esc_html__( 'What NitroPack tied this page to, asked of NitroPack now (kept 10 minutes). When one of these posts is updated, NitroPack builds a new copy of this page.', 'advcm' ) . '</p>';
+		echo '<div id="advcm-tags-out"><p class="description">' . esc_html__( 'Asking NitroPack…', 'advcm' ) . '</p></div>';
+
+		self::lookup_script();
+
+		echo '<script>advcmLookup(' . wp_json_encode( 'tags' ) . ',' . wp_json_encode( (string) $url ) . ',document.getElementById("advcm-tags-out"));</script>';
+
+		echo '<h3>' . esc_html__( 'What would rebuild it', 'advcm' ) . '</h3><ul style="list-style:disc;margin-left:20px">';
+		echo '<li>' . esc_html__( 'Updating this page, or a post in its tags: NitroPack\'s plugin invalidates the pages tagged with it.', 'advcm' ) . '</li>';
+
+		if ( null !== $until ) {
+			/* translators: %s: date. */
+			echo '<li>' . esc_html( sprintf( __( 'Its copy expiring: NitroPack builds a new one on the first visit after %s UTC.', 'advcm' ), gmdate( 'Y-m-d H:i', $until ) ) ) . '</li>';
+		}
+
+		$rules = ADVCM_Auto::naming( $url );
+
+		if ( empty( $rules ) ) {
+			echo '<li>' . esc_html__( 'Not a new post: NitroPack does not know a new post belongs on this page, and no auto-clear rule names this page.', 'advcm' ) . ' <a href="' . esc_url( self::tab_url( 'auto' ) ) . '">' . esc_html__( 'Add one', 'advcm' ) . '</a></li>';
+		} else {
+			foreach ( $rules as $rule ) {
+				echo '<li>' . esc_html__( 'A new post: an auto-clear rule clears this page when a matching post is published:', 'advcm' ) . ' <a href="' . esc_url( self::tab_url( 'auto' ) ) . '">' . esc_html( ADVCM_Auto::describe( $rule ) ) . '</a></li>';
+			}
+		}
+
+		echo '<li>' . esc_html__( 'A clear of this page on the Clear tab.', 'advcm' ) . '</li></ul>';
+	}
+
+	/**
+	 * A copy's state in words.
+	 *
+	 * @param string $state fresh, stale, invalidated or none.
+	 * @return string
+	 */
+	private static function copy_words( $state ) {
+		$words = array(
+			'fresh'       => __( 'fresh', 'advcm' ),
+			'stale'       => __( 'stale — served while a new one is built', 'advcm' ),
+			'invalidated' => __( 'invalidated — served until the new one is ready', 'advcm' ),
+		);
+
+		return isset( $words[ $state ] ) ? $words[ $state ] : __( 'no copy — built on the next visit', 'advcm' );
+	}
+
+	/**
+	 * Until when a copy lives, or that it is past.
+	 *
+	 * @param int $at Timestamp.
+	 * @return string
+	 */
+	private static function until_words( $at ) {
+		$date = gmdate( 'Y-m-d H:i', (int) $at );
+
+		return $at > time() ? $date : $date . ' ' . __( '(past: rebuilt on the next visit)', 'advcm' );
+	}
+
+	/**
+	 * The script that asks the optimizer lookups and shows the answer; defined once a page however
+	 * often it is printed. It builds the answer with textContent only: nothing from the answer is
+	 * read as HTML.
+	 *
+	 * @return void
+	 */
+	private static function lookup_script() {
+		$words = array(
+			'post'    => __( 'post', 'advcm' ),
+			'single'  => __( 'this page', 'advcm' ),
+			'term'    => __( 'term', 'advcm' ),
+			'author'  => __( 'author', 'advcm' ),
+			'type'    => __( 'page type', 'advcm' ),
+			'other'   => __( 'tag', 'advcm' ),
+			'none'    => __( 'None.', 'advcm' ),
+			'failed'  => __( 'The lookup could not be made.', 'advcm' ),
+			'page'    => __( 'Page', 'advcm' ),
+			'copies'  => __( 'Copies (UTC)', 'advcm' ),
+			'inspect' => __( 'inspect', 'advcm' ),
+			'showing' => __( 'Pages showing', 'advcm' ),
+		);
+
+		$ajax    = admin_url( 'admin-ajax.php' );
+		$nonce   = wp_create_nonce( ADVCM_Optimizer::LOOKUP );
+		$inspect = self::inspect_url( '' );
+
+		echo '<script>window.advcmLookup=window.advcmLookup||function(kind,value,out){var w=' . wp_json_encode( $words ) . ',el=function(t,x){var e=document.createElement(t);if(x!==undefined){e.textContent=x;}return e;},link=function(href,x){var a=el("a",x);a.href=href;return a;},when=function(t){return t?new Date(t*1000).toISOString().slice(0,16).replace("T"," "):"—";},inspect=' . wp_json_encode( $inspect ) . ';'
+			. 'var d=new FormData();d.append("action",' . wp_json_encode( ADVCM_Optimizer::LOOKUP ) . ');d.append("_ajax_nonce",' . wp_json_encode( $nonce ) . ');d.append("kind",kind);d.append("value",value);'
+			. 'var show=function(r){out.textContent="";if(!r||!r.ok){out.appendChild(el("p",(r&&r.error)||w.failed));return;}'
+			. 'if(kind==="tags"){if(!r.tags.length){out.appendChild(el("p",w.none));return;}var ul=el("ul");ul.style.listStyle="disc";ul.style.marginLeft="20px";r.tags.forEach(function(t){var li=el("li");li.appendChild(t.url?link(t.url,t.label):el("span",t.label));li.appendChild(el("span"," — "+(w[t.kind]||w.other)+(t.date?", "+when(t.date):"")+" ("+t.tag+")"));ul.appendChild(li);});out.appendChild(ul);return;}'
+			. 'var p=el("p",w.showing+": ");p.appendChild(r.post.url?link(r.post.url,r.post.title||("#"+r.post.id)):el("span","#"+r.post.id));out.appendChild(p);if(!r.pages.length){out.appendChild(el("p",w.none));return;}'
+			. 'var tb=el("table");tb.className="widefat striped";var h=el("tr");[w.page,w.copies,""].forEach(function(x){h.appendChild(el("th",x));});tb.appendChild(h);r.pages.forEach(function(pg){var tr=el("tr"),td=el("td");td.appendChild(el("code",pg.url));tr.appendChild(td);var c=[];for(var k in pg.devices){c.push(k+" "+when(pg.devices[k]));}tr.appendChild(el("td",c.join(", ")));var ti=el("td");ti.appendChild(link(inspect+encodeURIComponent(pg.url),w.inspect));tr.appendChild(ti);tb.appendChild(tr);});out.appendChild(tb);};'
+			. 'fetch(' . wp_json_encode( $ajax ) . ',{method:"POST",body:d,credentials:"same-origin"}).then(function(x){return x.json();}).then(function(j){show(j&&j.data);},function(){show(null);});};</script>';
 	}
 
 	/**
@@ -1869,7 +2081,7 @@ final class ADVCM_Screen {
 		echo '</tr></thead><tbody>';
 
 		foreach ( $over as $page ) {
-			echo '<tr><td><code>' . esc_html( $page['url'] ) . '</code></td>';
+			echo '<tr><td><a href="' . esc_url( self::inspect_url( $page['url'] ) ) . '"><code>' . esc_html( $page['url'] ) . '</code></a></td>';
 			/* translators: 1: clears past the target, 2: clears. */
 			echo '<td>' . esc_html( sprintf( __( '%1$d of %2$d clears', 'advcm' ), $page['over'], $page['n'] ) ) . '</td>';
 			echo '<td>' . esc_html( ADVCM_Probe::duration( $page['max'] ) ) . '</td>';
@@ -2123,7 +2335,7 @@ final class ADVCM_Screen {
 
 		foreach ( $rows as $row ) {
 			echo '<tr><td>' . esc_html( gmdate( 'Y-m-d H:i', (int) $row['at'] ) ) . '</td>';
-			echo '<td><code>' . esc_html( (string) $row['url'] ) . '</code></td>';
+			echo '<td><a href="' . esc_url( self::inspect_url( (string) $row['url'] ) ) . '"><code>' . esc_html( (string) $row['url'] ) . '</code></a></td>';
 			echo '<td>' . esc_html( self::who( (int) $row['by'], (string) $row['source'] ) ) . '</td>';
 			echo '<td>' . esc_html( $row['code'] ? 'HTTP ' . (int) $row['code'] : __( 'no answer', 'advcm' ) ) . '</td>';
 			echo '<td>' . esc_html( self::age_words( $row ) ) . '</td>';
@@ -2187,6 +2399,188 @@ final class ADVCM_Screen {
 		}
 
 		return empty( $parts ) ? '—' : implode( '; ', $parts );
+	}
+
+	/**
+	 * The Optimizer tab: the site summary, the oldest copies, and pages showing a post. Each part
+	 * on its own guard: a fault in one leaves the others on the screen.
+	 *
+	 * @param bool $hard Whether the person holds advcm_purge_hard. Every part only shows.
+	 * @return void
+	 */
+	private static function render_optimizer( $hard ) {
+		ADVCM_Safe::run(
+			'screen:optimizer:summary',
+			function () {
+				self::render_optimizer_summary();
+			}
+		);
+
+		ADVCM_Safe::run(
+			'screen:optimizer:oldest',
+			function () {
+				self::render_optimizer_oldest();
+			}
+		);
+
+		ADVCM_Safe::run(
+			'screen:optimizer:tagged',
+			function () {
+				self::render_optimizer_tagged();
+			}
+		);
+	}
+
+	/**
+	 * NitroPack's numbers for the site.
+	 *
+	 * @return void
+	 */
+	private static function render_optimizer_summary() {
+		$summary = ADVCM_Optimizer::summary();
+
+		echo '<h2>' . esc_html__( 'Site summary', 'advcm' ) . '</h2>';
+
+		if ( empty( $summary['available'] ) ) {
+			echo '<p>' . esc_html( $summary['why'] ) . '</p>';
+
+			return;
+		}
+
+		$rows = array();
+
+		foreach ( $summary['counts'] as $device => $count ) {
+			/* translators: %s: a device. */
+			$rows[ sprintf( __( 'Copies, %s', 'advcm' ), $device ) ] = sprintf(
+				/* translators: 1: pages, 2: pages. */
+				__( '%1$s pages, %2$s of them invalidated', 'advcm' ),
+				number_format_i18n( (int) $count['folders'] + (int) $count['invalidated'] ),
+				number_format_i18n( (int) $count['invalidated'] )
+			);
+		}
+
+		$rows[ __( 'Waiting to rebuild', 'advcm' ) ] = null === $summary['pending'] ? __( 'unknown', 'advcm' ) : number_format_i18n( (int) $summary['pending'] );
+
+		if ( ! empty( $summary['purge'] ) ) {
+			$purge = $summary['purge'];
+			$parts = array();
+
+			if ( $purge['at'] ) {
+				/* translators: 1: date, 2: how long ago. */
+				$parts[] = sprintf( __( '%1$s UTC (%2$s ago)', 'advcm' ), gmdate( 'Y-m-d H:i', $purge['at'] ), ADVCM_Probe::duration( max( 0, time() - $purge['at'] ) ) );
+			}
+
+			foreach ( array( 'url', 'tag', 'reason' ) as $key ) {
+				if ( '' !== $purge[ $key ] ) {
+					$parts[] = $purge[ $key ];
+				}
+			}
+
+			$rows[ __( 'Last purge', 'advcm' ) ] = implode( ' — ', $parts );
+		}
+
+		$expire = $summary['expire'];
+
+		$rows[ __( 'A copy lives', 'advcm' ) ] = $expire['expire'] > 0
+			/* translators: 1: duration, 2: duration. */
+			? sprintf( __( '%1$s, then is served stale for up to %2$s while a new one is built', 'advcm' ), ADVCM_Probe::duration( $expire['expire'] ), ADVCM_Probe::duration( $expire['stale'] ) )
+			: __( 'not said', 'advcm' );
+
+		echo '<table class="widefat striped" style="max-width:900px"><tbody>';
+
+		foreach ( $rows as $label => $value ) {
+			echo '<tr><th style="width:220px">' . esc_html( $label ) . '</th><td>' . esc_html( $value ) . '</td></tr>';
+		}
+
+		echo '</tbody></table>';
+
+		if ( '' !== $summary['error'] ) {
+			echo '<div class="notice notice-warning inline"><p>' . esc_html( $summary['error'] ) . ' ' . esc_html__( 'The copies on this server are still shown.', 'advcm' ) . '</p></div>';
+		}
+
+		/* translators: %s: time. */
+		echo '<p class="description">' . esc_html( sprintf( __( 'As of %s UTC. Asked of NitroPack again after 10 minutes, or with Refresh now.', 'advcm' ), gmdate( 'H:i', (int) $summary['at'] ) ) ) . '</p>';
+	}
+
+	/**
+	 * The copies NitroPack has kept longest, per device.
+	 *
+	 * @return void
+	 */
+	private static function render_optimizer_oldest() {
+		$state = ADVCM_Optimizer_Index::state();
+
+		echo '<h2>' . esc_html__( 'Oldest copies', 'advcm' ) . '</h2>';
+		/* translators: %d: how many. */
+		echo '<p class="description">' . esc_html( sprintf( __( 'The copies NitroPack has kept longest, oldest first: the %d oldest of each device. Updated every 6 hours in the background.', 'advcm' ), ADVCM_Optimizer_Index::KEEP ) ) . '</p>';
+
+		if ( $state['started'] && ! $state['done'] ) {
+			/* translators: %s: folders read. */
+			echo '<p>' . esc_html( sprintf( __( 'Scanning: %s folders read.', 'advcm' ), number_format_i18n( $state['scanned'] ) ) ) . '</p>';
+		}
+
+		if ( $state['finished'] ) {
+			/* translators: 1: date, 2: date. */
+			echo '<p>' . esc_html( sprintf( __( 'Last scanned %1$s UTC. Next about %2$s UTC.', 'advcm' ), gmdate( 'Y-m-d H:i', $state['finished'] ), gmdate( 'Y-m-d H:i', $state['done'] ? $state['next_at'] : $state['finished'] + ADVCM_Optimizer_Index::EVERY ) ) ) . '</p>';
+		} elseif ( ! $state['started'] ) {
+			echo '<p>' . esc_html__( 'This site has not been scanned yet. The first scan is scheduled and runs in the background.', 'advcm' ) . '</p>';
+		}
+
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		wp_nonce_field( ADVCM_Optimizer::REFRESH );
+		echo '<input type="hidden" name="action" value="' . esc_attr( ADVCM_Optimizer::REFRESH ) . '" />';
+		submit_button( __( 'Refresh now', 'advcm' ), 'secondary', 'submit', false );
+		echo '</form>';
+
+		$first = true;
+
+		foreach ( ADVCM_Optimizer_Nitropack::devices() as $device ) {
+			$rows = ADVCM_Optimizer_Index::rows( $device );
+
+			if ( empty( $rows ) ) {
+				continue;
+			}
+
+			echo '<details' . ( $first ? ' open' : '' ) . ' style="margin-top:12px"><summary><strong>' . esc_html( $device ) . '</strong> (' . (int) count( $rows ) . ')</summary>';
+			echo '<div style="overflow-x:auto"><table class="widefat striped"><thead><tr>';
+
+			foreach ( array( __( 'Page', 'advcm' ), __( 'Created (UTC)', 'advcm' ), __( 'Age', 'advcm' ), __( 'Lives until (UTC, estimated)', 'advcm' ), __( 'Copy', 'advcm' ), __( 'Rule', 'advcm' ) ) as $head ) {
+				echo '<th>' . esc_html( $head ) . '</th>';
+			}
+
+			echo '</tr></thead><tbody>';
+
+			foreach ( $rows as $row ) {
+				$state = $row['invalidated'] ? 'invalidated' : ( $row['stale'] ? 'stale' : 'fresh' );
+
+				echo '<tr><td>' . ( '' === $row['url'] ? '<em>' . esc_html__( 'unidentified page', 'advcm' ) . '</em>' : '<a href="' . esc_url( self::inspect_url( $row['url'] ) ) . '"><code>' . esc_html( $row['url'] ) . '</code></a>' ) . '</td>';
+				echo '<td>' . esc_html( gmdate( 'Y-m-d H:i', (int) $row['created'] ) ) . '</td>';
+				echo '<td>' . esc_html( ADVCM_Probe::duration( max( 0, time() - (int) $row['created'] ) ) ) . '</td>';
+				echo '<td>' . esc_html( null === $row['lives_until'] ? '—' : self::until_words( $row['lives_until'] ) ) . '</td>';
+				echo '<td>' . esc_html( self::copy_words( $state ) ) . '</td>';
+				echo '<td>' . esc_html( '' === $row['url'] ? '—' : ( empty( ADVCM_Auto::naming( $row['url'] ) ) ? __( 'no rule', 'advcm' ) : __( 'a rule clears it', 'advcm' ) ) ) . '</td></tr>';
+			}
+
+			echo '</tbody></table></div></details>';
+
+			$first = false;
+		}
+	}
+
+	/**
+	 * Pages showing a post: asked of NitroPack after the page has loaded.
+	 *
+	 * @return void
+	 */
+	private static function render_optimizer_tagged() {
+		echo '<h2>' . esc_html__( 'Pages showing a post', 'advcm' ) . '</h2>';
+		echo '<p class="description">' . esc_html__( 'A post ID or its address: the pages NitroPack says show it, and when each device\'s copy of them was made — whether a change to the post is on those pages yet. At most 50 pages; the answer is kept 10 minutes.', 'advcm' ) . '</p>';
+		echo '<p><input type="text" id="advcm-tagged-value" class="regular-text code" placeholder="12345" /> <button type="button" class="button" id="advcm-tagged-go">' . esc_html__( 'Look up', 'advcm' ) . '</button></p>';
+		echo '<div id="advcm-tagged-out"></div>';
+
+		self::lookup_script();
+
+		echo '<script>document.getElementById("advcm-tagged-go").addEventListener("click",function(){var v=document.getElementById("advcm-tagged-value").value.trim();if(v){advcmLookup(' . wp_json_encode( 'tagged' ) . ',v,document.getElementById("advcm-tagged-out"));}});</script>';
 	}
 
 	/**

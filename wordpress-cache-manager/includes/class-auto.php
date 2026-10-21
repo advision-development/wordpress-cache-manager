@@ -201,6 +201,32 @@ final class ADVCM_Auto {
 	}
 
 	/**
+	 * The switched-on rules (not each post's own page) that name a URL, compared by path.
+	 *
+	 * @param string $url URL.
+	 * @return array[] Rules.
+	 */
+	public static function naming( $url ) {
+		$path  = '/' . trim( (string) wp_parse_url( (string) $url, PHP_URL_PATH ), '/' );
+		$found = array();
+
+		foreach ( self::rules() as $rule ) {
+			if ( ! $rule['enabled'] || $rule['own'] ) {
+				continue;
+			}
+
+			foreach ( $rule['urls'] as $rule_url ) {
+				if ( '/' . trim( (string) wp_parse_url( $rule_url, PHP_URL_PATH ), '/' ) === $path ) {
+					$found[] = $rule;
+					break;
+				}
+			}
+		}
+
+		return $found;
+	}
+
+	/**
 	 * The save hook. Marks every rule this post triggers and makes sure a clear is scheduled.
 	 *
 	 * @param int          $post_id     Post id.

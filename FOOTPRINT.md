@@ -55,6 +55,7 @@ and the code disagree.
 | Capability | `advcm_purge`, `advcm_purge_hard` | granted by a `user_has_cap` filter from `edit_others_posts` (both, since 0.4.0; a filter narrows either); never stored |
 | admin-post | `advcm_purge`, `advcm_resume`, `advcm_check_release` | logged in, capability and nonce |
 | admin-post | `advcm_listings` | logged in, `advcm_purge` and nonce; since 0.5.0, starts a listings scan on the Freshness tab |
+| admin-post | `advcm_optimizer_refresh` | logged in, `advcm_purge` and nonce; since 0.6.0, Refresh now on the Optimizer tab: the summary asked again, the oldest-copies scan scheduled. Reads only |
 | admin-post | `advcm_settings` | logged in, `advcm_purge_hard` and nonce; since 0.4.0, saves the Settings tab, pauses and resumes auto-clear, switches each post's own page |
 | admin-post | `advcm_rules` | logged in, `advcm_purge_hard` and nonce; changes auto-clear rules, or pauses and resumes them all |
 | Hook | `wp_after_insert_post` | marks the auto-clear rules a saved post triggers. One option read when no rule is on; never clears in the save request |

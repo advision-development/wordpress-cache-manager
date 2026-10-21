@@ -114,14 +114,19 @@ function wp_create_nonce( $action = -1 ) {
 	return 'nonce-' . $action;
 }
 
+function set_transient( $name, $value, $ttl = 0 ) {
+	return true;
+}
+
 function wp_parse_url( $url, $component = -1 ) {
 	return parse_url( $url, $component );
 }
 
 require __DIR__ . '/store-stubs.php';
 require __DIR__ . '/bootstrap.php';
+require __DIR__ . '/stubs-nitropack.php';
 
-foreach ( array( 'safe', 'stages', 'modes', 'adapter', 'urls', 'jobs', 'runner', 'capabilities', 'log', 'auto', 'settings', 'controller', 'probe', 'screen' ) as $class ) {
+foreach ( array( 'safe', 'stages', 'modes', 'adapter', 'urls', 'jobs', 'runner', 'capabilities', 'log', 'auto', 'settings', 'controller', 'probe', 'optimizer-nitropack', 'optimizer-index', 'optimizer', 'freshness', 'screen' ) as $class ) {
 	load_class( $class );
 }
 
@@ -485,5 +490,98 @@ $probe                                    = screen_part( 'render_probe' );
 unset( $_GET['advcm_probe'], $_GET['_wpnonce'] );
 
 check( 'a refused cache-age check says why, and is not recorded as a probe', false !== strpos( $probe, 'That is not a page on this site.' ) && array() === ADVCM_Log::recent( 'check' ) );
+
+// ------------------------------------------------------------ Optimizer (0.6.0, issue #21)
+
+ADVCM_Optimizer_Nitropack::use_sdk( null );
+
+check( 'a site without NitroPack has no Optimizer tab', ADVCM_Screen::TABS === ADVCM_Screen::tabs() && false === strpos( screen_part( 'render_tabs', array( 'status' ) ), '>Optimizer</a>' ) );
+check( 'Cache age is now Inspect a page', false !== strpos( screen_part( 'render_tabs', array( 'status' ) ), '>Inspect a page</a>' ) && false === strpos( screen_part( 'render_tabs', array( 'status' ) ), '>Cache age</a>' ) );
+
+$_GET['tab'] = 'optimizer';
+$m           = new ReflectionMethod( 'ADVCM_Screen', 'current_tab' );
+$m->setAccessible( true );
+
+check( 'and asking for it there opens Status', 'status' === $m->invoke( null, '', false ) );
+check( 'Inspect a page shows nothing of NitroPack there', '' === screen_part( 'render_inspect_optimizer', array( 'https://example.test/x/' ) ) );
+
+$npdir = sys_get_temp_dir() . '/advcm-nps-' . getmypid() . '-' . mt_rand();
+@mkdir( $npdir . '/desktop', 0777, true );
+$npsdk = new Stub_Nitro_Sdk( $npdir );
+$npsdk->api = new class() {
+	public function getPendingUrlsCount() {
+		return 6;
+	}
+
+	public function getLastCachePurge() {
+		return array( 'timestamp' => 1792500000, 'url' => null, 'tag' => 'pageType:archive', 'reason' => 'Updated <script>alert(1)</script>' );
+	}
+};
+ADVCM_Optimizer_Nitropack::use_sdk( $npsdk );
+$GLOBALS['transients'] = array();
+
+check( 'with NitroPack the Optimizer tab follows Freshness', array( 'status', 'clear', 'check', 'history', 'freshness', 'optimizer', 'auto', 'settings' ) === ADVCM_Screen::tabs() && false !== strpos( screen_part( 'render_tabs', array( 'status' ) ), '>Optimizer</a>' ) );
+check( 'and opens when asked for', 'optimizer' === $m->invoke( null, '', false ) );
+
+unset( $_GET['tab'] );
+
+$now = time();
+nitro_copy( $npdir, 'desktop', 'https://example.test/usa/texas/', 'fresh', $now - 3600 );
+nitro_copy( $npdir, 'mobile', 'https://example.test/usa/texas/', 'invalidated', $now - 7200 );
+
+$GLOBALS['options'][ ADVCM_Optimizer_Index::OPTION ] = array(
+	'started'  => $now - 100,
+	'done'     => $now - 50,
+	'finished' => $now - 50,
+	'next_at'  => $now + 21000,
+	'scanned'  => 3,
+	'rows'     => array(
+		'desktop' => array(
+			array( 'folder' => str_repeat( 'a', 32 ) . '_i', 'created' => $now - 90000, 'invalidated' => 1, 'stale' => 0, 'ref' => 'home' ),
+			array( 'folder' => str_repeat( 'b', 32 ), 'created' => $now - 80000, 'invalidated' => 0, 'stale' => 0, 'ref' => '' ),
+		),
+	),
+);
+
+$out = screen_part( 'render_optimizer', array( true ) );
+
+check( 'the summary: pages waiting to rebuild, the last purge and its reason, escaped', false !== strpos( $out, '6' ) && false !== strpos( $out, 'pageType:archive' ) && false !== strpos( $out, 'Updated alert(1)' ) && false === strpos( $out, '<script>alert' ) );
+check( 'the expiry in force', false !== strpos( $out, '24 h' ) );
+check( 'the oldest copies, with an inspect link for a named page', false !== strpos( $out, 'tab=check' ) && false !== strpos( $out, 'advcm_probe=' . rawurlencode( home_url( '/' ) ) ) && false !== strpos( $out, 'nonce-' . ADVCM_Screen::PROBE ) );
+check( 'an unidentified page says so', false !== strpos( $out, 'unidentified page' ) );
+check( 'invalidated and lives until (estimated)', false !== strpos( $out, 'invalidated' ) && false !== strpos( $out, 'Lives until' ) );
+check( 'a refresh form, posted with its nonce', false !== strpos( $out, 'value="' . ADVCM_Optimizer::REFRESH . '"' ) && false !== strpos( $out, 'nonce-' . ADVCM_Optimizer::REFRESH ) );
+check( 'pages showing a post ask the lookup after the page loads', false !== strpos( $out, ADVCM_Optimizer::LOOKUP ) && false !== strpos( $out, 'nonce-' . ADVCM_Optimizer::LOOKUP ) && false !== strpos( $out, '"tagged"' ) );
+check( 'each part of the tab on its own guard', 3 <= substr_count( file_get_contents( ADVCM_DIR . 'includes/class-screen.php' ), "'screen:optimizer:" ) );
+
+$GLOBALS['options'][ ADVCM_Optimizer_Index::OPTION ] = array();
+
+check( 'before any scan: says the list is being built', false !== strpos( screen_part( 'render_optimizer', array( true ) ), 'not been scanned' ) );
+
+$help = screen_part( 'render_help', array( 'optimizer' ) );
+
+check( 'the Optimizer help explains each word', false !== strpos( $help, 'How this tab works' ) && false !== strpos( $help, 'Lives until' ) && false !== strpos( $help, 'Invalidated' ) && false !== strpos( $help, 'Stale' ) && false !== strpos( $help, 'never purges' ) );
+check( 'and has its own Last changes', in_array( 'optimizer', ADVCM_Log::SECTIONS, true ) && false !== strpos( screen_part( 'render_log', array( 'optimizer' ) ), 'Who changed what on this tab' ) );
+
+// Inspect a page: every device's copy, the tags loaded after the page, what would rebuild it.
+$GLOBALS['options'][ ADVCM_Auto::RULES ] = array();
+$out = screen_part( 'render_inspect_optimizer', array( 'https://example.test/usa/texas/' ) );
+
+check( 'Inspect a page: each device\'s copy', false !== strpos( $out, 'desktop' ) && false !== strpos( $out, 'mobile' ) && false !== strpos( $out, 'tablet' ) && false !== strpos( $out, 'fresh' ) && false !== strpos( $out, 'invalidated' ) && false !== strpos( $out, 'no copy' ) );
+check( 'until when it lives', false !== strpos( $out, gmdate( 'Y-m-d H:i', $now - 3600 + 86400 ) ) );
+check( 'its tags asked after the page loads', false !== strpos( $out, '"tags"' ) && false !== strpos( $out, ADVCM_Optimizer::LOOKUP ) );
+check( 'with no rule: a new post does not rebuild it, and where to add one', false !== strpos( $out, 'no auto-clear rule names this page' ) && false !== strpos( $out, 'tab=auto' ) );
+
+$GLOBALS['options'][ ADVCM_Auto::RULES ] = array( 'r1' => array( 'enabled' => true, 'post_type' => 'post', 'urls' => array( 'https://example.test/usa/texas' ) ) );
+
+check( 'with a rule naming it, says so', false !== strpos( screen_part( 'render_inspect_optimizer', array( 'https://example.test/usa/texas/' ) ), 'auto-clear rule clears this page' ) );
+
+// Freshness rows lead to Inspect a page.
+$GLOBALS['options'][ ADVCM_Freshness::OPTION ] = array( array( 'at' => $now, 'url' => 'https://example.test/usa/texas/', 'by' => 7, 'source' => 'screen', 'code' => 200, 'age' => 60, 'how' => 'exact', 'ages' => array(), 'job' => 'j' ) );
+
+check( 'a measured page links to Inspect a page', false !== strpos( screen_part( 'render_measured_rows' ), 'advcm_probe=' . rawurlencode( 'https://example.test/usa/texas/' ) ) );
+
+ADVCM_Optimizer_Nitropack::use_sdk( null );
+exec( 'rm -rf ' . escapeshellarg( $npdir ) );
 
 finish();
