@@ -414,7 +414,7 @@ final class ADVCM_Screen {
 
 			case 'check':
 				$legend = array(
-					__( 'exact', 'advcm' )                  => __( 'a cache said how old its copy is: the Age header, or the time the host cache stored it.', 'advcm' ),
+					__( 'exact', 'advcm' )                  => ( $nitropack ? __( 'a cache said how old its copy is: the Age header, or the time the copy was stored (x-cache-ctime: NitroPack\'s copy where NitroPack answers, otherwise the host cache\'s).', 'advcm' ) : __( 'a cache said how old its copy is: the Age header, or the time the host cache stored it (x-cache-ctime).', 'advcm' ) ),
 					__( 'at most', 'advcm' )                => __( 'a cache only said it served a copy; the copy cannot be older than the last time this plugin cleared the page.', 'advcm' ),
 					__( 'unknown', 'advcm' )                => __( 'no cache said; the most it can be is shown when a cache says how long it keeps pages.', 'advcm' ),
 					'HIT / MISS'                            => __( 'a layer served a stored copy / built the page for this request.', 'advcm' ),
@@ -2157,8 +2157,12 @@ final class ADVCM_Screen {
 	private static function layer_words( array $row ) {
 		$parts = array();
 
+		// Rows measured before 0.6.0 called NitroPack's x-cache-ctime "host cache"; a row that
+		// NitroPack answered is shown with the name it should have had.
+		$nitro = ! empty( $row['nitro_state'] ) || ! empty( $row['nitro_copy'] );
+
 		foreach ( isset( $row['ages'] ) && is_array( $row['ages'] ) ? $row['ages'] : array() as $layer => $seconds ) {
-			$parts[] = $layer . ' ' . ADVCM_Probe::duration( (int) $seconds );
+			$parts[] = ( $nitro && 'host cache' === $layer ? 'NitroPack' : $layer ) . ' ' . ADVCM_Probe::duration( (int) $seconds );
 		}
 
 		return empty( $parts ) ? '—' : implode( ', ', $parts );

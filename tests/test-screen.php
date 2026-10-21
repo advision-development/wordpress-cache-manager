@@ -366,7 +366,7 @@ $GLOBALS['options'][ ADVCM_Freshness::STATS ] = array(
 
 $out = screen_part( 'render_freshness', array( true ) );
 
-check( 'the cache age at each clear is listed, layer by layer', false !== strpos( $out, 'host cache 83 min 20 s' ) && false !== strpos( $out, 'NitroPack: stale' ) );
+check( 'the cache age at each clear is listed, layer by layer; a row saved before 0.6.0 that NitroPack answered shows its age as NitroPack\'s', false !== strpos( $out, 'NitroPack 83 min 20 s' ) && false === strpos( $out, 'host cache 83 min 20 s' ) && false !== strpos( $out, 'NitroPack: stale' ) );
 check( 'pages cleared by hand often are listed, with no rule clearing them', false !== strpos( $out, 'no rule clears this page' ) && false !== strpos( $out, '2 times' ) );
 
 // ------------------------------------------------- Freshness says what to do (0.5.1)

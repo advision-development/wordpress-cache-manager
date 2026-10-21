@@ -11,7 +11,9 @@
  * keep the page (`x-cacheable: YES:<seconds>`). So the age is reported with where it came from:
  *
  * - `Age` header — exact.
- * - `x-cache-ctime` — exact: WP Engine's Varnish sends the unix time it stored the copy.
+ * - `x-cache-ctime` — exact: the unix time the copy was stored. NitroPack stores it with each copy
+ *   and its drop-in sends it, so where NitroPack answers it is NitroPack's age, not the host cache's
+ *   (BMR, 2026-10-21: present on a Varnish MISS; WP Engine there keeps pages 10 minutes).
  * - `MISS` — 0 seconds; this request just built the copy.
  * - `HIT`, and this plugin cleared that URL or the whole site within the page's lifetime — at most
  *   the time since that clear, because the copy cannot be older than the clear that emptied it.
@@ -152,7 +154,7 @@ final class ADVCM_Probe {
 			$age = array(
 				'seconds' => $now - (int) trim( $headers['x-cache-ctime'] ),
 				'how'     => 'exact',
-				'source'  => 'the host cache (x-cache-ctime)',
+				'source'  => isset( $headers['x-nitro-cache'] ) ? "NitroPack's copy (x-cache-ctime)" : 'the host cache (x-cache-ctime)',
 			);
 		} elseif ( false === $hit ) {
 			$age = array(
@@ -184,7 +186,10 @@ final class ADVCM_Probe {
 		}
 
 		if ( isset( $headers['x-cache-ctime'] ) && preg_match( '~^\d+$~', trim( $headers['x-cache-ctime'] ) ) && (int) trim( $headers['x-cache-ctime'] ) <= $now ) {
-			$ages['host cache'] = $now - (int) trim( $headers['x-cache-ctime'] );
+			// NitroPack stores this header with each copy and its drop-in sends it, even when the host
+			// cache in front answered MISS (BMR, 2026-10-21): with NitroPack in the answer, the age
+			// is NitroPack's copy, not the host cache's.
+			$ages[ isset( $headers['x-nitro-cache'] ) ? 'NitroPack' : 'host cache' ] = $now - (int) trim( $headers['x-cache-ctime'] );
 		}
 
 		$reading = array(

@@ -54,8 +54,10 @@ each layer says — Cloudflare, the host cache, NitroPack. The age is exact wher
 `Age`, 0 on a `MISS`, "at most N" since this plugin last cleared it when a layer only says `HIT`
 (WP Engine sends no `Age`), and otherwise "unknown" with the most it can be. It never guesses.
 
-Since 0.5.0 it also reads WP Engine's `x-cache-ctime` (the time the host cache stored the copy,
-so the age is exact there), the `NITROPACK_STATE` NitroPack writes into the page (`FRESH` or
+Since 0.5.0 it also reads `x-cache-ctime`, the exact time the copy was stored. Since 0.6.0 it is
+attributed correctly: where NitroPack answers, that header is NitroPack's (it stores it with each
+copy); otherwise it is the host cache's. On BMR WP Engine keeps pages 10 minutes (`x-cacheable:
+SHORT`, `max-age=600`) and NitroPack 24 hours. It also reads the `NITROPACK_STATE` NitroPack writes into the page (`FRESH` or
 `STALE`), and the time of NitroPack's own copy of the page, from the file its SDK names. Each only
 where the site has that layer: no row is shown for a layer a site does not have.
 

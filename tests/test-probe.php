@@ -99,6 +99,19 @@ $r = ADVCM_Probe::read( $url, 200, $wpe_hit + array( 'age' => '68', 'x-cache-cti
 
 check( 'Age still wins: the layer in front answered first', 68 === $r['age']['seconds'] );
 
+// ------------------------------------------- whose clock x-cache-ctime is (2026-10-21)
+
+// On BMR the header comes from NitroPack: it stores it with each copy and its drop-in sends it,
+// even when WP Engine's Varnish answered MISS. Varnish there keeps pages 10 minutes (SHORT).
+$r = ADVCM_Probe::read( $url, 200, array( 'x-cache' => 'MISS', 'x-cacheable' => 'SHORT', 'cache-control' => 'max-age=600, must-revalidate', 'x-nitro-cache' => 'HIT', 'x-cache-ctime' => (string) ( $now - 18000 ) ), 90, null, $now );
+
+check( 'with NitroPack in the answer, x-cache-ctime is NitroPack\'s copy, not the host cache', array( 'NitroPack' => 18000 ) === $r['ages'] && false !== strpos( $r['age']['source'], 'NitroPack' ) && false === strpos( $r['age']['source'], 'host cache' ), json_encode( $r['ages'] ) . ' ' . $r['age']['source'] );
+check( 'and the host cache\'s own lifetime is read from max-age (SHORT on WP Engine)', 600 === $r['max_ttl'] );
+
+$r = ADVCM_Probe::read( $url, 200, array( 'x-cache' => 'HIT: 2', 'x-cache-ctime' => (string) ( $now - 500 ) ), 90, null, $now );
+
+check( 'without NitroPack it stays the host cache\'s', array( 'host cache' => 500 ) === $r['ages'] );
+
 // --------------------------------------------------------------- each layer's age
 
 $r = ADVCM_Probe::read( $url, 200, array( 'cf-cache-status' => 'HIT', 'age' => '120', 'x-cache' => 'HIT: 2', 'x-cache-ctime' => (string) ( $now - 5000 ) ), 90, null, $now );
