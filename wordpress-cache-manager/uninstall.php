@@ -16,6 +16,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 try {
 	delete_site_transient( 'advcm_release' );
 	delete_site_transient( 'advcm_loopback' );
+	delete_transient( 'advcm_optimizer_summary' );
 	delete_option( 'advcm_jobs' );
 	delete_option( 'advcm_jobs_auto' );
 	delete_option( 'advcm_layers' );

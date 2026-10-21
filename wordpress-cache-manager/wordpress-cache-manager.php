@@ -86,6 +86,9 @@ try {
 	// The oldest NitroPack copies: its WP-Cron event. Reads nothing on a site without NitroPack.
 	ADVCM_Optimizer_Index::register();
 
+	// Its lookups (a page's tags, the pages showing a post): admin-ajax, asked by a person only.
+	ADVCM_Optimizer::register();
+
 	// The Settings tab's form. The settings themselves are read where they are used.
 	ADVCM_Settings::register();
 

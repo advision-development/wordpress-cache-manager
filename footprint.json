@@ -70,6 +70,9 @@
     { "name": "advcm_loopback", "site": true, "why": "whether the site can reach its own home page, as WordPress needs for its cron; an hour, ten minutes when it cannot" },
     { "name": "advcm_notice_<user id>", "site": false, "why": "a one-minute message after a refused press" },
     { "name": "advcm_rate_site", "site": false, "why": "since 0.5.1, per-URL clears everybody started in the last minute (at most 30)" },
+    { "name": "advcm_optimizer_summary", "site": false, "why": "since 0.6.0, the Optimizer tab's summary: NitroPack's pages waiting to rebuild and its last purge (asked from its API), the copies per device and the expiry in force; ten minutes, one when NitroPack did not answer" },
+    { "name": "advcm_optimizer_look_<md5>", "site": false, "why": "since 0.6.0, one lookup a person asked NitroPack's API for — a page's tags (at most 100, in words) or the pages showing a post (at most 50, each device's copy time); ten minutes. A failed lookup is not kept" },
+    { "name": "advcm_rate_look_<user id>", "site": false, "why": "since 0.6.0, lookups one person asked in the last minute (at most 10)" },
     { "name": "advcm_rate_<user id>", "site": false, "why": "per-URL clears one person started in the last minute (at most 10)" }
   ],
   "capabilities": [
@@ -86,6 +89,7 @@
     { "type": "admin-ajax", "action": "advcm_tick", "auth": "logged in (wp_ajax_ only, no nopriv), advcm_purge, nonce", "why": "the status screen moves a due background clear where the site's cron cannot wake" },
     { "type": "admin-page", "slug": "advcm-cache", "parent": "tools.php" },
     { "type": "admin-post", "action": "advcm_listings", "auth": "logged in, advcm_purge, nonce", "why": "since 0.5.0, starts a listings scan on the Freshness tab; reads only" },
+    { "type": "admin-ajax", "action": "advcm_optimizer_lookup", "auth": "logged in (wp_ajax_ only, no nopriv), advcm_purge, nonce", "why": "since 0.6.0, a page's NitroPack tags or the pages showing a post, asked of NitroPack's API after the screen has loaded; reads only" },
     { "type": "admin-bar", "nodes": ["advcm", "advcm-page", "advcm-site"] }
   ],
   "hooks_on_content": [
