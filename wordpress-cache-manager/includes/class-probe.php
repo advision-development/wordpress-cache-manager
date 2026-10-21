@@ -211,64 +211,30 @@ final class ADVCM_Probe {
 	}
 
 	/**
-	 * When NitroPack stored its copy of a page, read from the file it keeps, or null when the site
-	 * has no NitroPack, NitroPack has no copy, or anything about it fails.
+	 * When NitroPack stored its desktop copy of a page, or null when the site has no NitroPack,
+	 * NitroPack has no copy, or anything about it fails.
 	 *
-	 * Only file names are asked of NitroPack's SDK; the files are looked at with file_exists and
-	 * filemtime. Not hasCache(): with invalidated copies on, it rewrites and renames the file. The
-	 * SDK object may be shared with the rest of the request, so its invalidated switch is put back.
-	 * The copy read is the desktop one, the one a request without a phone's user agent gets.
-	 *
-	 * A stale copy's time is when NitroPack last wrote that file — invalidated or converted — not
-	 * when the page was built, so it is shown as stale since at least then.
+	 * Through ADVCM_Optimizer_Nitropack, the one reader of NitroPack's copies: paths from its SDK,
+	 * files only looked at. An invalidated copy reads as stale: NitroPack serves it while it rebuilds.
 	 *
 	 * @param string $url URL on this site.
 	 * @return array|null array( 'at' => unix time, 'state' => 'fresh'|'stale' ).
 	 */
 	public static function nitropack_copy( $url ) {
-		if ( ! function_exists( 'get_nitropack_sdk' ) ) {
-			return null;
-		}
-
 		try {
-			$sdk = get_nitropack_sdk( null, null, $url );
-
-			if ( ! is_object( $sdk ) || ! isset( $sdk->pageCache ) || ! is_object( $sdk->pageCache ) ) {
-				return null;
-			}
-
-			$cache = $sdk->pageCache;
-			$was   = method_exists( $cache, 'getUseInvalidated' ) ? (bool) $cache->getUseInvalidated() : false;
-
-			try {
-				$cache->useInvalidated( false );
-				$fresh = array( $cache->getCachefilePath(), $cache->getCachefilePath( 'gz' ) );
-
-				$cache->useInvalidated( true );
-				$stale = array( $cache->getCachefilePath( 'stale' ), $cache->getCachefilePath( 'stale.gz' ), $cache->getCachefilePath(), $cache->getCachefilePath( 'gz' ) );
-			} finally {
-				$cache->useInvalidated( $was );
-			}
-
-			foreach ( array( 'fresh' => $fresh, 'stale' => $stale ) as $state => $paths ) {
-				foreach ( $paths as $path ) {
-					if ( is_string( $path ) && '' !== $path && @file_exists( $path ) ) {
-						$at = @filemtime( $path );
-
-						if ( false !== $at ) {
-							return array(
-								'at'    => (int) $at,
-								'state' => $state,
-							);
-						}
-					}
-				}
-			}
+			$copies = ADVCM_Optimizer_Nitropack::copies( $url );
 		} catch ( Throwable $e ) {
 			return null;
 		}
 
-		return null;
+		if ( ! isset( $copies['desktop'] ) || null === $copies['desktop']['created'] ) {
+			return null;
+		}
+
+		return array(
+			'at'    => (int) $copies['desktop']['created'],
+			'state' => 'fresh' === $copies['desktop']['state'] ? 'fresh' : 'stale',
+		);
 	}
 
 	/**
