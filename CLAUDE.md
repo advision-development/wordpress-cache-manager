@@ -118,9 +118,21 @@ These are requirements, not preferences. Each was either asked for explicitly or
   bounded batch (5 documents, 3 s) from the Freshness tab's tick when WP-Cron is over 2 minutes
   late. Otherwise WP-Cron batches of 20 documents within 8 s, one scan at a time, each document's
   meta let go after reading. Elementor stores term filters as **term_taxonomy_ids**.
-- **The change log is written only by requests a person made**: admin-post actions, the Cache age
-  probe, the Status tab (a version change, as nobody's). Never WP-Cron, never the tick. Recording
+- **The change log is written only by requests a person made**: admin-post actions, the Inspect a
+  page probe, the Status tab (a version change, as nobody's). Never WP-Cron, never the tick. Recording
   never throws into the action it records.
+- **NitroPack is read through `ADVCM_Optimizer_Nitropack` only**, the one class that knows its
+  layout, and only from what its SDK names (`getCacheDir()`, `Device::getKnownTypes()`,
+  `Pagecache::getUrlDir()` with `URLPathVersion`, `NitroPack\Url\Url`). An unknown folder rule
+  version is "not available", never a guess. `is_dir`/`scandir`/`filemtime` only; no SDK call
+  that writes. The Optimizer tab exists only where it is available.
+- **NitroPack's API is asked only by a person**: the summary when the Optimizer tab opens, lookups
+  through `wp_ajax_advcm_optimizer_lookup` after the page loads; cached 10 minutes, 10 lookups a
+  minute per person, a failed lookup not cached. Never in a page view, a save or WP-Cron.
+- **The oldest-copies index is bounded**: `advcm_optimizer_index`, 100 copies per device for the
+  last list and 100 for the one being built, references (`p:`, `t:`, `home`) not URLs; worst case
+  asserted under 150 KB (94 KB). WP-Cron every 6 hours, 1,000 folders / 2 s a run, lock naming the
+  folder, rescued like the listings scan.
 - **"Any content" never covers revisions, auto-drafts or menu items**, whatever
   `advcm_auto_excluded_post_types` returns, and a filter answer that is not a list of post type
   names is ignored — a lone `*` would otherwise switch every such rule off silently.

@@ -8,8 +8,8 @@ The design spec lives in the team's internal workspace, not in this public repos
 
 ## Status
 
-**0.5.3.** Tools → CacheManager, in seven tabs — Status, Clear, Cache age, History, Freshness,
-Auto-clear, Settings — each with a box of its last changes, and the CacheManager menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
+**0.6.0.** Tools → CacheManager, in seven tabs — Status, Clear, Inspect a page, History,
+Freshness, Auto-clear, Settings, and an eighth, Optimizer, on a site with NitroPack — each with a box of its last changes, and the CacheManager menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
 time the screen opens: install a cache plugin later and it appears on the next load. Talking to Hawkeye is a later phase.
 
 ## The order
@@ -47,9 +47,9 @@ points at files that are gone. Background modes run on WP-Cron, which is WordPre
 `DISABLE_WP_CRON` only Fast is offered. A background job that stops moving is shown as stuck, with
 a button to finish it now.
 
-## How old is a page's cache
+## Inspect a page
 
-Tools → CacheManager → *Cache age*: the site requests the page once and reads what
+Tools → CacheManager → *Inspect a page* (*Cache age* before 0.6.0): the site requests the page once and reads what
 each layer says — Cloudflare, the host cache, NitroPack. The age is exact where a layer sends
 `Age`, 0 on a `MISS`, "at most N" since this plugin last cleared it when a layer only says `HIT`
 (WP Engine sends no `Age`), and otherwise "unknown" with the most it can be. It never guesses.
@@ -60,6 +60,41 @@ copy); otherwise it is the host cache's. On BMR WP Engine keeps pages 10 minutes
 SHORT`, `max-age=600`) and NitroPack 24 hours. It also reads the `NITROPACK_STATE` NitroPack writes into the page (`FRESH` or
 `STALE`), and the time of NitroPack's own copy of the page, from the file its SDK names. Each only
 where the site has that layer: no row is shown for a layer a site does not have.
+
+Where NitroPack is installed, it also shows NitroPack's copy on each device (desktop, mobile,
+tablet): fresh, stale, invalidated or none, when it was made and until when it lives (created +
+NitroPack's expiry, an estimate); the page's tags in words, asked of NitroPack's API after the
+page has loaded (the posts it shows newest first, the page itself, terms, authors, its page
+type); and what would rebuild it — an update to the page or a post in its tags, its copy
+expiring, a clear — and whether a new post would, which only happens when an auto-clear rule
+names the page.
+
+## Optimizer
+
+Asked for in issue #21: on BMR editors flushed NitroPack site-wide when a new article did not show
+on a hub page, mostly guessing, and a whole-site flush leaves pages un-optimized for an hour. The
+tab exists only where an optimizer the plugin can read is installed (today NitroPack), and only
+shows: it never purges, invalidates or changes a NitroPack setting.
+
+- **Site summary**: copies per device and how many are invalidated (counted on disk), pages
+  waiting to rebuild and the last purge — when, which page or tag, why (NitroPack keeps only the
+  last) — from NitroPack's API, and the expiry in force. Cached 10 minutes.
+- **Oldest copies**: the 100 copies of each device that have lived longest, oldest first, with
+  created, lives until, state, whether a rule names the page, and a link to Inspect a page. A
+  WP-Cron scan every 6 hours reads NitroPack's cache folders (file times only, 1,000 within 2 s a
+  run) and names the kept ones by hashing this site's own addresses; a copy none matches is an
+  "unidentified page". The first scan is scheduled when a CacheManager screen opens; *Refresh now*
+  starts one. 500 folders took 0.68 s on BMR.
+- **Pages showing a post**: a post ID or address → the pages NitroPack says show it (at most 50),
+  each device's copy time: is the change on those pages yet?
+
+Everything NitroPack's API answers (2 to 2.5 s a call on BMR) is asked only when a person asks,
+through admin-ajax after the page has loaded, cached 10 minutes, at most 10 lookups a minute per
+person. When the API fails the tab says "NitroPack did not answer" and still shows what is on
+disk. Where NitroPack keeps its copies comes only from its own SDK (`getCacheDir()`,
+`Device::getKnownTypes()`, `Pagecache::getUrlDir()`, `URLPathVersion`, its URL normalization); a
+piece that is missing, or a folder rule it has not seen, means the tab is not shown rather than a
+guessed path.
 
 ## Freshness
 
@@ -164,7 +199,7 @@ screen and stays with administrators (`manage_options`). The *Check for updates*
 
 Each tab ends with its **last changes**: who, when (UTC), what, and the value before → after.
 Recorded: clears people started, rule changes, setting changes and the pause, stuck jobs finished
-by hand, release checks, Cache age probes (a reload within ten minutes is not recorded again), and
+by hand, release checks, Inspect a page readings (a reload within ten minutes is not recorded again), and
 updates of this plugin (as nobody's: WordPress installs them on its own). Refusals, WP-Cron and
 automatic clears are not: History has those. Kept in `advcm_log`, 20 per tab, 10 shown, each value
 cut to 200 characters.

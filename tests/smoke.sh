@@ -649,6 +649,111 @@ check_nonce="$(grep -oE 'name="_wpnonce" value="[a-f0-9]+"' <<< "$(curl -s -b "$
 refused="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=check&advcm_probe=%2Fwp-login.php&_wpnonce=${check_nonce}")"
 grep -q 'That is not a page on this site.' <<< "${refused}" && pass "the cache-age check refuses wp-login.php" || fail "the cache-age check requested wp-login.php"
 
+# ------------------------------------------------------------------------ 0.6.0 Optimizer
+
+# Without NitroPack there is no Optimizer tab, and asking for it opens Status.
+status_page="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=optimizer")"
+if ! grep -q '>Optimizer</a>' <<< "${status_page}" && grep -q 'nav-tab-active">Status</a>' <<< "${status_page}" && grep -q '>Inspect a page</a>' <<< "${status_page}"; then
+	pass "without NitroPack: no Optimizer tab; Cache age is Inspect a page"
+else
+	fail "the tabs on a site without NitroPack are wrong"
+fi
+
+# A stand-in NitroPack: the SDK pieces CacheManager reads (classes and path rule shaped like
+# NitroPack 1.19.4's), a cache directory with copies, and an API answering from memory. Not its
+# purge functions, so no clear calls it: this exercises the reading only.
+docker exec -i -u 33 "${WP}" bash -c "cat > /var/www/html/wp-content/mu-plugins/advcm-smoke-nitropack.php" <<'MU'
+<?php
+namespace NitroPack\SDK {
+	class Device { public static function getKnownTypes() { return array( 'mobile', 'tablet', 'desktop' ); } }
+	class Pagecache {
+		public static function getUrlDir( $dataDir, $url, $useInvalidated = false, $pathVersion = 1 ) {
+			$dir = $dataDir . '/' . md5( $url );
+			return $useInvalidated ? $dir . '_i' : $dir;
+		}
+	}
+}
+namespace NitroPack\Url {
+	class Url {
+		private $u;
+		public function __construct( $u ) { $this->u = $u; }
+		public function getNormalized() { return $this->u; }
+	}
+}
+namespace {
+	class Advcm_Smoke_Nitro_Api {
+		public function getPendingUrlsCount() { return 6; }
+		public function getLastCachePurge() { return array( 'timestamp' => time() - 600, 'url' => null, 'tag' => 'pageType:archive', 'reason' => 'Updated Post <b>Smoke</b>' ); }
+		public function getTags( $url ) { return array( 'pageType:home', 'post:1' ); }
+		public function getTaggedUrls( $tag, $page = 1, $limit = 250 ) { return array( array( 'url' => home_url( '/' ), 'deviceType' => 'desktop', 'lastOptimizedDate' => gmdate( 'Y-m-d H:i:s', time() - 3600 ) ) ); }
+	}
+	class Advcm_Smoke_Nitro_Sdk {
+		public function getCacheDir() { return WP_CONTENT_DIR . '/cache/advcm-smoke-np'; }
+		public function getConfig() { return (object) array( 'URLPathVersion' => 2, 'PageCache' => (object) array( 'ExpireTime' => 86400, 'StaleExpireTime' => 300 ) ); }
+		public function getApi() { return new Advcm_Smoke_Nitro_Api(); }
+	}
+	function get_nitropack_sdk() { static $sdk; return $sdk ? $sdk : ( $sdk = new Advcm_Smoke_Nitro_Sdk() ); }
+}
+MU
+
+cat > "${WORK}/np-copies.php" <<'PHP'
+<?php
+$base = WP_CONTENT_DIR . '/cache/advcm-smoke-np';
+$made = 0;
+foreach ( array( 'desktop' => 7200, 'mobile' => 3600 ) as $device => $ago ) {
+	foreach ( array( home_url( '/' ), get_permalink( 1 ) ) as $i => $url ) {
+		$dir = $base . '/' . $device . '/' . md5( $url ) . ( 1 === $i && 'mobile' === $device ? '_i' : '' );
+		wp_mkdir_p( $dir );
+		file_put_contents( $dir . '/ssl-0.html', '<html></html>' );
+		touch( $dir . '/ssl-0.html', time() - $ago - $i * 60 );
+		$made++;
+	}
+}
+echo ( 4 === $made && ADVCM_Optimizer_Nitropack::available() ? 'PASS  ' : 'FAIL  ' ), 'a stand-in NitroPack with 4 copies is readable: ', ADVCM_Optimizer_Nitropack::why_not(), "\n";
+PHP
+wpeval "${WORK}/np-copies.php"
+
+check_pages "with a stand-in NitroPack"
+opt_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=optimizer")"
+if grep -q 'nav-tab-active">Optimizer</a>' <<< "${opt_tab}" && grep -q 'class="advcm-help"' <<< "${opt_tab}" && grep -q '<th style="width:220px">Waiting to rebuild</th><td>6</td>' <<< "${opt_tab}" && grep -q 'Updated Post Smoke' <<< "${opt_tab}"; then
+	pass "the Optimizer tab: its help, pages waiting to rebuild and the last purge, its HTML stripped"
+else
+	fail "the Optimizer tab is not as expected: $(grep -oE 'Site summary.{0,300}' <<< "${opt_tab}" | head -1)"
+fi
+
+# Opening a screen scheduled the first oldest-copies scan; WP-Cron runs it to the end.
+scan_done=""
+for _ in $(seq 1 10); do
+	wpcli wp transient delete doing_cron >/dev/null 2>&1 || true
+	curl -s -o /dev/null "${URL}/wp-cron.php?doing_wp_cron"
+	scan_done="$(wpcli wp eval 'echo ADVCM_Optimizer_Index::state()["done"];' | tr -d '\r')"
+	[[ "${scan_done}" =~ ^[1-9][0-9]*$ ]] && break
+	sleep 1
+done
+[[ "${scan_done}" =~ ^[1-9][0-9]*$ ]] && pass "the first oldest-copies scan was scheduled by a screen and finished through WP-Cron" || fail "the oldest-copies scan did not finish: $(wpcli wp option get advcm_optimizer_index --format=json | head -c 300)"
+
+opt_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=optimizer")"
+grep -q "<code>${URL}/</code></a>" <<< "${opt_tab}" && grep -qE 'tab=check(&#038;|&amp;)advcm_probe=' <<< "${opt_tab}" && pass "the oldest copies are named from the site's URLs, each linked to Inspect a page" || fail "the oldest copies are not listed: $(grep -oE 'Oldest copies.{0,400}' <<< "${opt_tab}" | head -1)"
+
+look_nonce="$(grep -oE 'd.append\("action","advcm_optimizer_lookup"\);d.append\("_ajax_nonce","[a-f0-9]+"' <<< "${opt_tab}" | head -1 | sed 's/.*"_ajax_nonce","//; s/"$//')"
+looked="$(curl -s -b "${jar}" -d "action=advcm_optimizer_lookup&_ajax_nonce=${look_nonce}&kind=tagged&value=1" "${URL}/wp-admin/admin-ajax.php")"
+grep -q '"ok":true' <<< "${looked}" && grep -q '"pages":\[{"url"' <<< "${looked}" && pass "an editor looks up the pages showing a post" || fail "the lookup did not answer (nonce '${look_nonce}'): ${looked:0:300}"
+outside="$(curl -s -o /dev/null -w '%{http_code}' -d "action=advcm_optimizer_lookup&_ajax_nonce=${look_nonce}&kind=tagged&value=1" "${URL}/wp-admin/admin-ajax.php")"
+[[ "${outside}" == "400" ]] && pass "and nobody logged out can" || fail "a logged-out lookup answered ${outside}"
+
+refresh_nonce="$(grep -oE 'name="_wpnonce" value="[a-f0-9]+" /><input type="hidden" name="_wp_http_referer" value="[^"]*" /><input type="hidden" name="action" value="advcm_optimizer_refresh"' <<< "${opt_tab}" | head -1 | sed 's/.*name="_wpnonce" value="//; s/".*//')"
+curl -s -b "${jar}" -o /dev/null -d "action=advcm_optimizer_refresh&_wpnonce=${refresh_nonce}" "${URL}/wp-admin/admin-post.php"
+opt_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=optimizer")"
+grep -qE '<td>ed</td><td>Oldest copies scan started</td>' <<< "${opt_tab}" && pass "Refresh now starts a scan, recorded under the tab's Last changes" || fail "Refresh now was not recorded"
+
+inspect="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=check&advcm_probe=%2F&_wpnonce=${check_nonce}")"
+grep -q '>NitroPack, per device</h3>' <<< "${inspect}" && grep -q '<td>desktop</td><td>fresh</td>' <<< "${inspect}" && grep -q '>What would rebuild it</h3>' <<< "${inspect}" && pass "Inspect a page shows NitroPack's copy per device and what would rebuild it" || fail "Inspect a page has no NitroPack section"
+
+docker exec "${WP}" rm -rf /var/www/html/wp-content/mu-plugins/advcm-smoke-nitropack.php /var/www/html/wp-content/cache/advcm-smoke-np
+check_pages "after NitroPack was removed"
+opt_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=optimizer")"
+grep -q '>Optimizer</a>' <<< "${opt_tab}" && fail "the Optimizer tab stayed after NitroPack was removed" || pass "NitroPack removed: the Optimizer tab goes, nothing fails"
+
 # --------------------------------------------------------------------- the security scanner
 
 cat > "${WORK}/scan.php" <<'PHP'
