@@ -8,7 +8,7 @@ The design spec lives in the team's internal workspace, not in this public repos
 
 ## Status
 
-**0.6.0.** Tools → CacheManager, in seven tabs — Status, Clear, Inspect a page, History,
+**0.6.1.** Tools → CacheManager, in seven tabs — Status, Clear, Inspect a page, History,
 Freshness, Auto-clear, Settings, and an eighth, NitroPack, on a site with NitroPack — each with a box of its last changes, and the CacheManager menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
 time the screen opens: install a cache plugin later and it appears on the next load. Talking to Hawkeye is a later phase.
 
@@ -84,7 +84,9 @@ shows: it never purges, invalidates or changes a NitroPack setting.
   created, lives until, state, whether a rule names the page, and a link to Inspect a page. A
   WP-Cron scan every 6 hours reads NitroPack's cache folders (file times only, 1,000 within 2 s a
   run) and names the kept ones by hashing this site's own addresses; a copy none matches is an
-  "unidentified page". The first scan is scheduled when a CacheManager screen opens; *Refresh now*
+  "unidentified page". The list is re-read from disk each time it is shown (file times only): a
+  copy rebuilt since the scan shows its new time, marked "rebuilt since the scan", and one purged
+  since says "cleared since the scan". The first scan is scheduled when a CacheManager screen opens; *Refresh now*
   starts one. 500 folders took 0.68 s on BMR.
 - **Pages showing a post**: a post ID or address → the pages NitroPack says show it (at most 50),
   each device's copy time: is the change on those pages yet?

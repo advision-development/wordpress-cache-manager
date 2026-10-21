@@ -153,6 +153,27 @@ $mobile = ADVCM_Optimizer_Index::rows( 'mobile' );
 check( 'each device on its own; an empty folder is no copy', 2 === count( $mobile ) && 'https://example.test/p-3/' === $mobile[0]['url'] && 'https://example.test/' === $mobile[1]['url'] && 1 === $mobile[1]['stale'] );
 check( 'a device with no folder has no rows, and no error', array() === ADVCM_Optimizer_Index::rows( 'tablet' ) );
 
+// After the scan the site moves on: measured on BMR on 2026-10-21, /analysis/ was listed 16 hours
+// old while an auto-clear had rebuilt it minutes before. The list re-reads each kept copy when
+// shown, so it never states an age that is no longer true.
+$rebuilt = nitro_copy( $dir, 'desktop', get_permalink( 250 ), 'fresh', $now - 10 );
+exec( 'rm -rf ' . escapeshellarg( dirname( nitro_copy( $dir, 'desktop', get_permalink( 249 ), 'fresh', $now - 249 * 60 ) ) ) );
+
+$rows = ADVCM_Optimizer_Index::rows( 'desktop' );
+$by   = array();
+
+foreach ( $rows as $i => $row ) {
+	$by[ $row['url'] ] = $i;
+}
+
+check( 'a copy rebuilt since the scan shows its new time, marked, and is no longer listed as old', 'rebuilt' === $rows[ $by['https://example.test/p-250/'] ]['since_scan'] && $now - 10 === $rows[ $by['https://example.test/p-250/'] ]['created'] && $by['https://example.test/p-250/'] > 90 );
+check( 'a copy cleared since the scan says so, with no age', 'cleared' === $rows[ $by['https://example.test/p-249/'] ]['since_scan'] && null === $rows[ $by['https://example.test/p-249/'] ]['created'] && 99 === $by['https://example.test/p-249/'] );
+check( 'one untouched since the scan is as the scan read it', '' === $rows[0]['since_scan'] && $now - 900 * 60 === $rows[0]['created'] && 'https://example.test/p-248/' === $rows[2]['url'] );
+
+// Put the two back as the scan saw them, for what follows.
+touch( $rebuilt, $now - 250 * 60 );
+nitro_copy( $dir, 'desktop', get_permalink( 249 ), 'fresh', $now - 249 * 60 );
+
 $state = ADVCM_Optimizer_Index::state();
 
 check( 'a finished scan schedules the next one 6 hours on', abs( wp_next_scheduled( ADVCM_Optimizer_Index::HOOK ) - ( time() + 6 * HOUR_IN_SECONDS ) ) <= 2 && $state['finished'] > 0 );

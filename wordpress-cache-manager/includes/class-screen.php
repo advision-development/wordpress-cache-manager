@@ -573,6 +573,8 @@ final class ADVCM_Screen {
 							__( 'Waiting to rebuild', 'advcm' ) => __( 'pages queued at NitroPack for a new copy.', 'advcm' ),
 							__( 'Last purge', 'advcm' )         => __( 'NitroPack\'s last purge: when, which page or tag, and why. NitroPack keeps only the last one.', 'advcm' ),
 							__( 'Rule', 'advcm' )               => __( 'whether an auto-clear rule names the page, so a new post clears it.', 'advcm' ),
+							__( 'rebuilt since the scan', 'advcm' ) => __( 'the list is re-read from disk each time it is shown: this copy was made after the last scan, and its time is the new one.', 'advcm' ),
+							__( 'cleared since the scan', 'advcm' ) => __( 'the copy the scan found is gone (purged); NitroPack builds a new one on the next visit.', 'advcm' ),
 						),
 						__( 'Limits', 'advcm' )         => array(
 							__( 'Only the oldest copies are kept, never a list of every page. Times are the files\' own; expiry is NitroPack\'s setting now, so a copy made under another setting may live differently. Pages showing a post lists at most 50 pages.', 'advcm' ),
@@ -2539,13 +2541,20 @@ final class ADVCM_Screen {
 			echo '</tr></thead><tbody>';
 
 			foreach ( $rows as $row ) {
-				$state = $row['invalidated'] ? 'invalidated' : ( $row['stale'] ? 'stale' : 'fresh' );
+				$made = null !== $row['created'];
+				$copy = $row['invalidated'] ? 'invalidated' : ( $row['stale'] ? 'stale' : 'fresh' );
+
+				if ( 'cleared' === $row['since_scan'] ) {
+					$words = __( 'cleared since the scan — built on the next visit', 'advcm' );
+				} else {
+					$words = self::copy_words( $copy ) . ( 'rebuilt' === $row['since_scan'] ? ' — ' . __( 'rebuilt since the scan', 'advcm' ) : '' );
+				}
 
 				echo '<tr><td>' . ( '' === $row['url'] ? '<em>' . esc_html__( 'unidentified page', 'advcm' ) . '</em>' : '<a href="' . esc_url( self::inspect_url( $row['url'] ) ) . '"><code>' . esc_html( $row['url'] ) . '</code></a>' ) . '</td>';
-				echo '<td>' . esc_html( gmdate( 'Y-m-d H:i', (int) $row['created'] ) ) . '</td>';
-				echo '<td>' . esc_html( ADVCM_Probe::duration( max( 0, time() - (int) $row['created'] ) ) ) . '</td>';
+				echo '<td>' . esc_html( $made ? gmdate( 'Y-m-d H:i', (int) $row['created'] ) : '—' ) . '</td>';
+				echo '<td>' . esc_html( $made ? ADVCM_Probe::duration( max( 0, time() - (int) $row['created'] ) ) : '—' ) . '</td>';
 				echo '<td>' . esc_html( null === $row['lives_until'] ? '—' : self::until_words( $row['lives_until'] ) ) . '</td>';
-				echo '<td>' . esc_html( self::copy_words( $state ) ) . '</td>';
+				echo '<td>' . esc_html( $words ) . '</td>';
 				echo '<td>' . esc_html( '' === $row['url'] ? '—' : ( empty( ADVCM_Auto::naming( $row['url'] ) ) ? __( 'no rule', 'advcm' ) : __( 'a rule clears it', 'advcm' ) ) ) . '</td></tr>';
 			}
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1 — 2026-10-21
+
+- **Oldest copies showed ages that were no longer true.** The list was the last scan's snapshot,
+  up to 6 hours old, and the pages cleared most often are the ones it got wrong: on BMR, an hour
+  after installing 0.6.0, /analysis/ was listed 16 hours old while an auto-clear had rebuilt it
+  minutes before. Each kept copy is now re-read from disk when the list is shown (two folders at
+  most, file times only): a copy rebuilt since says so with its new time and is no longer listed
+  as old, one purged since says "cleared since the scan".
+
 ## 0.6.0 — 2026-10-21
 
 Issue #21: editors on BMR flushed NitroPack site-wide when a new article did not show on a hub
