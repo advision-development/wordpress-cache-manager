@@ -64,6 +64,35 @@ final class ADVCM_Freshness {
 	 */
 	const STATS_URL_CHARS = 1024;
 
+	/** Every key a page's sums have; rows from 0.5.1 gain the newer ones as zero. */
+	const PAGE = array(
+		'n'      => 0,
+		'hand'   => 0,
+		'auto'   => 0,
+		'unk'    => 0,
+		'young'  => 0,
+		'hyoung' => 0,
+		'over'   => 0,
+		'pover'  => 0,
+		'max'    => 0,
+		'sum'    => 0,
+		'hsum'   => 0,
+		'hk'     => 0,
+		'last'   => 0,
+		'rules'  => array(),
+		'moved'  => '',
+	);
+
+	/** Every key a day's sums have. */
+	const DAY = array(
+		'n'     => 0,
+		'unk'   => 0,
+		'young' => 0,
+		'over'  => 0,
+		'pover' => 0,
+		'max'   => 0,
+	);
+
 	/** A copy younger than this, in seconds, was fresh when cleared. */
 	const YOUNG = 600;
 
@@ -244,7 +273,26 @@ final class ADVCM_Freshness {
 			'nitro_copy'  => null === $copy ? null : $copy['state'],
 			'nitro_age'   => null === $copy ? null : max( 0, $now - (int) $copy['at'] ),
 			'rules'       => array_values( array_unique( $rules ) ),
+			'moved'       => $ok && isset( $reading['code'], $reading['location'] ) && $reading['code'] >= 300 && $reading['code'] < 400 ? self::moved_to( (string) $reading['location'] ) : '',
 		);
+	}
+
+	/**
+	 * Where a redirect goes, as a path and query, cut to 200 characters.
+	 *
+	 * @param string $location The Location header.
+	 * @return string
+	 */
+	private static function moved_to( $location ) {
+		$parts = wp_parse_url( $location );
+
+		if ( ! is_array( $parts ) ) {
+			return '';
+		}
+
+		$to = ( isset( $parts['path'] ) ? $parts['path'] : '/' ) . ( isset( $parts['query'] ) ? '?' . $parts['query'] : '' );
+
+		return substr( $to, 0, 200 );
 	}
 
 	/**
@@ -280,25 +328,28 @@ final class ADVCM_Freshness {
 	private static function add_up( array $rows, $auto ) {
 		$stats  = self::stats();
 		$target = (int) ADVCM_Settings::get()['cache_target'] * HOUR_IN_SECONDS;
+		$ruled  = self::ruled();
 
 		foreach ( $rows as $row ) {
 			$url = substr( (string) $row['url'], 0, self::STATS_URL_CHARS );
 			$age = $row['age'];
 			$day = gmdate( 'Y-m-d', (int) $row['at'] );
 
-			if ( ! isset( $stats['pages'][ $url ] ) ) {
-				$stats['pages'][ $url ] = array( 'n' => 0, 'hand' => 0, 'auto' => 0, 'unk' => 0, 'young' => 0, 'over' => 0, 'max' => 0, 'sum' => 0, 'hsum' => 0, 'hk' => 0, 'last' => 0, 'rules' => array() );
-			}
+			// A post's own page, cleared by own-page when edited: not a page a rule names. Its old
+			// copy was the unchanged post, so past the target it is counted apart.
+			$post = $auto && ! isset( $ruled[ self::path( $url ) ] );
 
-			if ( ! isset( $stats['days'][ $day ] ) ) {
-				$stats['days'][ $day ] = array( 'n' => 0, 'unk' => 0, 'young' => 0, 'over' => 0, 'max' => 0 );
-			}
+			$stats['pages'][ $url ] = ( isset( $stats['pages'][ $url ] ) ? $stats['pages'][ $url ] : array() ) + self::PAGE;
+			$stats['days'][ $day ]  = ( isset( $stats['days'][ $day ] ) ? $stats['days'][ $day ] : array() ) + self::DAY;
 
 			$page = &$stats['pages'][ $url ];
 			$page['n']++;
 			$page[ $auto ? 'auto' : 'hand' ]++;
 			$page['last'] = max( $page['last'], (int) $row['at'] );
 			$page['rules'] = array_slice( array_values( array_unique( array_merge( $page['rules'], (array) $row['rules'] ) ) ), 0, 5 );
+
+			// The last answer decides: a page that redirected and has since been fixed is not one.
+			$page['moved'] = isset( $row['moved'] ) ? (string) $row['moved'] : '';
 
 			$stats['days'][ $day ]['n']++;
 
@@ -311,6 +362,7 @@ final class ADVCM_Freshness {
 				if ( $age < self::YOUNG ) {
 					$page['young']++;
 					$stats['days'][ $day ]['young']++;
+					$page['hyoung'] += $auto ? 0 : 1;
 				}
 			} else {
 				$page['sum'] += $age;
@@ -326,6 +378,15 @@ final class ADVCM_Freshness {
 						$page[ $key ]++;
 						$stats['days'][ $day ][ $key ]++;
 					}
+				}
+
+				if ( $age < self::YOUNG && ! $auto ) {
+					$page['hyoung']++;
+				}
+
+				if ( $age > $target && $post ) {
+					$page['pover']++;
+					$stats['days'][ $day ]['pover']++;
 				}
 
 				$stats['days'][ $day ]['max'] = max( $stats['days'][ $day ]['max'], $age );
@@ -377,14 +438,19 @@ final class ADVCM_Freshness {
 	}
 
 	/**
-	 * What the sums ask for.
+	 * What the sums ask for. Only shown: nothing here clears, adds a rule or changes a setting.
 	 *
-	 * - over: pages a cache kept past the target, with whether a rule clears them — without one,
-	 *   a rule is the fix.
-	 * - young: pages whose clears keep finding a fresh copy (2 or more, three in four under 10
-	 *   minutes) — the page looked old for another reason, or a rule clears it more than needed.
-	 * - hand: pages cleared by hand twice or more, with the average age those clears found.
-	 * - summary: the days kept, added up.
+	 * - over: pages a rule names, or people clear, whose copy was past the target when cleared —
+	 *   visitors saw it that long. A post that only own-page clears is left out: its old copy was
+	 *   the unchanged post, cleared the moment it was edited (BMR, 2026-10-21: posts 38 hours old).
+	 * - moved: pages a rule names that answered with a redirect — cleared for nothing.
+	 * - hand: pages cleared by hand twice or more, with their average age and how many of those
+	 *   clears found a copy under 10 minutes; when most did, the cache was not the problem.
+	 * - summary: the days kept, added up; posts past the target when edited counted apart.
+	 *
+	 * Not listed: listings whose clears find a fresh copy. A rule clears a listing on every
+	 * publish, so a young copy is the normal case and the clear still changed what it shows
+	 * (BMR: /analysis/, 34 clears in 40).
 	 *
 	 * @return array
 	 */
@@ -392,34 +458,48 @@ final class ADVCM_Freshness {
 		$stats = self::stats();
 		$ruled = self::ruled();
 		$out   = array(
-			'summary' => array( 'n' => 0, 'over' => 0, 'young' => 0, 'unk' => 0, 'days' => count( $stats['days'] ) ),
+			'summary' => array( 'n' => 0, 'over' => 0, 'posts' => 0, 'young' => 0, 'unk' => 0, 'days' => count( $stats['days'] ) ),
 			'over'    => array(),
-			'young'   => array(),
+			'moved'   => array(),
 			'hand'    => array(),
 		);
 
 		foreach ( $stats['days'] as $day ) {
-			foreach ( array( 'n', 'over', 'young', 'unk' ) as $key ) {
-				$out['summary'][ $key ] += isset( $day[ $key ] ) ? (int) $day[ $key ] : 0;
-			}
+			$day                      += self::DAY;
+			$out['summary']['n']      += (int) $day['n'];
+			$out['summary']['over']   += (int) $day['over'] - (int) $day['pover'];
+			$out['summary']['posts']  += (int) $day['pover'];
+			$out['summary']['young']  += (int) $day['young'];
+			$out['summary']['unk']    += (int) $day['unk'];
 		}
 
 		$own = self::own_on();
 
 		foreach ( $stats['pages'] as $url => $page ) {
+			$page    += self::PAGE;
+			$named    = isset( $ruled[ self::path( $url ) ] );
 			// Named by an enabled rule, or a post the own-page rule has been clearing.
-			$has_rule = isset( $ruled[ self::path( $url ) ] ) || ( $own && in_array( ADVCM_Auto::OWN, (array) $page['rules'], true ) );
+			$has_rule = $named || ( $own && in_array( ADVCM_Auto::OWN, (array) $page['rules'], true ) );
+			$over     = $page['over'] - $page['pover'];
 
-			if ( $page['over'] > 0 ) {
-				$out['over'][] = array( 'url' => $url, 'over' => $page['over'], 'n' => $page['n'], 'max' => $page['max'], 'has_rule' => $has_rule );
+			if ( $over > 0 && ( $named || $page['hand'] > 0 ) ) {
+				$out['over'][] = array( 'url' => $url, 'over' => $over, 'n' => $page['n'], 'max' => $page['max'], 'has_rule' => $has_rule );
 			}
 
-			if ( $page['n'] >= 2 && $page['young'] * 4 >= $page['n'] * 3 ) {
-				$out['young'][] = array( 'url' => $url, 'n' => $page['n'], 'young' => $page['young'], 'rules' => $page['rules'] );
+			if ( '' !== $page['moved'] && $named ) {
+				$out['moved'][] = array( 'url' => $url, 'to' => $page['moved'], 'rules' => $page['rules'], 'has_rule' => $has_rule, 'n' => $page['n'] );
 			}
 
 			if ( $page['hand'] >= 2 ) {
-				$out['hand'][] = array( 'url' => $url, 'times' => $page['hand'], 'last' => $page['last'], 'avg_age' => $page['hk'] ? (int) round( $page['hsum'] / $page['hk'] ) : null, 'has_rule' => $has_rule );
+				$out['hand'][] = array(
+					'url'          => $url,
+					'times'        => $page['hand'],
+					'last'         => $page['last'],
+					'avg_age'      => $page['hk'] ? (int) round( $page['hsum'] / $page['hk'] ) : null,
+					'fresh'        => $page['hyoung'],
+					'mostly_fresh' => $page['hyoung'] * 4 >= $page['hand'] * 3,
+					'has_rule'     => $has_rule,
+				);
 			}
 		}
 
@@ -434,7 +514,7 @@ final class ADVCM_Freshness {
 		};
 
 		usort( $out['over'], $sort( 'over', 'max' ) );
-		usort( $out['young'], $sort( 'n', 'young' ) );
+		usort( $out['moved'], $sort( 'n', 'n' ) );
 		usort( $out['hand'], $sort( 'times', 'last' ) );
 
 		return $out;

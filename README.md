@@ -8,7 +8,7 @@ The design spec lives in the team's internal workspace, not in this public repos
 
 ## Status
 
-**0.5.1.** Tools → CacheManager, in seven tabs — Status, Clear, Cache age, History, Freshness,
+**0.5.2.** Tools → CacheManager, in seven tabs — Status, Clear, Cache age, History, Freshness,
 Auto-clear, Settings — each with a box of its last changes, and the CacheManager menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
 time the screen opens: install a cache plugin later and it appears on the next load. Talking to Hawkeye is a later phase.
 
@@ -80,10 +80,12 @@ A clear fixes the first and does nothing for the second. The *Freshness* tab tel
   clear. It is not a stage, and nothing it does can stop the clear. Switch it off in Settings.
 - **What it adds up to** (since 0.5.1). Measurements are summed per page (200 pages) and per day
   (30 days), and the tab leads with them: the last 30 days against the cache target in Settings
-  (3 hours by default); pages kept past the target, with "no rule clears it — add one"; pages
-  cleared while fresh (three clears in four under 10 minutes) and the rules that clear them —
-  the content did not change, or a rule fires more than the page does; and pages cleared by hand
-  often. Listings are labelled by what they mean, the same list in one template once with ×N.
+  (3 hours by default); pages a rule names or people clear that were kept past the target, with
+  "no rule clears it — add one" (posts that own-page clears on an edit are counted apart: their
+  old copy was the unchanged post); a rule's pages that redirect, cleared for nothing; and pages
+  cleared by hand often, with how many of those clears found a fresh copy. A listing's copy is
+  young after every publish by design, so that is not reported. Listings are labelled by what
+  they mean, the same list in one template once with ×N.
 
 Freshness only shows: it never clears a page, adds a rule or changes a setting; its links open
 the tab where a person decides. An "at most" age is a bound, not an age, and never counts as past

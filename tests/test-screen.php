@@ -387,13 +387,20 @@ $GLOBALS['options'][ ADVCM_Listings::OPTION ]['findings'][] = array( 'verdict' =
 
 $out = screen_part( 'render_freshness', array( true ) );
 
-$order = array( 'Last 30 days', 'Past the target', 'Cleared while fresh', 'Cleared by hand, often', 'Listings with nothing new', 'Last measurements' );
+$GLOBALS['options'][ ADVCM_Freshness::STATS ]['pages']['https://example.test/nfl/analysis/'] = array( 'n' => 1, 'hand' => 0, 'auto' => 1, 'unk' => 1, 'young' => 0, 'over' => 0, 'max' => 0, 'sum' => 0, 'hsum' => 0, 'hk' => 0, 'last' => time(), 'rules' => array( 'r2' ), 'moved' => '/analysis/' );
+$GLOBALS['options']['advcm_rules']['r2']['urls'][] = 'https://example.test/nfl/analysis/';
+
+$out = screen_part( 'render_freshness', array( true ) );
+
+$order = array( 'Last 30 days', 'Past the target', 'Pages that redirect', 'Cleared by hand, often', 'Listings with nothing new', 'Last measurements' );
 $at    = array_map( function ( $h ) use ( $out ) { return strpos( $out, '>' . $h . '</h2>' ); }, $order );
 
-check( 'the tab leads with what to do: summary, past the target, cleared while fresh, by hand, listings, then the raw measurements', ! in_array( false, $at, true ) && $at === array_values( array_unique( $at ) ) && $at == ( function ( $a ) { sort( $a ); return $a; } )( $at ), json_encode( $at ) );
+check( 'the tab leads with what to do: summary, past the target, redirects, by hand, listings, then the raw measurements', ! in_array( false, $at, true ) && $at === array_values( array_unique( $at ) ) && $at == ( function ( $a ) { sort( $a ); return $a; } )( $at ), json_encode( $at ) );
 check( 'the summary counts the last 30 days against the 3-hour target', false !== strpos( $out, '11 pages measured' ) && false !== strpos( $out, '2 past the 3-hour target' ) && false !== strpos( $out, '8 found a copy under 10 minutes' ) );
 check( 'a page past the target with no rule says so, and links to adding one', 1 === preg_match( '~/old/.*?no rule clears it.*?tab=auto~s', $out ) );
-check( 'a page cleared while fresh names, in words, the rule that clears it', 1 === preg_match( '~/news/.*?When a post is published~s', $out ) );
+check( 'a rule\'s page that redirects says where to, and that the rule should name that instead', 1 === preg_match( '~/nfl/analysis/.*?/analysis/.*?When a post is published~s', $out ) );
+check( 'a listing cleared while fresh is no longer called a problem', false === strpos( $out, 'Cleared while fresh' ) );
+check( 'pages cleared by hand say how often the copy was fresh', false !== strpos( $out, 'Found a fresh copy' ) );
 check( 'the raw measurements are folded away', 1 === preg_match( '~<details[^>]*><summary><h2[^>]*>Last measurements</h2>~', $out ) );
 check( 'listing labels say how old: over 30 days, 7–30 days, broken filter', false !== strpos( $out, 'over 30 days</span>' ) && false !== strpos( $out, '7–30 days</span>' ) && false !== strpos( $out, 'broken filter</span>' ) && false === strpos( $out, 'slowing' ) );
 check( 'the same listing four times in one template is one row, ×4', 1 === substr_count( $out, 'picks_tag analysis' ) && false !== strpos( $out, '×4' ) );
@@ -450,5 +457,17 @@ ADVCM_Screen::admin_bar_confirm();
 $script = ob_get_clean();
 
 check( 'a listener posts them, with the nonce in the form, the whole site after asking', false !== strpos( $script, '"post"' ) && false !== strpos( $script, 'nonce-' . ADVCM_Controller::ACTION ) && false !== strpos( $script, '#wp-admin-bar-advcm-page > a' ) && false !== strpos( $script, 'confirm(' ) );
+
+// ------------------------------------------- before → after with one side empty (BMR)
+
+$GLOBALS['options'][ ADVCM_Log::OPTION ] = array();
+ADVCM_Log::add( 'auto', 'rule_added', 'When a picks is published → /analysis/', '', 'on' );
+ADVCM_Log::add( 'auto', 'rule_deleted', 'When a picks is published → 8 URLs', 'on', '' );
+ADVCM_Log::add( 'auto', 'rule_off', 'When a post is published → /x/', 'on', 'off' );
+$log = screen_part( 'render_log', array( 'auto' ) );
+
+check( 'a change with nothing before reads as new, not "→ on"', false !== strpos( $log, '<td>new: on</td>' ) && false === strpos( $log, '<td> → on</td>' ) );
+check( 'one with nothing after reads as removed, not "on →"', false !== strpos( $log, '<td>removed (was on)</td>' ) && false === strpos( $log, '<td>on → </td>' ) );
+check( 'and a change of value still reads before → after', false !== strpos( $log, '<td>on → off</td>' ) );
 
 finish();
