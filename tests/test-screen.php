@@ -495,7 +495,7 @@ check( 'a refused cache-age check says why, and is not recorded as a probe', fal
 
 ADVCM_Optimizer_Nitropack::use_sdk( null );
 
-check( 'a site without NitroPack has no Optimizer tab', ADVCM_Screen::TABS === ADVCM_Screen::tabs() && false === strpos( screen_part( 'render_tabs', array( 'status' ) ), '>Optimizer</a>' ) );
+check( 'a site without NitroPack has no NitroPack tab', ADVCM_Screen::TABS === ADVCM_Screen::tabs() && false === strpos( screen_part( 'render_tabs', array( 'status' ) ), '>NitroPack</a>' ) );
 check( 'Cache age is now Inspect a page', false !== strpos( screen_part( 'render_tabs', array( 'status' ) ), '>Inspect a page</a>' ) && false === strpos( screen_part( 'render_tabs', array( 'status' ) ), '>Cache age</a>' ) );
 
 $_GET['tab'] = 'optimizer';
@@ -524,7 +524,7 @@ $npsdk->api = new class() {
 ADVCM_Optimizer_Nitropack::use_sdk( $npsdk );
 $GLOBALS['transients'] = array();
 
-check( 'with NitroPack the Optimizer tab follows Freshness', array( 'status', 'clear', 'check', 'history', 'freshness', 'optimizer', 'auto', 'settings' ) === ADVCM_Screen::tabs() && false !== strpos( screen_part( 'render_tabs', array( 'status' ) ), '>Optimizer</a>' ) );
+check( 'with NitroPack its tab follows Freshness, named after it', array( 'status', 'clear', 'check', 'history', 'freshness', 'optimizer', 'auto', 'settings' ) === ADVCM_Screen::tabs() && false !== strpos( screen_part( 'render_tabs', array( 'status' ) ), '>NitroPack</a>' ) && false === strpos( screen_part( 'render_tabs', array( 'status' ) ), '>Optimizer</a>' ) );
 check( 'and opens when asked for', 'optimizer' === $m->invoke( null, '', false ) );
 
 unset( $_GET['tab'] );

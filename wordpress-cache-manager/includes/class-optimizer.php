@@ -5,7 +5,7 @@
  *
  * NitroPack answers these from its API (a remote call with the site's key, 2 to 2.5 s each,
  * measured on BMR on 2026-10-21). So they are asked only when a person asks, never in a page
- * view, a save or WP-Cron: the summary when the Optimizer tab opens, the lookups through
+ * view, a save or WP-Cron: the summary when the NitroPack tab opens, the lookups through
  * admin-ajax after the page has loaded, so a slow answer never holds the tab. Each answer is
  * cached ten minutes, and a person gets LOOKS_PER_MINUTE lookups a minute. An answer that fails is
  * a message ("NitroPack did not answer"), and what is read from disk is still shown.
@@ -119,7 +119,7 @@ final class ADVCM_Optimizer {
 	}
 
 	/**
-	 * Back to the Optimizer tab, with the refusal if there was one.
+	 * Back to the NitroPack tab, with the refusal if there was one.
 	 *
 	 * @param string $notice Refusal.
 	 * @return void

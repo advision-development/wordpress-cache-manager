@@ -5,13 +5,13 @@
 Issue #21: editors on BMR flushed NitroPack site-wide when a new article did not show on a hub
 page, mostly guessing. What would tell them was already on the server.
 
-- **An Optimizer tab**, only on a site with NitroPack, which only shows: the site summary (copies
+- **A NitroPack tab**, only on a site with NitroPack, which only shows: the site summary (copies
   per device, invalidated, pages waiting to rebuild, the last purge, the expiry in force), the 100
   oldest copies of each device with created and lives until, updated by a WP-Cron scan every 6
   hours, and pages showing a post. NitroPack's API is asked only when a person asks, cached ten
   minutes, ten lookups a minute per person.
 - **Cache age is now Inspect a page**: with NitroPack, each device's copy, its tags in words and
-  what would rebuild it, saying when no auto-clear rule names the page. Freshness and Optimizer
+  what would rebuild it, saying when no auto-clear rule names the page. Freshness and NitroPack
   rows link to it.
 - **`x-cache-ctime` is NitroPack's** where NitroPack answers. It was shown as the host cache's; on
   BMR WP Engine keeps pages 10 minutes, and the hours-old ages were NitroPack's. Rows measured

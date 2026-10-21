@@ -261,7 +261,7 @@ final class ADVCM_Screen {
 	}
 
 	/**
-	 * The tabs this site has, in order: the Optimizer tab only where an optimizer the plugin can
+	 * The tabs this site has, in order: the optimizer's tab (labelled NitroPack) only where one the plugin can
 	 * read is installed, after Freshness.
 	 *
 	 * @return string[]
@@ -311,7 +311,9 @@ final class ADVCM_Screen {
 			'check'   => __( 'Inspect a page', 'advcm' ),
 			'history' => __( 'History', 'advcm' ),
 			'freshness' => __( 'Freshness', 'advcm' ),
-			'optimizer' => __( 'Optimizer', 'advcm' ),
+			// Named after the optimizer found, as editors know it. With a second one the plugin can
+			// read, this becomes "Optimizers" with a sub-tab each; the id stays "optimizer".
+			'optimizer' => ADVCM_Optimizer_Nitropack::name(),
 			'auto'     => __( 'Auto-clear', 'advcm' ),
 			'settings' => __( 'Settings', 'advcm' ),
 		);
@@ -2410,7 +2412,7 @@ final class ADVCM_Screen {
 	}
 
 	/**
-	 * The Optimizer tab: the site summary, the oldest copies, and pages showing a post. Each part
+	 * The NitroPack tab: the site summary, the oldest copies, and pages showing a post. Each part
 	 * on its own guard: a fault in one leaves the others on the screen.
 	 *
 	 * @param bool $hard Whether the person holds advcm_purge_hard. Every part only shows.

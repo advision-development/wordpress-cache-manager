@@ -340,7 +340,7 @@ $GLOBALS['transients'][ ADVCM_Optimizer::SUMMARY ] = array( 'at' => 1 );
 $GLOBALS['options'][ ADVCM_Log::OPTION ]           = array();
 
 check( 'Refresh now starts the oldest-copies scan and asks the summary again', '' === ADVCM_Optimizer::refresh( 7 ) && false !== wp_next_scheduled( ADVCM_Optimizer_Index::HOOK ) && ! isset( $GLOBALS['transients'][ ADVCM_Optimizer::SUMMARY ] ) );
-check( 'and is recorded under the Optimizer tab\'s Last changes', 1 === count( ADVCM_Log::recent( 'optimizer' ) ) );
+check( 'and is recorded under the NitroPack tab\'s Last changes', 1 === count( ADVCM_Log::recent( 'optimizer' ) ) );
 check( 'pressed again while it runs: refused, not recorded twice', '' !== ADVCM_Optimizer::refresh( 7 ) && 1 === count( ADVCM_Log::recent( 'optimizer' ) ) );
 
 ADVCM_Optimizer_Nitropack::use_sdk( null );

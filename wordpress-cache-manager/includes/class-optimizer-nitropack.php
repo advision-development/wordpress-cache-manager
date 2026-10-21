@@ -3,7 +3,7 @@
  * What NitroPack keeps for a page, read from the copies it stores on disk.
  *
  * The only code in this plugin that knows where NitroPack keeps its copies: the probe, Freshness,
- * the Optimizer tab and its scan all go through here, so there is one rule, not several.
+ * the NitroPack tab and its scan all go through here, so there is one rule, not several.
  *
  * **Paths come from NitroPack's own SDK**, never written here: its cache directory
  * (`getCacheDir()`), its devices (`Device::getKnownTypes()`), its folder rule
@@ -50,6 +50,15 @@ final class ADVCM_Optimizer_Nitropack {
 	 */
 	public static function use_sdk( $sdk ) {
 		self::$sdk = $sdk;
+	}
+
+	/**
+	 * The optimizer's name, as people know it: the tab is called this, not "Optimizer".
+	 *
+	 * @return string
+	 */
+	public static function name() {
+		return 'NitroPack';
 	}
 
 	/**

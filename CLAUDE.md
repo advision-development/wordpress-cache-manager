@@ -125,8 +125,10 @@ These are requirements, not preferences. Each was either asked for explicitly or
   layout, and only from what its SDK names (`getCacheDir()`, `Device::getKnownTypes()`,
   `Pagecache::getUrlDir()` with `URLPathVersion`, `NitroPack\Url\Url`). An unknown folder rule
   version is "not available", never a guess. `is_dir`/`scandir`/`filemtime` only; no SDK call
-  that writes. The Optimizer tab exists only where it is available.
-- **NitroPack's API is asked only by a person**: the summary when the Optimizer tab opens, lookups
+  that writes. The tab (id `optimizer`, labelled
+  NitroPack) exists only where it is available. A second readable optimizer makes it
+  *Optimizers* with a sub-tab each; the id and every `advcm_optimizer_*` name stay.
+- **NitroPack's API is asked only by a person**: the summary when the NitroPack tab opens, lookups
   through `wp_ajax_advcm_optimizer_lookup` after the page loads; cached 10 minutes, 10 lookups a
   minute per person, a failed lookup not cached. Never in a page view, a save or WP-Cron.
 - **The oldest-copies index is bounded**: `advcm_optimizer_index`, 100 copies per device for the

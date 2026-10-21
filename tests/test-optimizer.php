@@ -31,6 +31,7 @@ $dir = sys_get_temp_dir() . '/advcm-np-' . getmypid() . '-' . mt_rand();
 ADVCM_Optimizer_Nitropack::use_sdk( new Stub_Nitro_Sdk( $dir ) );
 
 check( 'with an SDK and its cache directory: available', true === ADVCM_Optimizer_Nitropack::available(), ADVCM_Optimizer_Nitropack::why_not() );
+check( 'it is named NitroPack, for the tab', 'NitroPack' === ADVCM_Optimizer_Nitropack::name() );
 check( 'the devices are the SDK\'s own', array( 'mobile', 'tablet', 'desktop' ) === ADVCM_Optimizer_Nitropack::devices() );
 check( 'and the expiry is the config\'s', array( 'expire' => 86400, 'stale' => 300 ) === ADVCM_Optimizer_Nitropack::expire() );
 

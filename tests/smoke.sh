@@ -651,10 +651,10 @@ grep -q 'That is not a page on this site.' <<< "${refused}" && pass "the cache-a
 
 # ------------------------------------------------------------------------ 0.6.0 Optimizer
 
-# Without NitroPack there is no Optimizer tab, and asking for it opens Status.
+# Without NitroPack there is no NitroPack tab, and asking for it opens Status.
 status_page="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=optimizer")"
-if ! grep -q '>Optimizer</a>' <<< "${status_page}" && grep -q 'nav-tab-active">Status</a>' <<< "${status_page}" && grep -q '>Inspect a page</a>' <<< "${status_page}"; then
-	pass "without NitroPack: no Optimizer tab; Cache age is Inspect a page"
+if ! grep -q '>NitroPack</a>' <<< "${status_page}" && grep -q 'nav-tab-active">Status</a>' <<< "${status_page}" && grep -q '>Inspect a page</a>' <<< "${status_page}"; then
+	pass "without NitroPack: no NitroPack tab; Cache age is Inspect a page"
 else
 	fail "the tabs on a site without NitroPack are wrong"
 fi
@@ -715,10 +715,10 @@ wpeval "${WORK}/np-copies.php"
 
 check_pages "with a stand-in NitroPack"
 opt_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=optimizer")"
-if grep -q 'nav-tab-active">Optimizer</a>' <<< "${opt_tab}" && grep -q 'class="advcm-help"' <<< "${opt_tab}" && grep -q '<th style="width:220px">Copies, desktop</th><td>2 pages, 0 of them invalidated</td>' <<< "${opt_tab}" && grep -q 'no folder for this device' <<< "${opt_tab}"; then
-	pass "the Optimizer tab: its help and the copies on disk per device, a device with no folder said"
+if grep -q 'nav-tab-active">NitroPack</a>' <<< "${opt_tab}" && grep -q 'class="advcm-help"' <<< "${opt_tab}" && grep -q '<th style="width:220px">Copies, desktop</th><td>2 pages, 0 of them invalidated</td>' <<< "${opt_tab}" && grep -q 'no folder for this device' <<< "${opt_tab}"; then
+	pass "the NitroPack tab: its help and the copies on disk per device, a device with no folder said"
 else
-	fail "the Optimizer tab is not as expected: $(grep -oE 'Site summary.{0,300}' <<< "${opt_tab}" | head -1)"
+	fail "the NitroPack tab is not as expected: $(grep -oE 'Site summary.{0,300}' <<< "${opt_tab}" | head -1)"
 fi
 
 # Opening a screen scheduled the first oldest-copies scan; WP-Cron runs it to the end.
@@ -757,7 +757,7 @@ grep -q '>NitroPack, per device</h3>' <<< "${inspect}" && grep -q '<td>desktop</
 docker exec "${WP}" rm -rf /var/www/html/wp-content/mu-plugins/advcm-smoke-nitropack.php /var/www/html/wp-content/cache/advcm-smoke-np
 check_pages "after NitroPack was removed"
 opt_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=optimizer")"
-grep -q '>Optimizer</a>' <<< "${opt_tab}" && fail "the Optimizer tab stayed after NitroPack was removed" || pass "NitroPack removed: the Optimizer tab goes, nothing fails"
+grep -q '>NitroPack</a>' <<< "${opt_tab}" && fail "the NitroPack tab stayed after NitroPack was removed" || pass "NitroPack removed: its tab goes, nothing fails"
 
 # --------------------------------------------------------------------- the security scanner
 

@@ -48,14 +48,14 @@ and the code disagree.
 | Site transient | `advcm_loopback` | whether the site can reach its own home page; an hour (ten minutes when not) |
 | Transient | `advcm_notice_<user id>` | one minute |
 | Transient | `advcm_rate_<user id>` | per-URL clears in the last minute, at most 10 |
-| Transient | `advcm_optimizer_summary` | since 0.6.0, the Optimizer tab's summary (NitroPack's pending rebuilds and last purge from its API, copies per device, expiry); 10 min, 1 min after a failure. Deleted on uninstall |
+| Transient | `advcm_optimizer_summary` | since 0.6.0, the NitroPack tab's summary (NitroPack's pending rebuilds and last purge from its API, copies per device, expiry); 10 min, 1 min after a failure. Deleted on uninstall |
 | Transient | `advcm_optimizer_look_<md5>` | since 0.6.0, one lookup a person asked NitroPack's API for (a page's tags, at most 100; or the pages showing a post, at most 50); 10 min; a failure is not kept |
 | Transient | `advcm_rate_look_<user id>` | since 0.6.0, lookups one person asked in the last minute, at most 10 |
 | Transient | `advcm_rate_site` | since 0.5.1, per-URL clears everybody started in the last minute, at most 30 |
 | Capability | `advcm_purge`, `advcm_purge_hard` | granted by a `user_has_cap` filter from `edit_others_posts` (both, since 0.4.0; a filter narrows either); never stored |
 | admin-post | `advcm_purge`, `advcm_resume`, `advcm_check_release` | logged in, capability and nonce |
 | admin-post | `advcm_listings` | logged in, `advcm_purge` and nonce; since 0.5.0, starts a listings scan on the Freshness tab |
-| admin-post | `advcm_optimizer_refresh` | logged in, `advcm_purge` and nonce; since 0.6.0, Refresh now on the Optimizer tab: the summary asked again, the oldest-copies scan scheduled. Reads only |
+| admin-post | `advcm_optimizer_refresh` | logged in, `advcm_purge` and nonce; since 0.6.0, Refresh now on the NitroPack tab: the summary asked again, the oldest-copies scan scheduled. Reads only |
 | admin-post | `advcm_settings` | logged in, `advcm_purge_hard` and nonce; since 0.4.0, saves the Settings tab, pauses and resumes auto-clear, switches each post's own page |
 | admin-post | `advcm_rules` | logged in, `advcm_purge_hard` and nonce; changes auto-clear rules, or pauses and resumes them all |
 | Hook | `wp_after_insert_post` | marks the auto-clear rules a saved post triggers. One option read when no rule is on; never clears in the save request |
