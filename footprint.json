@@ -31,6 +31,13 @@
       "single": true,
       "why": "since 0.5.0, the next batch of a listings scan somebody started on the Freshness tab: up to 20 Elementor documents within 8 seconds, then the next event, until done. Scheduled only by a press; reads, never writes content",
       "callback": "ADVCM_Listings::cron, registered on every request"
+    },
+    {
+      "hook": "advcm_optimizer_scan",
+      "args": [],
+      "single": true,
+      "why": "since 0.6.0, only on a site with NitroPack: the oldest-copies scan, every 6 hours, first put on the schedule when a CacheManager screen opens. Each run reads up to 1,000 of NitroPack's cache folders within 2 seconds (file times only), then hashes this site's URLs in batches of 500 to name the kept ones, then the next event. Reads only",
+      "callback": "ADVCM_Optimizer_Index::cron, registered on every request"
     }
   ],
   "options": [
@@ -50,6 +57,8 @@
     { "name": "advcm_freshness_stats", "autoload": false, "why": "since 0.5.1, what the measurements add up to: per page (at most 200, the page cleared longest ago dropped first; URL cut to 2048 characters) how many clears by hand and automatic, how many found no age, a copy under 10 minutes or one past the cache target, the oldest and the sums for averages, the rules seen, and since 0.5.2 where a redirect pointed (a path cut to 200 characters) and how many clears by hand found a fresh copy; per day, the last 30, the same counts" },
     { "name": "advcm_listings", "autoload": false, "why": "since 0.5.0, the last listings scan: who started it, a cursor (a post id) and counters, and at most 300 findings (red, amber and custom-query listings, each string cut; green ones only counted). Replaced by the next scan" },
     { "name": "advcm_lock_listings", "autoload": false, "why": "since 0.5.0, one row while a listings batch runs, naming the document it is reading so a run that dies is stepped over; deleted when the batch ends" },
+    { "name": "advcm_optimizer_index", "autoload": false, "why": "since 0.6.0, the oldest-copies scan: its cursor and counters, and per NitroPack device at most 100 copies twice (the last finished list and the one being built), each a folder name, its time, invalidated and stale flags and a reference to the post, term or home page it is (never the URL). Worst case under 150 KB" },
+    { "name": "advcm_lock_optimizer", "autoload": false, "why": "since 0.6.0, one row while an oldest-copies batch runs, naming the folder it is reading so a run that dies is stepped over; deleted when the batch ends" },
     { "name": "advcm_site_wide_log", "autoload": false, "why": "since 0.5.1, the times of the whole-site clears in the last hour, at most 4, for the hourly limit" },
     { "name": "advcm_rules_paused", "autoload": false, "why": "present while an administrator has paused every auto-clear rule; holds when. Read on a post save only when a rule is switched on" }
   ],

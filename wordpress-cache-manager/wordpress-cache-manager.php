@@ -83,6 +83,9 @@ try {
 	// The listings scan: its WP-Cron event and its button. Reads documents only when pressed.
 	ADVCM_Listings::register();
 
+	// The oldest NitroPack copies: its WP-Cron event. Reads nothing on a site without NitroPack.
+	ADVCM_Optimizer_Index::register();
+
 	// The Settings tab's form. The settings themselves are read where they are used.
 	ADVCM_Settings::register();
 
@@ -117,6 +120,7 @@ function advcm_deactivate() {
 		wp_unschedule_hook( 'advcm_continue' );
 		wp_unschedule_hook( 'advcm_auto_flush' );
 		wp_unschedule_hook( 'advcm_listings_scan' );
+		wp_unschedule_hook( 'advcm_optimizer_scan' );
 	} catch ( Throwable $e ) {
 		error_log( '[advcm] deactivate: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- deactivating must never fail.
 	}
