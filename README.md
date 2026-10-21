@@ -8,7 +8,7 @@ The design spec lives in the team's internal workspace, not in this public repos
 
 ## Status
 
-**0.6.1.** Tools → CacheManager, in seven tabs — Status, Clear, Inspect a page, History,
+**0.7.0.** Tools → CacheManager, in seven tabs — Status, Clear, Inspect a page, History,
 Freshness, Auto-clear, Settings, and an eighth, NitroPack, on a site with NitroPack — each with a box of its last changes, and the CacheManager menu on the admin bar. Status lists only the layers a clear runs on this site, checked each
 time the screen opens: install a cache plugin later and it appears on the next load. Talking to Hawkeye is a later phase.
 
@@ -74,8 +74,10 @@ names the page.
 Asked for in issue #21: on BMR editors flushed NitroPack site-wide when a new article did not show
 on a hub page, mostly guessing, and a whole-site flush leaves pages un-optimized for an hour. The
 tab exists only where an optimizer the plugin can read is installed, and is named after it — today
-only NitroPack can be read. With a second one it becomes *Optimizers*, a sub-tab each. It only
-shows: it never purges, invalidates or changes a NitroPack setting.
+only NitroPack can be read. With a second one it becomes *Optimizers*, a sub-tab each. It never
+purges by itself or changes a NitroPack setting. Since 0.7.0 each oldest copy, and Inspect a page,
+has **Clear this page**: that one page cleared in every layer, Fast, NitroPack purged, through the
+Clear tab's own action — the same nonce, page-clear limits, History and Last changes.
 
 - **Site summary**: copies per device and how many are invalidated (counted on disk), pages
   waiting to rebuild and the last purge — when, which page or tag, why (NitroPack keeps only the

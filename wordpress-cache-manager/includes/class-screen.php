@@ -550,7 +550,7 @@ final class ADVCM_Screen {
 
 			case 'optimizer':
 				return array(
-					'what'  => __( 'What NitroPack keeps for this site: how many optimized copies, which have lived longest, and which pages show a post. It only shows: it never purges, invalidates or changes a NitroPack setting.', 'advcm' ),
+					'what'  => __( 'What NitroPack keeps for this site: how many optimized copies, which have lived longest, and which pages show a post. It never purges by itself or changes a NitroPack setting; Clear this page clears one page, as the Clear tab would.', 'advcm' ),
 					'parts' => array(
 						__( 'When to use it', 'advcm' ) => array(
 							__( 'Before flushing NitroPack because a change does not show: look up the post under Pages showing a post, or inspect the page. If its copy is older than the change, clear that page; a whole-site flush leaves every page un-optimized while NitroPack rebuilds them.', 'advcm' ),
@@ -573,6 +573,7 @@ final class ADVCM_Screen {
 							__( 'Waiting to rebuild', 'advcm' ) => __( 'pages queued at NitroPack for a new copy.', 'advcm' ),
 							__( 'Last purge', 'advcm' )         => __( 'NitroPack\'s last purge: when, which page or tag, and why. NitroPack keeps only the last one.', 'advcm' ),
 							__( 'Rule', 'advcm' )               => __( 'whether an auto-clear rule names the page, so a new post clears it.', 'advcm' ),
+							__( 'Clear this page', 'advcm' )    => __( 'clears that one page in every layer, at once (Fast), NitroPack purged so the new content shows straight away. Counted against the page-clear limits and listed in History like any clear.', 'advcm' ),
 							__( 'rebuilt since the scan', 'advcm' ) => __( 'the list is re-read from disk each time it is shown: this copy was made after the last scan, and its time is the new one.', 'advcm' ),
 							__( 'cleared since the scan', 'advcm' ) => __( 'the copy the scan found is gone (purged); NitroPack builds a new one on the next visit.', 'advcm' ),
 						),
@@ -857,7 +858,35 @@ final class ADVCM_Screen {
 			}
 		}
 
-		echo '<li>' . esc_html__( 'A clear of this page on the Clear tab.', 'advcm' ) . '</li></ul>';
+		echo '<li>' . esc_html__( 'A clear of this page:', 'advcm' ) . ' ';
+		self::clear_form_open();
+		echo self::clear_button( $url ) . '</form></li></ul>'; // phpcs:ignore WordPress.Security.EscapeOutput -- clear_button() escapes.
+	}
+
+	/**
+	 * The start of a form that clears one page the way the Clear tab does: its own action, nonce,
+	 * scope and checks (rate limits, History, Last changes, the measurement before it). Fast, and
+	 * NitroPack purged — a page clear purges unless an invalidate is asked for — which is what a
+	 * person looking at an old copy wants. Closed by the caller, after its buttons.
+	 *
+	 * @return void
+	 */
+	private static function clear_form_open() {
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="display:inline">';
+		wp_nonce_field( ADVCM_Controller::ACTION );
+		echo '<input type="hidden" name="action" value="' . esc_attr( ADVCM_Controller::ACTION ) . '" />';
+		echo '<input type="hidden" name="scope" value="urls" />';
+		echo '<input type="hidden" name="mode" value="' . esc_attr( ADVCM_Modes::FAST ) . '" />';
+	}
+
+	/**
+	 * A button clearing one page, inside clear_form_open().
+	 *
+	 * @param string $url URL.
+	 * @return string HTML, escaped.
+	 */
+	private static function clear_button( $url ) {
+		return '<button type="submit" class="button button-small" name="urls" value="' . esc_attr( (string) $url ) . '">' . esc_html__( 'Clear this page', 'advcm' ) . '</button>';
 	}
 
 	/**
@@ -2532,9 +2561,12 @@ final class ADVCM_Screen {
 			}
 
 			echo '<details' . ( $first ? ' open' : '' ) . ' style="margin-top:12px"><summary><strong>' . esc_html( $device ) . '</strong> (' . (int) count( $rows ) . ')</summary>';
+
+			self::clear_form_open();
+
 			echo '<div style="overflow-x:auto"><table class="widefat striped"><thead><tr>';
 
-			foreach ( array( __( 'Page', 'advcm' ), __( 'Created (UTC)', 'advcm' ), __( 'Age', 'advcm' ), __( 'Lives until (UTC, estimated)', 'advcm' ), __( 'Copy', 'advcm' ), __( 'Rule', 'advcm' ) ) as $head ) {
+			foreach ( array( __( 'Page', 'advcm' ), __( 'Created (UTC)', 'advcm' ), __( 'Age', 'advcm' ), __( 'Lives until (UTC, estimated)', 'advcm' ), __( 'Copy', 'advcm' ), __( 'Rule', 'advcm' ), '' ) as $head ) {
 				echo '<th>' . esc_html( $head ) . '</th>';
 			}
 
@@ -2555,10 +2587,11 @@ final class ADVCM_Screen {
 				echo '<td>' . esc_html( $made ? ADVCM_Probe::duration( max( 0, time() - (int) $row['created'] ) ) : '—' ) . '</td>';
 				echo '<td>' . esc_html( null === $row['lives_until'] ? '—' : self::until_words( $row['lives_until'] ) ) . '</td>';
 				echo '<td>' . esc_html( $words ) . '</td>';
-				echo '<td>' . esc_html( '' === $row['url'] ? '—' : ( empty( ADVCM_Auto::naming( $row['url'] ) ) ? __( 'no rule', 'advcm' ) : __( 'a rule clears it', 'advcm' ) ) ) . '</td></tr>';
+				echo '<td>' . esc_html( '' === $row['url'] ? '—' : ( empty( ADVCM_Auto::naming( $row['url'] ) ) ? __( 'no rule', 'advcm' ) : __( 'a rule clears it', 'advcm' ) ) ) . '</td>';
+				echo '<td>' . ( '' === $row['url'] ? '' : self::clear_button( $row['url'] ) ) . '</td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput -- clear_button() escapes.
 			}
 
-			echo '</tbody></table></div></details>';
+			echo '</tbody></table></div></form></details>';
 
 			$first = false;
 		}

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0 — 2026-10-21
+
+- **Clear this page** on each oldest copy of the NitroPack tab and on Inspect a page: seeing a
+  copy hours old, a person clears that page there instead of copying its address into the Clear
+  tab. One page, Fast, NitroPack purged so the new content shows at once; it goes through the
+  Clear tab's own action, so the same nonce, page-clear limits, History and Last changes apply.
+  The tab still never purges by itself.
+- The oldest copies' addresses are kept an hour. Each one is get_permalink(), which other plugins'
+  filters make a query or more: on BMR 300 rows took 800 ms. Dropped when a scan finishes.
+
 ## 0.6.1 — 2026-10-21
 
 - **Oldest copies showed ages that were no longer true.** The list was the last scan's snapshot,
