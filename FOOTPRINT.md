@@ -50,6 +50,7 @@ and the code disagree.
 | Transient | `advcm_rate_<user id>` | per-URL clears in the last minute, at most 10 |
 | Transient | `advcm_optimizer_summary` | since 0.6.0, the NitroPack tab's summary (NitroPack's pending rebuilds and last purge from its API, copies per device, expiry); 10 min, 1 min after a failure. Deleted on uninstall |
 | Transient | `advcm_optimizer_look_<md5>` | since 0.6.0, one lookup a person asked NitroPack's API for (a page's tags, at most 100; or the pages showing a post, at most 50); 10 min; a failure is not kept |
+| Transient | `advcm_optimizer_urls` | since 0.7.0, the addresses of the oldest copies the NitroPack tab shows (at most 400), an hour; dropped when a scan finishes, deleted on uninstall |
 | Transient | `advcm_rate_look_<user id>` | since 0.6.0, lookups one person asked in the last minute, at most 10 |
 | Transient | `advcm_rate_site` | since 0.5.1, per-URL clears everybody started in the last minute, at most 30 |
 | Capability | `advcm_purge`, `advcm_purge_hard` | granted by a `user_has_cap` filter from `edit_others_posts` (both, since 0.4.0; a filter narrows either); never stored |

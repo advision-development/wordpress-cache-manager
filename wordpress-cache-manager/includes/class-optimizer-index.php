@@ -37,6 +37,12 @@ final class ADVCM_Optimizer_Index {
 	/** The scan and its lists. */
 	const OPTION = 'advcm_optimizer_index';
 
+	/**
+	 * The rows' addresses, kept an hour: get_permalink() runs other plugins' filters, a query or
+	 * more a row (BMR: 800 ms for 300 rows). Only the rows shown; dropped when a scan finishes.
+	 */
+	const URLS = 'advcm_optimizer_urls';
+
 	/** Held while a run reads folders; names the folder it is on. */
 	const LOCK = 'advcm_lock_optimizer';
 
@@ -158,6 +164,9 @@ final class ADVCM_Optimizer_Index {
 
 		$expire = ADVCM_Optimizer_Nitropack::expire()['expire'];
 		$dir    = ADVCM_Optimizer_Nitropack::device_dir( $device );
+		$urls   = get_transient( self::URLS );
+		$urls   = is_array( $urls ) ? $urls : array();
+		$asked  = false;
 		$out    = array();
 
 		foreach ( $state['rows'][ $device ] as $row ) {
@@ -171,9 +180,21 @@ final class ADVCM_Optimizer_Index {
 				$row = self::recheck( $row, $dir );
 			}
 
-			$row['url']         = self::url( isset( $row['ref'] ) ? (string) $row['ref'] : '' );
+			$ref = isset( $row['ref'] ) ? (string) $row['ref'] : '';
+
+			if ( ! isset( $urls[ $ref ] ) || ! is_string( $urls[ $ref ] ) ) {
+				$urls[ $ref ] = self::url( $ref );
+				$asked        = true;
+			}
+
+			$row['url']         = $urls[ $ref ];
 			$row['lives_until'] = $expire > 0 && null !== $row['created'] ? (int) $row['created'] + $expire : null;
 			$out[]              = $row;
+		}
+
+		if ( $asked ) {
+			// Every device's rows together are at most DEVICES_KEEP × KEEP references.
+			set_transient( self::URLS, array_slice( $urls, -self::DEVICES_KEEP * self::KEEP, null, true ), HOUR_IN_SECONDS );
 		}
 
 		usort(
@@ -611,6 +632,7 @@ final class ADVCM_Optimizer_Index {
 		$state['next_at']  = time() + self::EVERY;
 
 		self::save( $state );
+		delete_transient( self::URLS );
 
 		wp_clear_scheduled_hook( self::HOOK );
 		self::schedule( $state['next_at'] );

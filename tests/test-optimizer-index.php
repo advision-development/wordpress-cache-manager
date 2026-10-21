@@ -24,7 +24,28 @@ function home_url( $path = '' ) {
 }
 
 function get_permalink( $id ) {
+	$GLOBALS['permalinks'] = ( isset( $GLOBALS['permalinks'] ) ? $GLOBALS['permalinks'] : 0 ) + 1;
+
 	return 'https://example.test/p-' . $id . '/';
+}
+
+$GLOBALS['transients'] = array();
+
+function get_transient( $name ) {
+	return isset( $GLOBALS['transients'][ $name ] ) ? $GLOBALS['transients'][ $name ] : false;
+}
+
+function set_transient( $name, $value, $ttl = 0 ) {
+	$GLOBALS['transients'][ $name ] = $value;
+	$GLOBALS['ttl'][ $name ]        = $ttl;
+
+	return true;
+}
+
+function delete_transient( $name ) {
+	unset( $GLOBALS['transients'][ $name ] );
+
+	return true;
 }
 
 require __DIR__ . '/store-stubs.php';
@@ -149,6 +170,26 @@ check( 'named from this site\'s own URLs', 'https://example.test/p-400/' === $ro
 check( 'a folder no URL of the site names is unidentified', '' === $rows[1]['url'] );
 
 $mobile = ADVCM_Optimizer_Index::rows( 'mobile' );
+
+// Each row's address comes from WordPress (get_permalink), which other plugins' filters make cost a
+// query or more each: measured on BMR, 800 ms for 300 rows. They are kept an hour, for the rows
+// shown only, and dropped when a scan finishes.
+$GLOBALS['permalinks'] = 0;
+ADVCM_Optimizer_Index::rows( 'desktop' );
+
+check( 'the rows\' addresses are asked of WordPress once, then kept', 0 === $GLOBALS['permalinks'] && HOUR_IN_SECONDS === $GLOBALS['ttl'][ ADVCM_Optimizer_Index::URLS ] );
+check( 'only for the rows kept', count( $GLOBALS['transients'][ ADVCM_Optimizer_Index::URLS ] ) <= 3 * ADVCM_Optimizer_Index::KEEP );
+
+$junk = array();
+
+for ( $i = 0; $i < 1000; $i++ ) {
+	$junk[ 'p:' . ( 100000 + $i ) ] = 'https://example.test/gone-' . $i . '/';
+}
+
+$GLOBALS['transients'][ ADVCM_Optimizer_Index::URLS ] = $junk;
+ADVCM_Optimizer_Index::rows( 'desktop' );
+
+check( 'and never more than every device\'s rows, whatever was kept before', count( $GLOBALS['transients'][ ADVCM_Optimizer_Index::URLS ] ) <= ADVCM_Optimizer_Index::DEVICES_KEEP * ADVCM_Optimizer_Index::KEEP );
 
 check( 'each device on its own; an empty folder is no copy', 2 === count( $mobile ) && 'https://example.test/p-3/' === $mobile[0]['url'] && 'https://example.test/' === $mobile[1]['url'] && 1 === $mobile[1]['stale'] );
 check( 'a device with no folder has no rows, and no error', array() === ADVCM_Optimizer_Index::rows( 'tablet' ) );
@@ -297,7 +338,10 @@ foreach ( array( 'desktop', 'mobile', 'tablet' ) as $device ) {
 
 ADVCM_Optimizer_Index::start( 7 );
 $GLOBALS['asked'] = array();
+$GLOBALS['transients'][ ADVCM_Optimizer_Index::URLS ] = array( 'home' => 'https://example.test/old/' );
 scan_all( 1000 );
+
+check( 'a finished scan drops the kept addresses: its rows are new', ! isset( $GLOBALS['transients'][ ADVCM_Optimizer_Index::URLS ] ) );
 
 check( 'naming stops once every kept folder is named', ! in_array( 'terms', $GLOBALS['asked'], true ), implode( ',', array_unique( $GLOBALS['asked'] ) ) );
 ADVCM_Optimizer_Index::start( 7 );

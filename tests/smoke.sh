@@ -740,6 +740,12 @@ wpcli wp eval 'touch( WP_CONTENT_DIR . "/cache/advcm-smoke-np/desktop/" . md5( h
 rebuilt_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=optimizer")"
 grep -q 'rebuilt since the scan' <<< "${rebuilt_tab}" && pass "a copy rebuilt since the scan is shown with its new time, marked" || fail "the oldest copies still show the scan's age for a rebuilt copy"
 
+# Clear this page, as the button posts it: one page, Fast, through the Clear tab's action.
+purge_nonce="$(grep -oE 'name="_wpnonce" value="[a-f0-9]+" /><input type="hidden" name="_wp_http_referer" value="[^"]*" /><input type="hidden" name="action" value="advcm_purge" /><input type="hidden" name="scope" value="urls" /><input type="hidden" name="mode" value="fast"' <<< "${rebuilt_tab}" | head -1 | sed 's/.*name="_wpnonce" value="//; s/".*//')"
+curl -s -b "${jar}" -o /dev/null -d "action=advcm_purge&_wpnonce=${purge_nonce}&scope=urls&mode=fast" --data-urlencode "urls=${URL}/" "${URL}/wp-admin/admin-post.php"
+cleared="$(wpcli wp eval '$all = (array) get_option( ADVCM_Jobs::OPTION, array() ); ksort( $all ); $j = end( $all ); echo $j["mode"], " ", $j["scope"], " ", implode( ",", $j["urls"] ), " ", $j["state"];' | tr -d '\r')"
+[[ "${cleared}" == "fast urls ${URL}/ done"* ]] && pass "Clear this page clears that page, Fast, as the Clear tab would (${cleared})" || fail "Clear this page did not clear the page: '${cleared}' (nonce '${purge_nonce}')"
+
 look_nonce="$(grep -oE 'd.append\("action","advcm_optimizer_lookup"\);d.append\("_ajax_nonce","[a-f0-9]+"' <<< "${opt_tab}" | head -1 | sed 's/.*"_ajax_nonce","//; s/"$//')"
 summary="$(curl -s -b "${jar}" -d "action=advcm_optimizer_lookup&_ajax_nonce=${look_nonce}&kind=summary" "${URL}/wp-admin/admin-ajax.php")"
 grep -q '"pending":6' <<< "${summary}" && grep -q 'Updated Post Smoke' <<< "${summary}" && pass "the summary is asked after the page loads: pages waiting to rebuild, the last purge, its HTML stripped" || fail "the summary lookup did not answer: ${summary:0:300}"

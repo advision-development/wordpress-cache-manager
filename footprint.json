@@ -72,6 +72,7 @@
     { "name": "advcm_rate_site", "site": false, "why": "since 0.5.1, per-URL clears everybody started in the last minute (at most 30)" },
     { "name": "advcm_optimizer_summary", "site": false, "why": "since 0.6.0, the NitroPack tab's summary: NitroPack's pages waiting to rebuild and its last purge (asked from its API), the copies per device and the expiry in force; ten minutes, one when NitroPack did not answer" },
     { "name": "advcm_optimizer_look_<md5>", "site": false, "why": "since 0.6.0, one lookup a person asked NitroPack's API for — a page's tags (at most 100, in words) or the pages showing a post (at most 50, each device's copy time); ten minutes. A failed lookup is not kept" },
+    { "name": "advcm_optimizer_urls", "site": false, "why": "since 0.7.0, the addresses of the oldest copies shown on the NitroPack tab (a reference → URL each, at most 400), an hour, dropped when a scan finishes. Deleted on uninstall" },
     { "name": "advcm_rate_look_<user id>", "site": false, "why": "since 0.6.0, lookups one person asked in the last minute (at most 10)" },
     { "name": "advcm_rate_<user id>", "site": false, "why": "per-URL clears one person started in the last minute (at most 10)" }
   ],

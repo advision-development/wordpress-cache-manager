@@ -555,6 +555,8 @@ check( 'the lookups\' inspect link is built from a raw address, the URL last', 0
 check( 'the expiry in force', false !== strpos( $out, '24 h' ) );
 check( 'the oldest copies, with an inspect link for a named page', false !== strpos( $out, 'tab=check' ) && false !== strpos( $out, 'advcm_probe=' . rawurlencode( home_url( '/' ) ) ) && false !== strpos( $out, 'nonce-' . ADVCM_Screen::PROBE ) );
 check( 'an unidentified page says so', false !== strpos( $out, 'unidentified page' ) );
+check( 'each named copy has a Clear this page button: one page, Fast, through the Clear tab\'s own action and nonce', false !== strpos( $out, 'name="action" value="' . ADVCM_Controller::ACTION . '"' ) && false !== strpos( $out, 'nonce-' . ADVCM_Controller::ACTION ) && false !== strpos( $out, 'name="scope" value="urls"' ) && false !== strpos( $out, 'name="mode" value="fast"' ) && false !== strpos( $out, 'name="urls" value="' . esc_attr( home_url( '/' ) ) . '"' ) );
+check( 'an unidentified copy has none: there is no address to clear', 1 === substr_count( $out, 'name="urls" value=' ) );
 check( 'a copy gone from disk since the scan says so, with no 1970 date', false !== strpos( $out, 'cleared since the scan' ) && false === strpos( $out, '1970-' ) );
 check( 'invalidated and lives until (estimated)', false !== strpos( $out, 'invalidated' ) && false !== strpos( $out, 'Lives until' ) );
 check( 'a refresh form, posted with its nonce', false !== strpos( $out, 'value="' . ADVCM_Optimizer::REFRESH . '"' ) && false !== strpos( $out, 'nonce-' . ADVCM_Optimizer::REFRESH ) );
@@ -582,6 +584,13 @@ check( 'with no rule: a new post does not rebuild it, and where to add one', fal
 $GLOBALS['options'][ ADVCM_Auto::RULES ] = array( 'r1' => array( 'enabled' => true, 'post_type' => 'post', 'urls' => array( 'https://example.test/usa/texas' ) ) );
 
 check( 'with a rule naming it, says so', false !== strpos( screen_part( 'render_inspect_optimizer', array( 'https://example.test/usa/texas/' ) ), 'auto-clear rule clears this page' ) );
+check( 'Inspect a page can clear the page it inspects, Fast', false !== strpos( screen_part( 'render_inspect_optimizer', array( 'https://example.test/usa/texas/' ) ), 'name="urls" value="https://example.test/usa/texas/"' ) );
+
+// The button sends what the Clear tab sends for one page: Fast, and NitroPack purged (a page
+// clear purges unless an invalidate is asked for), which is what a person seeing an old copy wants.
+$req = ADVCM_Controller::request( array( 'scope' => 'urls', 'mode' => 'fast', 'urls' => 'https://example.test/usa/texas/' ), false );
+
+check( 'that is one page, Fast, NitroPack purged', array( 'https://example.test/usa/texas/' ) === $req['urls'] && 'fast' === $req['mode'] && false === ADVCM_Adapter_Nitropack::invalidates( 'urls', $req['options'] ) );
 
 // Relabelled only where NitroPack answered (its state in the page), not where a copy merely exists.
 $lw = new ReflectionMethod( 'ADVCM_Screen', 'layer_words' );

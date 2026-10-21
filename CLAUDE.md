@@ -125,7 +125,9 @@ These are requirements, not preferences. Each was either asked for explicitly or
   layout, and only from what its SDK names (`getCacheDir()`, `Device::getKnownTypes()`,
   `Pagecache::getUrlDir()` with `URLPathVersion`, `NitroPack\Url\Url`). An unknown folder rule
   version is "not available", never a guess. `is_dir`/`scandir`/`filemtime` only; no SDK call
-  that writes. The tab (id `optimizer`, labelled
+  that writes. Its only action on a site is **Clear this page** (since 0.7.0): one page, Fast,
+  posted to the Clear tab's own `advcm_purge` with its nonce, so every page-clear limit and record
+  applies; nothing on it purges by itself. The tab (id `optimizer`, labelled
   NitroPack) exists only where it is available. A second readable optimizer makes it
   *Optimizers* with a sub-tab each; the id and every `advcm_optimizer_*` name stay.
 - **NitroPack's API is asked only by a person**: the summary when the NitroPack tab opens, lookups
