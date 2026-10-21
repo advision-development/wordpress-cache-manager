@@ -54,6 +54,13 @@ final class ADVCM_Optimizer_Index {
 	const BUDGET      = 2;
 	const NAME_BATCH  = 500;
 
+	/**
+	 * Folders per lock write. The lock names the last folder of the chunk being read, so a run
+	 * that dies is stepped over by at most this many folders — and a run is not 1,000 option
+	 * writes.
+	 */
+	const LOCK_EVERY = 50;
+
 	/** Seconds between scans. */
 	const EVERY = 21600;
 
@@ -274,8 +281,12 @@ final class ADVCM_Optimizer_Index {
 				return 0;
 			}
 
-			// A run died holding it. The folder it named is the likeliest cause: step over it.
-			if ( ! empty( $lock['folder'] ) && strcmp( (string) $lock['folder'], $state['cursor'] ) > 0 ) {
+			// A run died holding it. The chunk it named is the likeliest cause: step over it — on the
+			// device it was reading, which may be past the one the scan last saved.
+			$on = isset( $lock['device'] ) ? (int) $lock['device'] : $state['device'];
+
+			if ( ! empty( $lock['folder'] ) && 'folders' === $state['phase'] && ( $on > $state['device'] || ( $on === $state['device'] && strcmp( (string) $lock['folder'], $state['cursor'] ) > 0 ) ) ) {
+				$state['device'] = $on;
 				$state['cursor'] = (string) $lock['folder'];
 				$state['skipped']++;
 			}
@@ -302,6 +313,29 @@ final class ADVCM_Optimizer_Index {
 			}
 		} catch ( Throwable $e ) {
 			ADVCM_Safe::report( 'optimizer_scan', $e );
+
+			// The same batch would throw again on every run, and the list would never refresh:
+			// step over what was being read — the chunk the lock names, or the rest of a naming
+			// phase — count it, and carry on.
+			try {
+				if ( 'names' === $state['phase'] ) {
+					self::next_phase( $state );
+				} else {
+					$held = get_option( self::LOCK, null );
+
+					if ( is_array( $held ) && ! empty( $held['folder'] ) ) {
+						$state['device'] = isset( $held['device'] ) ? (int) $held['device'] : $state['device'];
+						$state['cursor'] = (string) $held['folder'];
+					}
+				}
+
+				$state['skipped']++;
+				$state['next_at'] = time();
+				self::save( $state );
+				self::schedule( time() );
+			} catch ( Throwable $again ) {
+				ADVCM_Safe::report( 'optimizer_scan', $again );
+			}
 		} finally {
 			delete_option( self::LOCK );
 		}
@@ -328,13 +362,23 @@ final class ADVCM_Optimizer_Index {
 			$found  = array();
 			$out    = false;
 
-			foreach ( $names as $name ) {
+			foreach ( $names as $i => $name ) {
 				if ( $read >= $size || ( $read > 0 && self::now() - $began >= $budget ) ) {
 					$out = true;
 					break;
 				}
 
-				update_option( self::LOCK, array( 'at' => time(), 'folder' => $name ), false );
+				if ( 0 === $i % self::LOCK_EVERY ) {
+					update_option(
+						self::LOCK,
+						array(
+							'at'     => time(),
+							'device' => $state['device'],
+							'folder' => $names[ min( $i + self::LOCK_EVERY, count( $names ) ) - 1 ],
+						),
+						false
+					);
+				}
 
 				$copy = ADVCM_Optimizer_Nitropack::newest( $dir . '/' . $name );
 
@@ -411,16 +455,28 @@ final class ADVCM_Optimizer_Index {
 			}
 
 			if ( count( $urls ) < self::NAME_BATCH ) {
-				$keys                 = array_keys( self::PHASES );
-				$next                 = array_search( $phase, $keys, true ) + 1;
-				$state['name_phase']  = isset( $keys[ $next ] ) ? $keys[ $next ] : 'none';
-				$state['name_cursor'] = 0;
+				self::next_phase( $state );
 			}
 		}
 
 		$state['phase'] = 'done';
 
 		return $hashed;
+	}
+
+	/**
+	 * On to the next naming phase, or to none.
+	 *
+	 * @param array $state The scan.
+	 * @return void
+	 */
+	private static function next_phase( array &$state ) {
+		$keys = array_keys( self::PHASES );
+		$at   = array_search( $state['name_phase'], $keys, true );
+		$next = false === $at ? count( $keys ) : $at + 1;
+
+		$state['name_phase']  = isset( $keys[ $next ] ) ? $keys[ $next ] : 'none';
+		$state['name_cursor'] = 0;
 	}
 
 	/**
@@ -517,7 +573,9 @@ final class ADVCM_Optimizer_Index {
 	private static function after( $dir, $cursor ) {
 		$out = array();
 
-		foreach ( (array) @scandir( $dir ) as $name ) {
+		$entries = @scandir( $dir );
+
+		foreach ( false === $entries ? array() : $entries as $name ) {
 			$name = (string) $name;
 
 			if ( '.' !== $name && '..' !== $name && strcmp( $name, $cursor ) > 0 ) {

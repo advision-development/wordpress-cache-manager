@@ -248,7 +248,9 @@ final class ADVCM_Optimizer_Nitropack {
 	}
 
 	/**
-	 * The newest copy file in a folder: a page (.html) before a stale one (.stale).
+	 * The newest copy file in a folder: a page (.html) before a stale one (.stale). A gzipped
+	 * file (.html.gz, .stale.gz) counts as its page: NitroPack keeps one beside the other, and an
+	 * install may keep only the gzipped one.
 	 *
 	 * @param string $folder Folder.
 	 * @return array|null at, stale.
@@ -262,9 +264,10 @@ final class ADVCM_Optimizer_Nitropack {
 
 		foreach ( (array) @scandir( $folder ) as $name ) {
 			$name  = (string) $name;
-			$stale = '.stale' === substr( $name, -6 );
+			$base  = '.gz' === substr( $name, -3 ) ? substr( $name, 0, -3 ) : $name;
+			$stale = '.stale' === substr( $base, -6 );
 
-			if ( ! $stale && '.html' !== substr( $name, -5 ) ) {
+			if ( ! $stale && '.html' !== substr( $base, -5 ) ) {
 				continue;
 			}
 
@@ -287,9 +290,10 @@ final class ADVCM_Optimizer_Nitropack {
 	}
 
 	/**
-	 * How many folders each device holds, invalidated apart. Counts entries only; reads no file.
+	 * How many folders each device holds, invalidated apart, and whether its folder is there
+	 * and readable. Counts entries only; reads no file.
 	 *
-	 * @return array device => array( folders, invalidated ).
+	 * @return array device => array( folders, invalidated, state: ok|missing|unreadable ).
 	 */
 	public static function folder_counts() {
 		$out = array();
@@ -297,11 +301,18 @@ final class ADVCM_Optimizer_Nitropack {
 		foreach ( self::devices() as $device ) {
 			$folders     = 0;
 			$invalidated = 0;
+			$state       = 'ok';
 
 			try {
-				$dir = self::device_dir( $device );
+				$dir     = self::device_dir( $device );
+				$entries = '' === $dir ? false : @scandir( $dir );
 
-				foreach ( '' === $dir ? array() : (array) @scandir( $dir ) as $name ) {
+				if ( false === $entries ) {
+					$state   = '' === $dir ? 'missing' : 'unreadable';
+					$entries = array();
+				}
+
+				foreach ( $entries as $name ) {
 					if ( '.' === $name || '..' === $name ) {
 						continue;
 					}
@@ -314,11 +325,13 @@ final class ADVCM_Optimizer_Nitropack {
 				}
 			} catch ( Throwable $e ) {
 				$folders = 0;
+				$state   = 'unreadable';
 			}
 
 			$out[ $device ] = array(
 				'folders'     => $folders,
 				'invalidated' => $invalidated,
+				'state'       => $state,
 			);
 		}
 

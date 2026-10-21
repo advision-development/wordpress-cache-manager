@@ -715,8 +715,8 @@ wpeval "${WORK}/np-copies.php"
 
 check_pages "with a stand-in NitroPack"
 opt_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=optimizer")"
-if grep -q 'nav-tab-active">Optimizer</a>' <<< "${opt_tab}" && grep -q 'class="advcm-help"' <<< "${opt_tab}" && grep -q '<th style="width:220px">Waiting to rebuild</th><td>6</td>' <<< "${opt_tab}" && grep -q 'Updated Post Smoke' <<< "${opt_tab}"; then
-	pass "the Optimizer tab: its help, pages waiting to rebuild and the last purge, its HTML stripped"
+if grep -q 'nav-tab-active">Optimizer</a>' <<< "${opt_tab}" && grep -q 'class="advcm-help"' <<< "${opt_tab}" && grep -q '<th style="width:220px">Copies, desktop</th><td>2 pages, 0 of them invalidated</td>' <<< "${opt_tab}" && grep -q 'no folder for this device' <<< "${opt_tab}"; then
+	pass "the Optimizer tab: its help and the copies on disk per device, a device with no folder said"
 else
 	fail "the Optimizer tab is not as expected: $(grep -oE 'Site summary.{0,300}' <<< "${opt_tab}" | head -1)"
 fi
@@ -733,9 +733,14 @@ done
 [[ "${scan_done}" =~ ^[1-9][0-9]*$ ]] && pass "the first oldest-copies scan was scheduled by a screen and finished through WP-Cron" || fail "the oldest-copies scan did not finish: $(wpcli wp option get advcm_optimizer_index --format=json | head -c 300)"
 
 opt_tab="$(curl -s -b "${jar}" "${URL}/wp-admin/tools.php?page=advcm-cache&tab=optimizer")"
-grep -q "<code>${URL}/</code></a>" <<< "${opt_tab}" && grep -qE 'tab=check(&#038;|&amp;)advcm_probe=' <<< "${opt_tab}" && pass "the oldest copies are named from the site's URLs, each linked to Inspect a page" || fail "the oldest copies are not listed: $(grep -oE 'Oldest copies.{0,400}' <<< "${opt_tab}" | head -1)"
+grep -q "<code>${URL}/</code></a>" <<< "${opt_tab}" && grep -qE 'tab=check[^"]*advcm_probe=' <<< "${opt_tab}" && pass "the oldest copies are named from the site's URLs, each linked to Inspect a page" || fail "the oldest copies are not listed: $(grep -oE 'Oldest copies.{0,400}' <<< "${opt_tab}" | head -1)"
 
 look_nonce="$(grep -oE 'd.append\("action","advcm_optimizer_lookup"\);d.append\("_ajax_nonce","[a-f0-9]+"' <<< "${opt_tab}" | head -1 | sed 's/.*"_ajax_nonce","//; s/"$//')"
+summary="$(curl -s -b "${jar}" -d "action=advcm_optimizer_lookup&_ajax_nonce=${look_nonce}&kind=summary" "${URL}/wp-admin/admin-ajax.php")"
+grep -q '"pending":6' <<< "${summary}" && grep -q 'Updated Post Smoke' <<< "${summary}" && pass "the summary is asked after the page loads: pages waiting to rebuild, the last purge, its HTML stripped" || fail "the summary lookup did not answer: ${summary:0:300}"
+inspect_link="$(grep -oE 'href="[^"]*tab=check[^"]*advcm_probe=[^"]*"' <<< "${opt_tab}" | head -1 | sed 's/^href="//; s/"$//; s/&#038;/\&/g; s/&amp;/\&/g')"
+followed="$(curl -s -b "${jar}" "${inspect_link}")"
+grep -q '>NitroPack, per device</h3>' <<< "${followed}" && pass "an oldest copy's link opens Inspect a page on that page" || fail "an oldest copy's link does not inspect: ${inspect_link}"
 looked="$(curl -s -b "${jar}" -d "action=advcm_optimizer_lookup&_ajax_nonce=${look_nonce}&kind=tagged&value=1" "${URL}/wp-admin/admin-ajax.php")"
 grep -q '"ok":true' <<< "${looked}" && grep -q '"pages":\[{"url"' <<< "${looked}" && pass "an editor looks up the pages showing a post" || fail "the lookup did not answer (nonce '${look_nonce}'): ${looked:0:300}"
 outside="$(curl -s -o /dev/null -w '%{http_code}' -d "action=advcm_optimizer_lookup&_ajax_nonce=${look_nonce}&kind=tagged&value=1" "${URL}/wp-admin/admin-ajax.php")"

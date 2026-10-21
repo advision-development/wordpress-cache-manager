@@ -277,13 +277,15 @@ final class ADVCM_Screen {
 	}
 
 	/**
-	 * Inspect a page's address for a URL: a reading somebody can reload, with its nonce.
+	 * Inspect a page's address for a URL: a reading somebody can reload, with its nonce. Raw, not
+	 * HTML-escaped (escape it where it is printed), and the URL last: the lookups' script builds
+	 * links by appending a URL to inspect_url( '' ).
 	 *
 	 * @param string $url URL.
 	 * @return string
 	 */
 	public static function inspect_url( $url ) {
-		return wp_nonce_url( self::tab_url( 'check' ) . '&advcm_probe=' . rawurlencode( (string) $url ), self::PROBE );
+		return self::tab_url( 'check' ) . '&_wpnonce=' . rawurlencode( wp_create_nonce( self::PROBE ) ) . '&advcm_probe=' . rawurlencode( (string) $url );
 	}
 
 	/**
@@ -903,6 +905,9 @@ final class ADVCM_Screen {
 			'copies'  => __( 'Copies (UTC)', 'advcm' ),
 			'inspect' => __( 'inspect', 'advcm' ),
 			'showing' => __( 'Pages showing', 'advcm' ),
+			'pending' => __( 'Waiting to rebuild', 'advcm' ),
+			'purge'   => __( 'Last purge', 'advcm' ),
+			'asof'    => __( 'As of (UTC); asked of NitroPack again after 10 minutes, or with Refresh now:', 'advcm' ),
 		);
 
 		$ajax    = admin_url( 'admin-ajax.php' );
@@ -912,6 +917,7 @@ final class ADVCM_Screen {
 		echo '<script>window.advcmLookup=window.advcmLookup||function(kind,value,out){var w=' . wp_json_encode( $words ) . ',el=function(t,x){var e=document.createElement(t);if(x!==undefined){e.textContent=x;}return e;},link=function(href,x){var a=el("a",x);a.href=href;return a;},when=function(t){return t?new Date(t*1000).toISOString().slice(0,16).replace("T"," "):"—";},inspect=' . wp_json_encode( $inspect ) . ';'
 			. 'var d=new FormData();d.append("action",' . wp_json_encode( ADVCM_Optimizer::LOOKUP ) . ');d.append("_ajax_nonce",' . wp_json_encode( $nonce ) . ');d.append("kind",kind);d.append("value",value);'
 			. 'var show=function(r){out.textContent="";if(!r||!r.ok){out.appendChild(el("p",(r&&r.error)||w.failed));return;}'
+			. 'if(kind==="summary"){var st=el("table");st.className="widefat striped";var row=function(k,v){var tr=el("tr"),th=el("th",k);th.style.width="220px";tr.appendChild(th);tr.appendChild(el("td",v));st.appendChild(tr);};row(w.pending,r.pending===null?"—":String(r.pending));if(r.purge){row(w.purge,[r.purge.at?when(r.purge.at)+" UTC":"",r.purge.url,r.purge.tag,r.purge.reason].filter(function(x){return x;}).join(" — "));}out.appendChild(st);if(r.error){var n=el("div");n.className="notice notice-warning inline";n.appendChild(el("p",r.error));out.appendChild(n);}out.appendChild(el("p",w.asof+" "+when(r.at)));return;}'
 			. 'if(kind==="tags"){if(!r.tags.length){out.appendChild(el("p",w.none));return;}var ul=el("ul");ul.style.listStyle="disc";ul.style.marginLeft="20px";r.tags.forEach(function(t){var li=el("li");li.appendChild(t.url?link(t.url,t.label):el("span",t.label));li.appendChild(el("span"," — "+(w[t.kind]||w.other)+(t.date?", "+when(t.date):"")+" ("+t.tag+")"));ul.appendChild(li);});out.appendChild(ul);return;}'
 			. 'var p=el("p",w.showing+": ");p.appendChild(r.post.url?link(r.post.url,r.post.title||("#"+r.post.id)):el("span","#"+r.post.id));out.appendChild(p);if(!r.pages.length){out.appendChild(el("p",w.none));return;}'
 			. 'var tb=el("table");tb.className="widefat striped";var h=el("tr");[w.page,w.copies,""].forEach(function(x){h.appendChild(el("th",x));});tb.appendChild(h);r.pages.forEach(function(pg){var tr=el("tr"),td=el("td");td.appendChild(el("code",pg.url));tr.appendChild(td);var c=[];for(var k in pg.devices){c.push(k+" "+when(pg.devices[k]));}tr.appendChild(el("td",c.join(", ")));var ti=el("td");ti.appendChild(link(inspect+encodeURIComponent(pg.url),w.inspect));tr.appendChild(ti);tb.appendChild(tr);});out.appendChild(tb);};'
@@ -2371,7 +2377,9 @@ final class ADVCM_Screen {
 
 		// Rows measured before 0.6.0 called NitroPack's x-cache-ctime "host cache"; a row that
 		// NitroPack answered is shown with the name it should have had.
-		$nitro = ! empty( $row['nitro_state'] ) || ! empty( $row['nitro_copy'] );
+		// Only where NitroPack answered (its state in the page): a copy on disk alone does not
+		// mean it served this request. Rows measured since 0.6.0 already say NitroPack.
+		$nitro = ! empty( $row['nitro_state'] ) && ! isset( $row['ages']['NitroPack'] );
 
 		foreach ( isset( $row['ages'] ) && is_array( $row['ages'] ) ? $row['ages'] : array() as $layer => $seconds ) {
 			$parts[] = ( $nitro && 'host cache' === $layer ? 'NitroPack' : $layer ) . ' ' . ADVCM_Probe::duration( (int) $seconds );
@@ -2437,19 +2445,19 @@ final class ADVCM_Screen {
 	 * @return void
 	 */
 	private static function render_optimizer_summary() {
-		$summary = ADVCM_Optimizer::summary();
-
 		echo '<h2>' . esc_html__( 'Site summary', 'advcm' ) . '</h2>';
 
-		if ( empty( $summary['available'] ) ) {
-			echo '<p>' . esc_html( $summary['why'] ) . '</p>';
-
-			return;
-		}
-
+		// What is on this server, at once. What only NitroPack's API knows is asked after the page
+		// has loaded: a hung API never holds the tab.
 		$rows = array();
 
-		foreach ( $summary['counts'] as $device => $count ) {
+		foreach ( ADVCM_Optimizer_Nitropack::folder_counts() as $device => $count ) {
+			if ( 'ok' !== $count['state'] ) {
+				/* translators: %s: a device. */
+				$rows[ sprintf( __( 'Copies, %s', 'advcm' ), $device ) ] = 'missing' === $count['state'] ? __( 'no folder for this device in NitroPack\'s cache directory', 'advcm' ) : __( 'its folder cannot be read', 'advcm' );
+				continue;
+			}
+
 			/* translators: %s: a device. */
 			$rows[ sprintf( __( 'Copies, %s', 'advcm' ), $device ) ] = sprintf(
 				/* translators: 1: pages, 2: pages. */
@@ -2459,27 +2467,7 @@ final class ADVCM_Screen {
 			);
 		}
 
-		$rows[ __( 'Waiting to rebuild', 'advcm' ) ] = null === $summary['pending'] ? __( 'unknown', 'advcm' ) : number_format_i18n( (int) $summary['pending'] );
-
-		if ( ! empty( $summary['purge'] ) ) {
-			$purge = $summary['purge'];
-			$parts = array();
-
-			if ( $purge['at'] ) {
-				/* translators: 1: date, 2: how long ago. */
-				$parts[] = sprintf( __( '%1$s UTC (%2$s ago)', 'advcm' ), gmdate( 'Y-m-d H:i', $purge['at'] ), ADVCM_Probe::duration( max( 0, time() - $purge['at'] ) ) );
-			}
-
-			foreach ( array( 'url', 'tag', 'reason' ) as $key ) {
-				if ( '' !== $purge[ $key ] ) {
-					$parts[] = $purge[ $key ];
-				}
-			}
-
-			$rows[ __( 'Last purge', 'advcm' ) ] = implode( ' — ', $parts );
-		}
-
-		$expire = $summary['expire'];
+		$expire = ADVCM_Optimizer_Nitropack::expire();
 
 		$rows[ __( 'A copy lives', 'advcm' ) ] = $expire['expire'] > 0
 			/* translators: 1: duration, 2: duration. */
@@ -2493,13 +2481,11 @@ final class ADVCM_Screen {
 		}
 
 		echo '</tbody></table>';
+		echo '<div id="advcm-summary-out" style="max-width:900px"><p class="description">' . esc_html__( 'Asking NitroPack for pages waiting to rebuild and its last purge…', 'advcm' ) . '</p></div>';
 
-		if ( '' !== $summary['error'] ) {
-			echo '<div class="notice notice-warning inline"><p>' . esc_html( $summary['error'] ) . ' ' . esc_html__( 'The copies on this server are still shown.', 'advcm' ) . '</p></div>';
-		}
+		self::lookup_script();
 
-		/* translators: %s: time. */
-		echo '<p class="description">' . esc_html( sprintf( __( 'As of %s UTC. Asked of NitroPack again after 10 minutes, or with Refresh now.', 'advcm' ), gmdate( 'H:i', (int) $summary['at'] ) ) ) . '</p>';
+		echo '<script>advcmLookup(' . wp_json_encode( 'summary' ) . ',"",document.getElementById("advcm-summary-out"));</script>';
 	}
 
 	/**

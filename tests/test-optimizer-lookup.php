@@ -28,8 +28,9 @@ function delete_transient( $name ) {
 	return true;
 }
 
-function current_user_can( $cap ) {
-	return $GLOBALS['can'];
+function current_user_can( $cap, $id = 0 ) {
+	// Post 13 is private: a person who may clear but not read it.
+	return 'read_post' === $cap ? 13 !== (int) $id : $GLOBALS['can'];
 }
 
 function check_ajax_referer( $action, $arg = false, $die = true ) {
@@ -258,6 +259,14 @@ ADVCM_Optimizer::lookup( 'tagged', 'https://example.test/p-11/', 7 );
 
 check( 'a post asked by its URL is its id', 'tagged post:11 50' === end( $api->calls ) );
 check( 'a URL that is no post is refused', false === ADVCM_Optimizer::lookup( 'tagged', 'https://example.test/nothing/', 7 )['ok'] );
+
+check( 'a post the person may not read is refused, its title not shown', false === ADVCM_Optimizer::lookup( 'tagged', '13', 7 )['ok'] );
+
+$GLOBALS['transients'] = array();
+$before                = count( $api->calls );
+$look                  = ADVCM_Optimizer::lookup( 'summary', '', 7 );
+
+check( 'the summary is a lookup too, so the tab never waits on NitroPack', $look['ok'] && 6 === $look['pending'] && 'pageType:archive' === $look['purge']['tag'] && false === get_transient( ADVCM_Optimizer::RATE . '7' ) );
 
 // ---------------------------------------------------------------------------- failures
 

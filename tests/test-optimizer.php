@@ -61,6 +61,30 @@ $counts = ADVCM_Optimizer_Nitropack::folder_counts();
 
 check( 'folder counts per device, invalidated apart', 1 === $counts['desktop']['folders'] && 1 === $counts['tablet']['invalidated'] && 0 === $counts['tablet']['folders'], json_encode( $counts ) );
 
+// Only gzipped copies in a folder: NitroPack keeps .gz beside its pages, and a copy is a copy.
+$gz = $dir . '/desktop/' . md5( 'https://example.test/gz/' );
+@mkdir( $gz, 0777, true );
+file_put_contents( $gz . '/ssl-0.html.gz', 'x' );
+touch( $gz . '/ssl-0.html.gz', $now - 500 );
+$gzs = $dir . '/mobile/' . md5( 'https://example.test/gz/' );
+@mkdir( $gzs, 0777, true );
+file_put_contents( $gzs . '/ssl-0.html.stale.gz', 'x' );
+touch( $gzs . '/ssl-0.html.stale.gz', $now - 600 );
+
+$copies = ADVCM_Optimizer_Nitropack::copies( 'https://example.test/gz/' );
+
+check( 'a gzipped copy is a copy, a gzipped stale one stale', 'fresh' === $copies['desktop']['state'] && $now - 500 === $copies['desktop']['created'] && 'stale' === $copies['mobile']['state'] );
+
+$sdir = sys_get_temp_dir() . '/advcm-np2-' . getmypid() . '-' . mt_rand();
+@mkdir( $sdir . '/desktop', 0777, true );
+ADVCM_Optimizer_Nitropack::use_sdk( new Stub_Nitro_Sdk( $sdir ) );
+$c2 = ADVCM_Optimizer_Nitropack::folder_counts();
+
+check( 'a device with no folder is said to be missing, not counted', 'missing' === $c2['mobile']['state'] && 0 === $c2['mobile']['folders'] && 'ok' === $c2['desktop']['state'] && 0 === $c2['desktop']['folders'], json_encode( $c2 ) );
+
+exec( 'rm -rf ' . escapeshellarg( $sdir ) );
+ADVCM_Optimizer_Nitropack::use_sdk( new Stub_Nitro_Sdk( $dir ) );
+
 // ------------------------------------------------------------- what the probe keeps using
 
 check( 'the probe\'s NitroPack copy goes through the reader: desktop, fresh', array( 'at' => $now - 3600, 'state' => 'fresh' ) === ADVCM_Probe::nitropack_copy( $url ) );

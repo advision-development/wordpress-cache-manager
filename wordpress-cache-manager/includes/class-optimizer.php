@@ -191,7 +191,9 @@ final class ADVCM_Optimizer {
 	}
 
 	/**
-	 * A lookup: `tags` for a URL on this site, or `tagged` for a post (an id or its URL).
+	 * A lookup: `summary` for the site, `tags` for a URL on this site, or `tagged` for a post (an
+	 * id or its URL). The summary is one too, so the tab never waits on NitroPack's API: its 30 s
+	 * client timeout cannot be lowered, and a hung call would hold the page past PHP's limit.
 	 *
 	 * @param string $kind  tags or tagged.
 	 * @param string $value URL, or post id.
@@ -201,6 +203,11 @@ final class ADVCM_Optimizer {
 	public static function lookup( $kind, $value, $user ) {
 		if ( ! ADVCM_Optimizer_Nitropack::available() ) {
 			return self::refused( ADVCM_Optimizer_Nitropack::why_not() );
+		}
+
+		if ( 'summary' === $kind ) {
+			// Cached on its own (ten minutes, one after a failure): not counted against the person.
+			return array_merge( self::summary(), array( 'ok' => true ) );
 		}
 
 		if ( 'tags' === $kind ) {
@@ -216,6 +223,11 @@ final class ADVCM_Optimizer {
 
 			if ( $value < 1 ) {
 				return self::refused( __( 'That is not a post on this site.', 'advcm' ) );
+			}
+
+			// A draft's or a private post's title is not for whoever may clear the cache.
+			if ( ! current_user_can( 'read_post', $value ) ) {
+				return self::refused( __( 'You may not read that post.', 'advcm' ) );
 			}
 		} else {
 			return self::refused( __( 'Unknown lookup.', 'advcm' ) );

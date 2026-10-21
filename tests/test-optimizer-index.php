@@ -9,6 +9,10 @@
 $GLOBALS['autoload'] = array();
 
 function update_option( $name, $value, $autoload = null ) {
+	if ( 'advcm_lock_optimizer' === $name ) {
+		$GLOBALS['lock_writes'] = ( isset( $GLOBALS['lock_writes'] ) ? $GLOBALS['lock_writes'] : 0 ) + 1;
+	}
+
 	$GLOBALS['options'][ $name ]  = $value;
 	$GLOBALS['autoload'][ $name ] = $autoload;
 
@@ -42,6 +46,10 @@ ADVCM_Optimizer_Index::use_candidates(
 
 		if ( 'home' === $phase ) {
 			return $after < 1 ? array( 1 => 'https://example.test/' ) : array();
+		}
+
+		if ( ! empty( $GLOBALS['naming_throws'] ) && 'posts' === $phase ) {
+			throw new Error( 'a permalink filter died' );
 		}
 
 		if ( 'posts' !== $phase ) {
@@ -179,7 +187,7 @@ check( 'and a press resumes it from its cursor', '' === ADVCM_Optimizer_Index::s
 
 // A folder that kills the request must not stop every scan after it: the lock names it.
 $names = array_values( array_diff( scandir( $dir . '/desktop' ), array( '.', '..' ) ) );
-$GLOBALS['options'][ ADVCM_Optimizer_Index::LOCK ] = array( 'at' => time() - 600, 'folder' => $names[150] );
+$GLOBALS['options'][ ADVCM_Optimizer_Index::LOCK ] = array( 'at' => time() - 600, 'device' => 2, 'folder' => $names[150] );
 ADVCM_Optimizer_Index::run_batch( 1, 60 );
 
 check( 'a folder that killed the run is stepped over', $names[151] === ADVCM_Optimizer_Index::state()['cursor'] && 1 === ADVCM_Optimizer_Index::state()['skipped'], ADVCM_Optimizer_Index::state()['cursor'] );
@@ -190,6 +198,38 @@ $before = ADVCM_Optimizer_Index::state()['cursor'];
 check( 'a run already going is not doubled', 0 === ADVCM_Optimizer_Index::run_batch( 100, 60 ) && $before === ADVCM_Optimizer_Index::state()['cursor'] );
 
 unset( $GLOBALS['options'][ ADVCM_Optimizer_Index::LOCK ] );
+
+// A run that died on the next device: the lock says which, and that device is resumed past it.
+$GLOBALS['options'] = array();
+ADVCM_Optimizer_Index::start( 7 );
+$GLOBALS['options'][ ADVCM_Optimizer_Index::LOCK ] = array( 'at' => time() - 600, 'device' => 2, 'folder' => $names[200] );
+ADVCM_Optimizer_Index::run_batch( 1, 60 );
+
+check( 'a run that died on a later device steps over there, not on the device saved', 2 === ADVCM_Optimizer_Index::state()['device'] && $names[201] === ADVCM_Optimizer_Index::state()['cursor'], ADVCM_Optimizer_Index::state()['device'] . ' ' . ADVCM_Optimizer_Index::state()['cursor'] );
+
+// The lock is not written for every folder: 1,000 option writes a run is load on the database.
+$GLOBALS['options']     = array();
+$GLOBALS['lock_writes'] = 0;
+ADVCM_Optimizer_Index::start( 7 );
+ADVCM_Optimizer_Index::run_batch( 200, 60 );
+
+check( 'the lock is written once per chunk of folders, not per folder', $GLOBALS['lock_writes'] <= 5, (string) $GLOBALS['lock_writes'] );
+
+unset( $GLOBALS['options'][ ADVCM_Optimizer_Index::LOCK ] );
+
+// A batch that throws (another plugin's permalink filter) must not stall the scan for good.
+$GLOBALS['options']       = array();
+$GLOBALS['naming_throws'] = true;
+ADVCM_Optimizer_Index::start( 7 );
+$runs = scan_all();
+$GLOBALS['naming_throws'] = false;
+
+check( 'a batch that throws is stepped over: the scan still finishes, counting it', $runs > 0 && ADVCM_Optimizer_Index::state()['skipped'] >= 1, $runs . ' / ' . ADVCM_Optimizer_Index::state()['skipped'] );
+check( 'and what it could name is named', 'https://example.test/' === ADVCM_Optimizer_Index::rows( 'mobile' )[1]['url'] );
+
+$GLOBALS['options'] = array();
+ADVCM_Optimizer_Index::start( 7 );
+$before = '';
 
 // NitroPack removed mid-scan: the run stops quietly, the scan is not lost.
 ADVCM_Optimizer_Nitropack::use_sdk( null );

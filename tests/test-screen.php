@@ -509,7 +509,11 @@ $npdir = sys_get_temp_dir() . '/advcm-nps-' . getmypid() . '-' . mt_rand();
 @mkdir( $npdir . '/desktop', 0777, true );
 $npsdk = new Stub_Nitro_Sdk( $npdir );
 $npsdk->api = new class() {
+	public $calls = 0;
+
 	public function getPendingUrlsCount() {
+		$this->calls++;
+
 		return 6;
 	}
 
@@ -545,7 +549,9 @@ $GLOBALS['options'][ ADVCM_Optimizer_Index::OPTION ] = array(
 
 $out = screen_part( 'render_optimizer', array( true ) );
 
-check( 'the summary: pages waiting to rebuild, the last purge and its reason, escaped', false !== strpos( $out, '6' ) && false !== strpos( $out, 'pageType:archive' ) && false !== strpos( $out, 'Updated alert(1)' ) && false === strpos( $out, '<script>alert' ) );
+check( 'opening the tab asks NitroPack\'s API nothing: the summary is asked after the page loads', 0 === $npsdk->api->calls && false !== strpos( $out, '"summary"' ) );
+check( 'the copies on disk are shown at once, a device with no folder says so', false !== strpos( $out, 'Copies, desktop' ) && false !== strpos( $out, 'no folder' ) );
+check( 'the lookups\' inspect link is built from a raw address, the URL last', 0 === substr_compare( ADVCM_Screen::inspect_url( '' ), 'advcm_probe=', -12 ) && false !== strpos( ADVCM_Screen::inspect_url( '' ), '_wpnonce=nonce-' . ADVCM_Screen::PROBE ) && false === strpos( ADVCM_Screen::inspect_url( 'a&b' ), '&amp;' ) && false !== strpos( $out, 'encodeURIComponent(pg.url)' ) );
 check( 'the expiry in force', false !== strpos( $out, '24 h' ) );
 check( 'the oldest copies, with an inspect link for a named page', false !== strpos( $out, 'tab=check' ) && false !== strpos( $out, 'advcm_probe=' . rawurlencode( home_url( '/' ) ) ) && false !== strpos( $out, 'nonce-' . ADVCM_Screen::PROBE ) );
 check( 'an unidentified page says so', false !== strpos( $out, 'unidentified page' ) );
@@ -575,6 +581,12 @@ check( 'with no rule: a new post does not rebuild it, and where to add one', fal
 $GLOBALS['options'][ ADVCM_Auto::RULES ] = array( 'r1' => array( 'enabled' => true, 'post_type' => 'post', 'urls' => array( 'https://example.test/usa/texas' ) ) );
 
 check( 'with a rule naming it, says so', false !== strpos( screen_part( 'render_inspect_optimizer', array( 'https://example.test/usa/texas/' ) ), 'auto-clear rule clears this page' ) );
+
+// Relabelled only where NitroPack answered (its state in the page), not where a copy merely exists.
+$lw = new ReflectionMethod( 'ADVCM_Screen', 'layer_words' );
+$lw->setAccessible( true );
+
+check( 'a row where NitroPack did not answer keeps the host cache\'s age', 'host cache 83 min 20 s' === $lw->invoke( null, array( 'ages' => array( 'host cache' => 5000 ), 'nitro_state' => null, 'nitro_copy' => 'fresh' ) ) );
 
 // Freshness rows lead to Inspect a page.
 $GLOBALS['options'][ ADVCM_Freshness::OPTION ] = array( array( 'at' => $now, 'url' => 'https://example.test/usa/texas/', 'by' => 7, 'source' => 'screen', 'code' => 200, 'age' => 60, 'how' => 'exact', 'ages' => array(), 'job' => 'j' ) );
