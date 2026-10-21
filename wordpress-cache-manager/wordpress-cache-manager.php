@@ -3,7 +3,7 @@
  * Plugin Name:       CacheManager
  * Plugin URI:        https://github.com/advision-development/wordpress-cache-manager
  * Description:       Clears every cache layer a site has, in the order that keeps each one from re-caching stale content from the layer beneath it: object cache, builder CSS, page cache plugins, NitroPack, the host's page cache, a warm-up, and last the CDN. Detects what is installed at the moment it runs, skips what is not there and says so, and reports every step on its own.
- * Version:           0.5.3
+ * Version:           0.6.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Advision Development
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'ADVCM_VERSION', '0.5.3' );
+define( 'ADVCM_VERSION', '0.6.0' );
 define( 'ADVCM_FILE', __FILE__ );
 define( 'ADVCM_DIR', plugin_dir_path( __FILE__ ) );
 define( 'ADVCM_URL', plugin_dir_url( __FILE__ ) );
@@ -83,6 +83,12 @@ try {
 	// The listings scan: its WP-Cron event and its button. Reads documents only when pressed.
 	ADVCM_Listings::register();
 
+	// The oldest NitroPack copies: its WP-Cron event. Reads nothing on a site without NitroPack.
+	ADVCM_Optimizer_Index::register();
+
+	// Its lookups (a page's tags, the pages showing a post): admin-ajax, asked by a person only.
+	ADVCM_Optimizer::register();
+
 	// The Settings tab's form. The settings themselves are read where they are used.
 	ADVCM_Settings::register();
 
@@ -117,6 +123,7 @@ function advcm_deactivate() {
 		wp_unschedule_hook( 'advcm_continue' );
 		wp_unschedule_hook( 'advcm_auto_flush' );
 		wp_unschedule_hook( 'advcm_listings_scan' );
+		wp_unschedule_hook( 'advcm_optimizer_scan' );
 	} catch ( Throwable $e ) {
 		error_log( '[advcm] deactivate: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- deactivating must never fail.
 	}

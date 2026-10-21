@@ -23,6 +23,7 @@ and the code disagree.
 | Cron (single) | `advcm_continue` | args `[job id]`; the next step of a background clear. Registered on every request, removed on deactivation and uninstall |
 | Cron (single) | `advcm_auto_flush` | no args; the auto-clear, about 60 s after a post matching a rule is published — or, when WP-Cron is more than 2 minutes behind, timestamped just before its oldest due event, so it runs first. Scheduled only when a rule is on; removed on deactivation and uninstall |
 | Cron (single) | `advcm_listings_scan` | no args; since 0.5.0, the next batch of a listings scan a person started: up to 20 Elementor documents within 8 s. Scheduled only by a press; reads only. Removed on deactivation and uninstall |
+| Cron (single) | `advcm_optimizer_scan` | no args; since 0.6.0, only where NitroPack is installed: the oldest-copies scan every 6 h, first scheduled when a screen of this plugin opens. Up to 1,000 cache folders within 2 s per run (file times only), then this site's URLs hashed in batches of 500 to name the kept copies. Reads only. Removed on deactivation and uninstall |
 | Option | `advcm_jobs` | not autoloaded; the last 20 clears people started (automatic ones are in `advcm_jobs_auto` since 0.4.0) |
 | Option | `advcm_jobs_auto` | not autoloaded; since 0.4.0, the last 20 automatic clears, apart from the clears people started |
 | Option | `advcm_layers` | not autoloaded; per layer, last clear |
@@ -39,20 +40,27 @@ and the code disagree.
 | Option | `advcm_freshness_stats` | not autoloaded; since 0.5.1, the measurements added up: per page (at most 200, URL cut to 2048 characters) and per day (the last 30) — clears by hand and automatic, unknown, under 10 minutes, past the cache target, oldest, sums, rules seen, and since 0.5.2 where a redirect pointed |
 | Option | `advcm_listings` | not autoloaded; since 0.5.0, the last listings scan: who started it, a cursor (a post id) and counters, at most 300 findings (red, amber, custom query; strings cut), green ones only counted |
 | Option | `advcm_lock_listings` | not autoloaded; since 0.5.0, while a listings batch runs, naming the document it reads |
+| Option | `advcm_optimizer_index` | not autoloaded; since 0.6.0, the oldest-copies scan: cursor, counters, per NitroPack device at most 100 copies for the last list and 100 for the one being built (folder, time, flags, a post/term/home reference, never a URL); under 150 KB |
+| Option | `advcm_lock_optimizer` | not autoloaded; since 0.6.0, while an oldest-copies batch runs, naming the folder it reads |
 | Option | `advcm_log` | not autoloaded; since 0.4.0, who changed what: the last 20 changes per tab section, each with the person, the time and the value before and after (cut to 200 characters). Written only by requests a person made |
 | Option | `advcm_rules_paused` | not autoloaded; while an administrator has paused every auto-clear rule |
 | Site transient | `advcm_release` | updater's cached GitHub answer |
 | Site transient | `advcm_loopback` | whether the site can reach its own home page; an hour (ten minutes when not) |
 | Transient | `advcm_notice_<user id>` | one minute |
 | Transient | `advcm_rate_<user id>` | per-URL clears in the last minute, at most 10 |
+| Transient | `advcm_optimizer_summary` | since 0.6.0, the NitroPack tab's summary (NitroPack's pending rebuilds and last purge from its API, copies per device, expiry); 10 min, 1 min after a failure. Deleted on uninstall |
+| Transient | `advcm_optimizer_look_<md5>` | since 0.6.0, one lookup a person asked NitroPack's API for (a page's tags, at most 100; or the pages showing a post, at most 50); 10 min; a failure is not kept |
+| Transient | `advcm_rate_look_<user id>` | since 0.6.0, lookups one person asked in the last minute, at most 10 |
 | Transient | `advcm_rate_site` | since 0.5.1, per-URL clears everybody started in the last minute, at most 30 |
 | Capability | `advcm_purge`, `advcm_purge_hard` | granted by a `user_has_cap` filter from `edit_others_posts` (both, since 0.4.0; a filter narrows either); never stored |
 | admin-post | `advcm_purge`, `advcm_resume`, `advcm_check_release` | logged in, capability and nonce |
 | admin-post | `advcm_listings` | logged in, `advcm_purge` and nonce; since 0.5.0, starts a listings scan on the Freshness tab |
+| admin-post | `advcm_optimizer_refresh` | logged in, `advcm_purge` and nonce; since 0.6.0, Refresh now on the NitroPack tab: the summary asked again, the oldest-copies scan scheduled. Reads only |
 | admin-post | `advcm_settings` | logged in, `advcm_purge_hard` and nonce; since 0.4.0, saves the Settings tab, pauses and resumes auto-clear, switches each post's own page |
 | admin-post | `advcm_rules` | logged in, `advcm_purge_hard` and nonce; changes auto-clear rules, or pauses and resumes them all |
 | Hook | `wp_after_insert_post` | marks the auto-clear rules a saved post triggers. One option read when no rule is on; never clears in the save request |
 | Filter (offered) | `advcm_auto_excluded_post_types` | the post types an "any content" rule leaves out; validated, and `revision`, `auto-draft`, `nav_menu_item` stay out whatever it returns |
+| admin-ajax | `advcm_optimizer_lookup` | `wp_ajax_` only, never `nopriv`; `advcm_purge` and nonce. Since 0.6.0, a page's NitroPack tags or the pages showing a post, after the screen has loaded; reads only |
 | admin-ajax | `advcm_tick` | `wp_ajax_` only, never `nopriv`; capability and nonce. The status screen moving a due background clear |
 | Page | `tools.php?page=advcm-cache` | |
 

@@ -454,7 +454,8 @@ final class ADVCM_Controller {
 
 	/**
 	 * Put back background work whose WP-Cron event was lost — an auto-clear waiting on its mark,
-	 * a listings scan half done.
+	 * a listings scan half done, the oldest-copies scan (started here the first time on a site
+	 * with NitroPack).
 	 *
 	 * Updating this plugin switches it off for a few seconds, and a WP-Cron run in those seconds
 	 * takes the event with nothing listening (measured on BMR on 2026-10-20: a clear waited 10
@@ -466,7 +467,7 @@ final class ADVCM_Controller {
 	public static function rescue() {
 		$put_back = 0;
 
-		foreach ( array( array( 'ADVCM_Auto', 'rescue' ), array( 'ADVCM_Listings', 'rescue' ) ) as $call ) {
+		foreach ( array( array( 'ADVCM_Auto', 'rescue' ), array( 'ADVCM_Listings', 'rescue' ), array( 'ADVCM_Optimizer_Index', 'rescue' ) ) as $call ) {
 			$put_back += (int) ADVCM_Safe::run( 'rescue', $call, 0 );
 		}
 
