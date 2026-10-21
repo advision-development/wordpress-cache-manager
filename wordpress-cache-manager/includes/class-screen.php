@@ -637,16 +637,18 @@ final class ADVCM_Screen {
 			return;
 		}
 
-		// A reading is a link somebody can reload; a reload within ten minutes is not a new probe.
-		ADVCM_Log::add_once( 'check', 'probe', substr( $asked, 0, 2048 ), 10 * MINUTE_IN_SECONDS );
-
 		$reading = ADVCM_Probe::url( substr( $asked, 0, 2048 ) );
 
 		if ( is_string( $reading ) ) {
+			// Refused before any request — not a page on this site, or WordPress's own machinery:
+			// nothing was checked, so nothing is recorded, as with every other refusal.
 			echo '<div class="notice notice-warning inline"><p>' . esc_html( $reading ) . '</p></div>';
 
 			return;
 		}
+
+		// A reading is a link somebody can reload; a reload within ten minutes is not a new probe.
+		ADVCM_Log::add_once( 'check', 'probe', substr( $asked, 0, 2048 ), 10 * MINUTE_IN_SECONDS );
 
 		$age  = $reading['age'];
 		$rows = array();
@@ -1954,7 +1956,7 @@ final class ADVCM_Screen {
 			echo '<p>' . esc_html( $line ) . '</p>';
 		} else {
 			/* translators: 1: how long ago, 2: date, 3: person, 4: documents, 5: listings, 6: up to date. */
-			echo '<p>' . esc_html( sprintf( __( 'Last scan finished %1$s ago (%2$s UTC), started by %3$s: %4$d documents, %5$d listings, %6$d up to date.', 'advcm' ), ADVCM_Probe::duration( max( 0, time() - $state['done'] ) ), gmdate( 'Y-m-d H:i', $state['done'] ), self::who( $state['by'], '' ), $state['scanned'], $state['listings'], $state['green'] ) ) . '</p>';
+			echo '<p>' . esc_html( sprintf( _n( 'Last scan finished %1$s ago (%2$s UTC), started by %3$s: %4$d document, %5$d listings, %6$d up to date.', 'Last scan finished %1$s ago (%2$s UTC), started by %3$s: %4$d documents, %5$d listings, %6$d up to date.', $state['scanned'], 'advcm' ), ADVCM_Probe::duration( max( 0, time() - $state['done'] ) ), gmdate( 'Y-m-d H:i', $state['done'] ), self::who( $state['by'], '' ), $state['scanned'], $state['listings'], $state['green'] ) ) . '</p>';
 
 			if ( 0 === $state['total'] ) {
 				echo '<p class="description">' . esc_html__( 'This site has no published Elementor pages or templates, so there is nothing to check.', 'advcm' ) . '</p>';

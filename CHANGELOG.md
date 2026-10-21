@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.3 — 2026-10-21
+
+- **A refused cache-age check was recorded as a probe.** A check of `/wp-login.php`, refused
+  before any request, still appeared under the Cache age tab's Last changes. Seen while taking the
+  manual's screenshots; the change log records no refusal, and now this one neither.
+- "1 documents" reads "1 document" on the Freshness tab.
+- Documentation brought in line with the code: the README says how a site updates (WP Engine does
+  not install plugin updates by itself, so a person presses Update), and the auto-clear notes no
+  longer say rules invalidate NitroPack by default or that only administrators write them.
+
 ## 0.5.2 — 2026-10-21
 
 The first day of 0.5.1 on BMR: no clear by hand, waits of 90 s (median) to 5 min 20 s, and
