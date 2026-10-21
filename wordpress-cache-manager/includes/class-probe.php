@@ -83,6 +83,7 @@ final class ADVCM_Probe {
 				'age'     => array( 'seconds' => null, 'how' => 'no answer' ),
 				'max_ttl' => null,
 				'ages'    => array(),
+				'location' => null,
 				'hits'    => null,
 				'nitropack_state' => null,
 			);
@@ -193,6 +194,8 @@ final class ADVCM_Probe {
 			'layers'  => $layers,
 			'age'     => $age,
 			'ages'    => $ages,
+			// Where a redirect points: a rule naming a page that redirects clears it for nothing.
+			'location' => isset( $headers['location'] ) ? substr( trim( $headers['location'] ), 0, 2048 ) : null,
 			'max_ttl' => $max_ttl,
 			'hits'    => isset( $headers['x-cache'] ) && preg_match( '~HIT:\s*(\d+)~i', $headers['x-cache'], $m ) ? (int) $m[1] : null,
 			// NitroPack writes this into every page it serves, and turns FRESH into STALE when it

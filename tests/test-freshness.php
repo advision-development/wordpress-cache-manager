@@ -237,6 +237,12 @@ $GLOBALS['ages'] = array();
 
 load_class( 'auto' );
 
+$answer_age = function ( $url ) {
+	$age = array_shift( $GLOBALS['ages'] );
+
+	return ADVCM_Probe::read( $url, 200, null === $age ? array() : array( 'x-cache' => 'HIT: 1', 'x-cache-ctime' => (string) ( time() - $age ) ), 50, null, time() );
+};
+
 ADVCM_Freshness::use_prober(
 	function ( $url ) {
 		$age = array_shift( $GLOBALS['ages'] );
@@ -289,13 +295,16 @@ check( 'and each day sums what it measured', 10 === $today['n'] && 1 === $today[
 $insights = ADVCM_Freshness::insights();
 
 check( 'pages kept past the target are listed, with whether a rule clears them', 1 === count( $insights['over'] ) && 'https://example.test/analysis/' === $insights['over'][0]['url'] && true === $insights['over'][0]['has_rule'] );
-check( 'pages whose clears keep finding a fresh copy are listed, most cleared first, with the rules that clear them', 2 === count( $insights['young'] ) && 'https://example.test/news/' === $insights['young'][0]['url'] && array( 'r2' ) === $insights['young'][0]['rules'] && 'https://example.test/usa/alabama/' === $insights['young'][1]['url'] );
+// A listing a rule clears on every publish finds a fresh copy most times: its content changed
+// with the post, so that is no finding (measured on BMR: /analysis/, 34 clears in 40).
+check( 'a listing whose clears find a fresh copy is not called a problem', ! isset( $insights['young'] ) );
 
 $often = $insights['hand'];
 
 check( 'pages cleared by hand twice or more, most often first', 2 === count( $often ) && 'https://example.test/analysis/' === $often[0]['url'] && 3 === $often[0]['times'] && 2 === $often[1]['times'] );
 check( 'with the average cache age of those that said one', 500 === $often[0]['avg_age'] && 40 === $often[1]['avg_age'], $often[0]['avg_age'] . ' / ' . $often[1]['avg_age'] );
 check( 'and whether a rule already clears it', true === $often[0]['has_rule'] && false === $often[1]['has_rule'] );
+check( 'and how many of those clears found a fresh copy: when most did, the cache was not the problem', 1 === $often[0]['fresh'] && false === $often[0]['mostly_fresh'] && 2 === $often[1]['fresh'] && true === $often[1]['mostly_fresh'] );
 
 $GLOBALS['options']['advcm_rules']['r3'] = array( 'post_type' => 'post', 'enabled' => false, 'urls' => array( 'https://example.test/usa/alabama/' ) );
 
@@ -329,19 +338,48 @@ $page = ADVCM_Freshness::stats()['pages']['https://example.test/bound/'];
 
 check( 'an "at most" age is never counted as past the target, nor as the oldest copy', 0 === $page['over'] && 0 === $page['max'] && 0 === $page['sum'] && 1 === $page['n'] );
 
-// ------------------------------------------- the own-page rule clears posts (review)
+// --------------------------------- a post's own page is not a listing (BMR, 2026-10-21)
 
-$GLOBALS['options']['advcm_rules'] = array( 'own-page' => array( 'post_type' => '*', 'enabled' => true, 'own' => true, 'urls' => array() ) );
-$GLOBALS['options'][ ADVCM_Freshness::STATS ] = array(
-	'pages' => array( 'https://example.test/a-post/' => array( 'n' => 2, 'hand' => 0, 'auto' => 2, 'unk' => 0, 'young' => 0, 'over' => 2, 'max' => 5 * HOUR_IN_SECONDS, 'sum' => 10 * HOUR_IN_SECONDS, 'hsum' => 0, 'hk' => 0, 'last' => time(), 'rules' => array( 'own-page' ) ) ),
-	'days'  => array(),
+// Measured on BMR: posts nobody touched for 38 hours, cleared by own-page when edited. Their old
+// copy was the unchanged post; no visitor saw an old version of an edit. Not a finding.
+$GLOBALS['options'] = array();
+$GLOBALS['options']['advcm_rules'] = array(
+	'own-page' => array( 'post_type' => '*', 'enabled' => true, 'own' => true, 'urls' => array() ),
+	'r1'       => array( 'post_type' => 'post', 'enabled' => true, 'urls' => array( 'https://example.test/analysis/', 'https://example.test/nfl/analysis/' ) ),
 );
 
-check( 'a page each post\'s own page clears is not told it has no rule', true === ADVCM_Freshness::insights()['over'][0]['has_rule'] );
+ADVCM_Freshness::use_prober( $answer_age );
 
-$GLOBALS['options']['advcm_rules']['own-page']['enabled'] = false;
+cleared( 'p1', '/a-post/', 38 * HOUR_IN_SECONDS, 'auto', 'own-page' );
+cleared( 'p2', '/analysis/', 5 * HOUR_IN_SECONDS, 'auto', 'r1' );
 
-check( 'unless own-page is switched off', false === ADVCM_Freshness::insights()['over'][0]['has_rule'] );
+$insights = ADVCM_Freshness::insights();
+
+check( 'a post its own page cleared when edited is not listed past the target', 1 === count( $insights['over'] ) && 'https://example.test/analysis/' === $insights['over'][0]['url'] );
+check( 'the summary counts it apart, as a post past the target when edited', 1 === $insights['summary']['over'] && 1 === $insights['summary']['posts'] );
+
+// Sums 0.5.1 already wrote on BMR have no count of posts apart: such a post, cleared only
+// automatically and named by no rule, is still left out.
+$GLOBALS['options'][ ADVCM_Freshness::STATS ]['pages']['https://example.test/old-post/'] = array( 'n' => 1, 'hand' => 0, 'auto' => 1, 'unk' => 0, 'young' => 0, 'over' => 1, 'max' => 39 * HOUR_IN_SECONDS, 'sum' => 39 * HOUR_IN_SECONDS, 'hsum' => 0, 'hk' => 0, 'last' => time(), 'rules' => array( 'own-page' ) );
+
+check( 'and so is one counted by 0.5.1, before posts were counted apart', 1 === count( ADVCM_Freshness::insights()['over'] ) );
+
+// ------------------------------------------- a rule's page that redirects (BMR, 2026-10-21)
+
+// Measured on BMR: a rule named six /<sport>/analysis/ pages that redirect to /analysis/,
+// clearing each for nothing on every publish.
+ADVCM_Freshness::use_prober(
+	function ( $url ) {
+		return ADVCM_Probe::read( $url, 301, array( 'location' => 'https://example.test/analysis/' ), 20, null, time() );
+	}
+);
+
+cleared( 'm2', '/nfl/analysis/', null, 'auto', 'r1' );
+
+$moved = ADVCM_Freshness::insights()['moved'];
+
+check( 'a rule\'s page that redirects is listed, with where to', 1 === count( $moved ) && 'https://example.test/nfl/analysis/' === $moved[0]['url'] && '/analysis/' === $moved[0]['to'] && true === $moved[0]['has_rule'] );
+check( 'and its row keeps where it went', '/analysis/' === ADVCM_Freshness::rows( true )[0]['moved'] );
 
 ADVCM_Freshness::use_prober( $answer );
 
@@ -385,15 +423,17 @@ check( 'each keyed by at most 1024 characters of its URL, with at most 5 rules',
 $worst = get_option( ADVCM_Freshness::STATS );
 
 foreach ( $worst['pages'] as $url => $page ) {
-	foreach ( $page as $key => $value ) {
+	foreach ( $page + ADVCM_Freshness::PAGE as $key => $value ) {
 		if ( ! is_array( $value ) ) {
 			$worst['pages'][ $url ][ $key ] = 9999999999;
 		}
 	}
+
+	$worst['pages'][ $url ]['moved'] = '/' . str_repeat( 'm', 199 );
 }
 
 for ( $d = 0; $d < ADVCM_Freshness::STATS_DAYS; $d++ ) {
-	$worst['days'][ gmdate( 'Y-m-d', time() - $d * DAY_IN_SECONDS ) ] = array( 'n' => 9999999999, 'unk' => 9999999999, 'young' => 9999999999, 'over' => 9999999999, 'max' => 9999999999 );
+	$worst['days'][ gmdate( 'Y-m-d', time() - $d * DAY_IN_SECONDS ) ] = array_fill_keys( array_keys( ADVCM_Freshness::DAY ), 9999999999 );
 }
 
 $size = strlen( serialize( $worst ) );

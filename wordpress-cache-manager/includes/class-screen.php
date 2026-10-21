@@ -490,8 +490,9 @@ final class ADVCM_Screen {
 								__( 'pages whose copy was older than %d hours (the target in Settings) when a clear reached it. With "no rule clears it", add an auto-clear rule naming the page.', 'advcm' ),
 								$target
 							) . ' ' . sprintf( _n( 'The target now: %d hour.', 'The target now: %d hours.', $target, 'advcm' ), $target ),
-							__( 'Cleared while fresh', 'advcm' )    => __( 'pages where three clears in four found a copy under 10 minutes old: the cache was not the problem. Look at the content, or at the rule named, which may clear more often than the page changes.', 'advcm' ),
-							__( 'Cleared by hand, often', 'advcm' ) => __( 'pages people keep clearing; a rule could do it for them.', 'advcm' ),
+							__( 'Pages that redirect', 'advcm' )    => __( 'pages a rule names that answered with a redirect: clearing them changes nothing. Name the page they redirect to instead.', 'advcm' ),
+							__( 'Cleared by hand, often', 'advcm' ) => __( 'pages people keep clearing; a rule could do it for them. "Found a fresh copy" says how many of those clears found a copy under 10 minutes old — when most did, the cache was not the problem: look at the content.', 'advcm' ),
+							__( 'Posts past the target', 'advcm' )  => __( 'counted apart in the summary: a post nobody edited keeps its cached copy for long, and each post\'s own page clears it the moment it is edited, so no visitor sees an old version of a change.', 'advcm' ),
 							self::badge( 'over 30 days', 'red' )    => __( 'the newest post the list\'s filter matches is over 30 days old: publish or tag posts for it, or change its filter.', 'advcm' ),
 							self::badge( '7–30 days', 'amber' )     => __( 'posts for it are slowing down; fine for a weekly series.', 'advcm' ),
 							self::badge( 'no posts', 'red' )        => __( 'no published post matches the filter at all.', 'advcm' ),
@@ -1795,7 +1796,7 @@ final class ADVCM_Screen {
 	 * @return void
 	 */
 	private static function render_freshness( $hard ) {
-		foreach ( array( 'render_summary', 'render_over', 'render_young', 'render_often', 'render_listings', 'render_measured' ) as $part ) {
+		foreach ( array( 'render_summary', 'render_over', 'render_moved', 'render_often', 'render_listings', 'render_measured' ) as $part ) {
 			ADVCM_Safe::run(
 				'screen:' . $part,
 				function () use ( $part ) {
@@ -1831,6 +1832,11 @@ final class ADVCM_Screen {
 		echo '<p><strong>' . esc_html( sprintf( _n( '%1$d pages measured in %2$d day:', '%1$d pages measured in %2$d days:', $sum['days'], 'advcm' ), $sum['n'], $sum['days'] ) ) . '</strong> ';
 		/* translators: 1: past the target, 2: hours, 3: under 10 minutes, 4: no age. */
 		echo esc_html( sprintf( __( '%1$d past the %2$d-hour target, %3$d found a copy under 10 minutes, %4$d where no cache said its age.', 'advcm' ), $sum['over'], $target, $sum['young'], $sum['unk'] ) ) . '</p>';
+
+		if ( $sum['posts'] > 0 ) {
+			/* translators: 1: posts, 2: hours. */
+			echo '<p class="description">' . esc_html( sprintf( _n( 'Also %1$d post past the %2$d-hour target when it was edited. Each post\'s own page cleared it on the edit, so no visitor saw an old version of a change: the old copy was the unchanged post.', 'Also %1$d posts past the %2$d-hour target when they were edited. Each post\'s own page cleared them on the edit, so no visitor saw an old version of a change: the old copy was the unchanged post.', $sum['posts'], 'advcm' ), $sum['posts'], $target ) ) . '</p>';
+		}
 	}
 
 	/**
@@ -1872,18 +1878,18 @@ final class ADVCM_Screen {
 	}
 
 	/**
-	 * Pages whose clears keep finding a fresh copy.
+	 * Pages a rule names that answered with a redirect: cleared for nothing on every publish.
 	 *
 	 * @return void
 	 */
-	private static function render_young() {
-		$young = ADVCM_Freshness::insights()['young'];
+	private static function render_moved() {
+		$moved = ADVCM_Freshness::insights()['moved'];
 		$rules = ADVCM_Auto::rules();
 
-		echo '<h2>' . esc_html__( 'Cleared while fresh', 'advcm' ) . '</h2>';
-		echo '<p class="description">' . esc_html__( 'Pages cleared twice or more where three clears in four found a copy under 10 minutes old. The cache was not what made them look old: their content had not changed, or a rule clears them more often than they change.', 'advcm' ) . '</p>';
+		echo '<h2>' . esc_html__( 'Pages that redirect', 'advcm' ) . '</h2>';
+		echo '<p class="description">' . esc_html__( 'Pages an auto-clear rule names that answered with a redirect when they were measured. A redirect is not the page visitors see, so clearing it changes nothing: name the page it redirects to in the rule instead, or remove it if the rule already names that one.', 'advcm' ) . '</p>';
 
-		if ( empty( $young ) ) {
+		if ( empty( $moved ) ) {
 			echo '<p>' . esc_html__( 'None.', 'advcm' ) . '</p>';
 
 			return;
@@ -1891,24 +1897,25 @@ final class ADVCM_Screen {
 
 		echo '<div style="overflow-x:auto"><table class="widefat striped"><thead><tr>';
 
-		foreach ( array( __( 'Page', 'advcm' ), __( 'Under 10 minutes', 'advcm' ), __( 'Cleared by', 'advcm' ) ) as $head ) {
+		foreach ( array( __( 'Page', 'advcm' ), __( 'Redirects to', 'advcm' ), __( 'Named by', 'advcm' ) ) as $head ) {
 			echo '<th>' . esc_html( $head ) . '</th>';
 		}
 
 		echo '</tr></thead><tbody>';
 
-		foreach ( $young as $page ) {
+		foreach ( $moved as $page ) {
 			$by = array();
 
 			foreach ( $page['rules'] as $id ) {
-				/* translators: %s: a rule in words. */
-				$by[] = isset( $rules[ $id ] ) ? sprintf( __( 'When %s', 'advcm' ), ADVCM_Auto::describe( $rules[ $id ] ) ) : __( 'a rule since deleted', 'advcm' );
+				if ( isset( $rules[ $id ] ) && empty( $rules[ $id ]['own'] ) ) {
+					/* translators: %s: a rule in words. */
+					$by[] = sprintf( __( 'When %s', 'advcm' ), ADVCM_Auto::describe( $rules[ $id ] ) );
+				}
 			}
 
 			echo '<tr><td><code>' . esc_html( $page['url'] ) . '</code></td>';
-			/* translators: 1: clears under 10 minutes, 2: clears. */
-			echo '<td>' . esc_html( sprintf( __( '%1$d of %2$d clears', 'advcm' ), $page['young'], $page['n'] ) ) . '</td>';
-			echo '<td>' . esc_html( empty( $by ) ? __( 'people, by hand', 'advcm' ) : implode( '; ', $by ) ) . '</td></tr>';
+			echo '<td><code>' . esc_html( $page['to'] ) . '</code></td>';
+			echo '<td>' . esc_html( empty( $by ) ? __( 'a rule', 'advcm' ) : implode( '; ', $by ) ) . ' — <a href="' . esc_url( self::tab_url( 'auto' ) ) . '">' . esc_html__( 'change it', 'advcm' ) . '</a></td></tr>';
 		}
 
 		echo '</tbody></table></div>';
@@ -2195,7 +2202,7 @@ final class ADVCM_Screen {
 
 		echo '<div style="overflow-x:auto"><table class="widefat striped"><thead><tr>';
 
-		foreach ( array( __( 'Page', 'advcm' ), __( 'Clears', 'advcm' ), __( 'Latest (UTC)', 'advcm' ), __( 'Average cache age', 'advcm' ), __( 'Rule', 'advcm' ) ) as $head ) {
+		foreach ( array( __( 'Page', 'advcm' ), __( 'Clears', 'advcm' ), __( 'Latest (UTC)', 'advcm' ), __( 'Average cache age', 'advcm' ), __( 'Found a fresh copy', 'advcm' ), __( 'Rule', 'advcm' ) ) as $head ) {
 			echo '<th>' . esc_html( $head ) . '</th>';
 		}
 
@@ -2207,10 +2214,38 @@ final class ADVCM_Screen {
 			echo '<td>' . esc_html( sprintf( _n( '%d time', '%d times', $page['times'], 'advcm' ), $page['times'] ) ) . '</td>';
 			echo '<td>' . esc_html( gmdate( 'Y-m-d H:i', $page['last'] ) ) . '</td>';
 			echo '<td>' . esc_html( null === $page['avg_age'] ? __( 'unknown', 'advcm' ) : ADVCM_Probe::duration( $page['avg_age'] ) ) . '</td>';
+			/* translators: 1: clears that found a fresh copy, 2: clears. */
+			echo '<td>' . esc_html( sprintf( __( '%1$d of %2$d', 'advcm' ), $page['fresh'], $page['times'] ) . ( $page['mostly_fresh'] ? ' — ' . __( 'the cache was not the problem', 'advcm' ) : '' ) ) . '</td>';
 			echo '<td>' . esc_html( $page['has_rule'] ? __( 'a rule clears it', 'advcm' ) : __( 'no rule clears this page', 'advcm' ) ) . '</td></tr>';
 		}
 
 		echo '</tbody></table></div>';
+	}
+
+	/**
+	 * A change in words. With one side empty it read "→ on" for something added and "on →" for
+	 * something removed (seen on BMR, 2026-10-21): now "new: on" and "removed (was on)".
+	 *
+	 * @param string $before Before.
+	 * @param string $after  After.
+	 * @return string
+	 */
+	private static function log_change( $before, $after ) {
+		if ( '' === $before && '' === $after ) {
+			return '';
+		}
+
+		if ( '' === $before ) {
+			/* translators: %s: the new value. */
+			return sprintf( __( 'new: %s', 'advcm' ), $after );
+		}
+
+		if ( '' === $after ) {
+			/* translators: %s: the value it had. */
+			return sprintf( __( 'removed (was %s)', 'advcm' ), $before );
+		}
+
+		return $before . ' → ' . $after;
 	}
 
 	/**
@@ -2266,7 +2301,7 @@ final class ADVCM_Screen {
 
 		foreach ( $records as $record ) {
 			$who    = self::log_who( $record );
-			$change = '' === $record['before'] && '' === $record['after'] ? '' : $record['before'] . ' → ' . $record['after'];
+			$change = self::log_change( (string) $record['before'], (string) $record['after'] );
 
 			echo '<tr><td>' . esc_html( gmdate( 'Y-m-d H:i', (int) $record['at'] ) ) . '</td><td>' . esc_html( $who ) . '</td><td>' . esc_html( $record['summary'] ) . '</td><td>' . esc_html( $change ) . '</td></tr>';
 		}

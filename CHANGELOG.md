@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.2 — 2026-10-21
+
+The first day of 0.5.1 on BMR: no clear by hand, waits of 90 s (median) to 5 min 20 s, and
+Freshness's first reading — which showed where its own reading was wrong.
+
+- **A post is not a listing.** Posts nobody edited for 38 hours were listed "past the target"
+  when own-page cleared them on an edit. Their old copy was the unchanged post; no visitor saw an
+  old version of a change. Past the target now lists pages a rule names or people clear; posts
+  are counted apart in the summary.
+- **A listing cleared while fresh is no finding.** /analysis/ was reported as cleared while
+  fresh, 34 times in 40: a rule clears it on every publish, so its copy is always young, and every
+  clear still changed it. The section is gone; "Cleared by hand, often" says how many of those
+  clears found a fresh copy, which is where that means something.
+- **Pages that redirect.** A rule on BMR named six pages that redirect to /analysis/, cleared for
+  nothing on every publish. Each measurement keeps where a redirect points, and Freshness lists
+  a rule's pages that redirect, with where to.
+- **The change log reads "new: on" and "removed (was on)"** where it read "→ on" and "on →".
+
 ## 0.5.1 — 2026-10-20
 
 - **An auto-clear lost in a plugin update is put back.** On BMR, updating to 0.5.0 switched the
